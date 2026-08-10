@@ -95,9 +95,27 @@ def test_admin_password_hashing():
 
 # ------------------------------------------------------------------- доступ
 def test_anonymous_redirected_to_login():
-    with TestClient(app) as anon:
+    with _anon() as anon:
         assert anon.get("/", follow_redirects=False).status_code == 303
         assert anon.get("/api/stats").status_code == 401
+
+
+def test_anonymous_client_does_not_stop_the_worker(client, router):
+    """
+    Клиент для публичных страниц не гасит фоновый воркер.
+
+    `with TestClient(app)` на выходе выполняет остановку приложения, общую
+    на весь процесс: воркер встаёт, и каждая следующая задача в каждом
+    следующем тесте висит до таймаута. В CI это выглядело как десять
+    падений в разных местах и восемнадцать минут прогона, а причина была
+    в одной строке публичного теста, отработавшего задолго до них.
+    """
+    with _anon() as anon:
+        assert anon.get("/", follow_redirects=False).status_code == 303
+
+    device_id = _add_device(client, router, "worker-alive")
+    job = _run_and_wait(client, "check", [device_id], {}, timeout=20)
+    assert job["status"] == "done", "воркер остановлен анонимным клиентом"
 
 
 def test_pages_render(client):
@@ -2359,6 +2377,24 @@ def _make_user(client, username: str, permissions: list[str], *,
 
 
 @contextlib.contextmanager
+def _anon():
+    """
+    Клиент без входа, для публичных страниц.
+
+    Тоже свой менеджер контекста, и по той же причине, что у `_as`:
+    `with TestClient(app)` на выходе гасит приложение целиком вместе
+    с фоновым воркером, общим на весь процесс. После такого выхода
+    любая следующая задача в любом следующем тесте висела до таймаута,
+    а искали её потом где угодно, только не здесь.
+    """
+    client = TestClient(app)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+@contextlib.contextmanager
 def _as(username: str):
     """
     Отдельный клиент, вошедший под указанным пользователем.
@@ -2472,7 +2508,7 @@ def test_invited_person_registers_and_gets_no_rights(client, router):
 
     token = _invite(client, "новый инженер")
 
-    with TestClient(app) as guest:
+    with _anon() as guest:
         page = guest.get(f"/invite/{token}")
         assert page.status_code == 200
         assert "новый инженер" in page.text
@@ -2502,12 +2538,12 @@ def test_invite_link_works_once(client, router):
     """
     token = _invite(client, "разовый")
 
-    with TestClient(app) as first:
+    with _anon() as first:
         first.post(f"/invite/{token}", data={
             "username": "once-one", "password": "s3cret9", "password2": "s3cret9"},
             follow_redirects=False)
 
-    with TestClient(app) as second:
+    with _anon() as second:
         page = second.get(f"/invite/{token}")
         assert page.status_code == 404
         second.post(f"/invite/{token}", data={
@@ -2536,7 +2572,7 @@ def test_expired_and_revoked_invites_are_refused(client, router):
     invite_id = query_one("SELECT id FROM invites WHERE token = ?", (revoked,))["id"]
     assert client.post(f"/settings/invites/{invite_id}/revoke").status_code == 200
 
-    with TestClient(app) as guest:
+    with _anon() as guest:
         for token in (stale, revoked, "z" * 32):
             assert guest.get(f"/invite/{token}").status_code == 404
             guest.post(f"/invite/{token}", data={
@@ -2557,7 +2593,7 @@ def test_invite_cannot_take_over_an_existing_account(client, router):
     before = query_one("SELECT password_hash FROM users WHERE username = ?", ("admin",))
     token = _invite(client, "самозванец")
 
-    with TestClient(app) as guest:
+    with _anon() as guest:
         answer = guest.post(f"/invite/{token}", data={
             "username": "admin", "password": "s3cret9", "password2": "s3cret9"})
         assert answer.status_code == 400
@@ -2816,7 +2852,7 @@ def test_public_page_shows_only_names_and_status(client, router):
                       json={"enabled": True}).json()["url"]
     token = url.rsplit("/", 1)[-1]
 
-    with TestClient(app) as anon:
+    with _anon() as anon:
         page = anon.get(f"/status/{token}")
         assert page.status_code == 200
 
@@ -2858,7 +2894,7 @@ def test_public_page_shows_downtime_for_the_day(client, router):
                       json={"enabled": True}).json()["url"]
     token = url.rsplit("/", 1)[-1]
 
-    with TestClient(app) as anon:
+    with _anon() as anon:
         body = anon.get(f"/status/{token}?lang=ru").text
 
     assert "Общий простой за сутки" in body
@@ -2908,18 +2944,18 @@ def test_public_page_speaks_the_visitors_language(client, router):
                       json={"enabled": True}).json()["url"]
     token = url.rsplit("/", 1)[-1]
 
-    with TestClient(app) as anon:
+    with _anon() as anon:
         ru = anon.get(f"/status/{token}?lang=ru")
         assert "Состояние сети" in ru.text
         # Выбор запомнился, и следующий заход по голой ссылке уже русский
         assert "Состояние сети" in anon.get(f"/status/{token}").text
 
-    with TestClient(app) as other:
+    with _anon() as other:
         page = other.get(f"/status/{token}",
                          headers={"Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"})
         assert "Состояние сети" in page.text
 
-    with TestClient(app) as english:
+    with _anon() as english:
         page = english.get(f"/status/{token}",
                            headers={"Accept-Language": "en-GB,en;q=0.9"})
         assert "Network status" in page.text
@@ -2931,7 +2967,7 @@ def test_public_page_is_read_only_for_anonymous(client, router):
     group_id, _ = _group_with_devices(client, router, "public-b")
     client.post(f"/api/groups/{group_id}/public-link", json={"enabled": True})
 
-    with TestClient(app) as anon:
+    with _anon() as anon:
         # Ни одна страница панели без входа не открывается
         assert anon.get("/devices", follow_redirects=False).status_code in (302, 303)
         assert anon.get("/api/stats").status_code == 401
@@ -2945,18 +2981,18 @@ def test_public_link_can_be_revoked(client, router):
                       json={"enabled": True}).json()["url"]
     token = url.rsplit("/", 1)[-1]
 
-    with TestClient(app) as anon:
+    with _anon() as anon:
         assert anon.get(f"/status/{token}").status_code == 200
 
     client.post(f"/api/groups/{group_id}/public-link", json={"enabled": False})
-    with TestClient(app) as anon:
+    with _anon() as anon:
         assert anon.get(f"/status/{token}").status_code == 404
 
     # Повторное включение выдаёт другой токен, старый не воскресает
     new_url = client.post(f"/api/groups/{group_id}/public-link",
                           json={"enabled": True}).json()["url"]
     assert new_url != url
-    with TestClient(app) as anon:
+    with _anon() as anon:
         assert anon.get(f"/status/{token}").status_code == 404
         assert anon.get(f"/status/{new_url.rsplit('/', 1)[-1]}").status_code == 200
 
@@ -2967,7 +3003,7 @@ def test_unknown_token_is_indistinguishable_from_disabled(client):
 
     Разница в ответах подсказала бы перебирающему, что он на верном пути.
     """
-    with TestClient(app) as anon:
+    with _anon() as anon:
         short = anon.get("/status/abc")
         long_wrong = anon.get("/status/" + "z" * 32)
         assert short.status_code == long_wrong.status_code == 404
@@ -3008,12 +3044,12 @@ def test_public_visits_count_people_not_requests(client, router):
                         (group_id,))
         return (row["c"] if row else 0) or 0
 
-    with TestClient(app) as one_person:
+    with _anon() as one_person:
         for _ in range(6):
             one_person.get(f"/status/{token}")
     assert hits() == 1, "автообновление накрутило счётчик"
 
-    with TestClient(app) as another_person:
+    with _anon() as another_person:
         another_person.get(f"/status/{token}")
     assert hits() == 2
 
@@ -3029,7 +3065,7 @@ def test_visits_are_not_counted_for_wrong_token(client, router):
     group_id, _ = _group_with_devices(client, router, "visits-b")
     client.post(f"/api/groups/{group_id}/public-link", json={"enabled": True})
 
-    with TestClient(app) as anon:
+    with _anon() as anon:
         for _ in range(3):
             anon.get("/status/" + "q" * 32)
 
@@ -4416,7 +4452,7 @@ def test_public_visit_is_one_session_not_many_rows(client, router):
     phone = ("Mozilla/5.0 (Linux; Android 13; SM-A536E) AppleWebKit/537.36 "
              "(KHTML, like Gecko) Chrome/138.0.0.0 Mobile Safari/537.36")
 
-    with TestClient(app) as person:
+    with _anon() as person:
         for _ in range(5):
             person.get(f"/status/{token}", headers={"user-agent": phone})
 
@@ -4427,7 +4463,7 @@ def test_public_visit_is_one_session_not_many_rows(client, router):
     assert rows[0]["ip"]
 
     # Другой человек это другая строка, даже с той же ссылкой
-    with TestClient(app) as other:
+    with _anon() as other:
         other.get(f"/status/{token}", headers={"user-agent": phone})
     assert query_one("SELECT COUNT(*) AS c FROM public_views WHERE group_id = ?",
                      (group_id,))["c"] == 2
@@ -4447,7 +4483,7 @@ def test_link_preview_is_marked_as_a_robot(client, router):
     token = client.post(f"/api/groups/{group_id}/public-link",
                         json={"enabled": True}).json()["url"].rsplit("/", 1)[-1]
 
-    with TestClient(app) as bot:
+    with _anon() as bot:
         bot.get(f"/status/{token}", headers={"user-agent": "TelegramBot (like TwitterBot)"})
 
     row = query_one("SELECT * FROM public_views WHERE group_id = ? ORDER BY id DESC",
@@ -4478,7 +4514,7 @@ def test_wrong_token_attempts_are_recorded_and_merged(client, router):
     # Считаем прирост, а не итог: в общей базе тестов чужие промахи уже есть
     rows_before, hits_before = counters()
 
-    with TestClient(app) as anon:
+    with _anon() as anon:
         for _ in range(5):
             anon.get("/status/" + "q" * 32)
 
@@ -4512,7 +4548,7 @@ def test_visits_page_shows_who_is_watching(client, router):
     token = client.post(f"/api/groups/{group_id}/public-link",
                         json={"enabled": True}).json()["url"].rsplit("/", 1)[-1]
 
-    with TestClient(app) as person:
+    with _anon() as person:
         person.get(f"/status/{token}", headers={
             "user-agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/126.0.0.0 Safari/537.36"})
 
@@ -4602,7 +4638,7 @@ def test_restriction_blocks_panel_but_not_status(client, router):
     saved = settings.admin_networks
     settings.admin_networks = parse_networks("10.0.0.0/8")
     try:
-        with TestClient(app) as outside:
+        with _anon() as outside:
             assert outside.get("/login").status_code == 403
             assert outside.get("/", follow_redirects=False).status_code == 403
             assert outside.get("/api/stats").status_code == 403
@@ -6138,7 +6174,11 @@ def test_syslog_receives_over_real_sockets(client, router):
 
     device_id = _add_device(client, router, "syslog-device")
 
-    # Приёмник в тестах не поднят службой, поднимаем на свободных портах
+    # Приёмник поднимаем сами, на свободных портах. Сначала гасим: если
+    # приложение уже подняло его на штатных 5514 (SYSLOG_ENABLED не выключен,
+    # как это бывает в CI), повторный start() ничего не сделает, и тест будет
+    # стучаться в порт, которого никто не слушает.
+    syslog.stop()
     settings.syslog_enabled = True
     settings.syslog_udp_port = 15571
     settings.syslog_tcp_port = 15571

@@ -160,7 +160,7 @@
                 <tr>
                     <td><a href="/devices/{{ r.device_id }}">{{ r.device_name }}</a></td>
                     <td class="mono nowrap">
-                        {{ r.target }}{% if r.label %} <span class="badge">{{ r.label }}</span>{% endif %}
+                        {{ r.target }}{% if r.label %} <span class="badge">{{ r.label | t }}</span>{% endif %}
                     </td>
                     <td class="nowrap" data-sort="{{ r.loss or 0 }}">
                         {% if r.loss and r.loss > 0 %}
