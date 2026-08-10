@@ -41,11 +41,16 @@ async def login_page(request: Request, next: str = "/"):
     )
 
 
+# Поля форм объявлены со значением по умолчанию, а не обязательными.
+# Обязательное поле, пришедшее пустым, отбрасывает сам FastAPI, и человек
+# вместо подсказки «Укажите имя пользователя» получает страницу с JSON
+# про «Field required». Пустое поле это обычная человеческая ошибка,
+# и отвечать на неё должна форма, а не обработчик протокола.
 @router.post("/login")
 async def login_submit(
     request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
+    username: str = Form(""),
+    password: str = Form(""),
     next: str = Form("/"),
 ):
     """
@@ -237,9 +242,9 @@ async def settings_page(request: Request, user=Depends(require("settings.view"))
 @router.post("/settings/password")
 async def change_password(
     request: Request,
-    old_password: str = Form(...),
-    new_password: str = Form(...),
-    new_password2: str = Form(...),
+    old_password: str = Form(""),
+    new_password: str = Form(""),
+    new_password2: str = Form(""),
     user=Depends(current_user),
 ):
     """Смена собственного пароля."""
@@ -273,8 +278,8 @@ async def change_password(
 @router.post("/settings/users")
 async def add_user(
     request: Request,
-    new_username: str = Form(...),
-    password: str = Form(...),
+    new_username: str = Form(""),
+    password: str = Form(""),
     user=Depends(require("users.manage")),
 ):
     """Добавить ещё одного администратора."""
@@ -377,7 +382,7 @@ async def invite_page(request: Request, token: str):
 
 @router.post("/invite/{token}")
 async def invite_submit(request: Request, token: str,
-                        username: str = Form(...), password: str = Form(...),
+                        username: str = Form(""), password: str = Form(""),
                         password2: str = Form("")):
     """
     Создать учётную запись по приглашению и сразу впустить.
