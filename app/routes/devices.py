@@ -16,7 +16,7 @@ from ..database import execute, log_audit, query, query_one, utcnow
 from ..mikrotik import is_newer
 from .. import permissions
 from ..auth import Forbidden, require
-from .deps import form_bool, render, render_partial, templates
+from .deps import form_bool, render, render_partial, resolve_lang, templates
 
 router = APIRouter()
 
@@ -140,15 +140,25 @@ async def devices_rows(
     )
 
 
-def _device_charts(device_id: int, hours: int) -> dict[str, str]:
-    """Подготовить SVG-графики задержки, потерь и нагрузки для карточки."""
-    from .. import charts, monitor
+def _device_charts(device_id: int, hours: int, lang: str = "ru") -> dict[str, str]:
+    """
+    Подготовить SVG-графики задержки, потерь и нагрузки для карточки.
+
+    Язык нужен из-за подписи цели: шлюз панель находит сама и подписывает
+    словом «шлюз». Подпись собирается в Python вместе с адресом, поэтому
+    в шаблон приходит готовой строкой и мимо переводчика проходит насквозь.
+    """
+    from .. import charts, i18n, monitor
 
     latency = monitor.latency_history(device_id, hours)
     metrics = monitor.metrics_history(device_id, hours)
 
     rtt_series, loss_series = [], []
-    for index, (name, rows) in enumerate(latency.items()):
+    for index, (_key, rows) in enumerate(latency.items()):
+        label = str(rows[0]["label"] or "") if rows else ""
+        name = str(rows[0]["target"]) if rows else _key
+        if label:
+            name = f"{name} ({i18n.translate_text(label, lang)})"
         color = charts.COLORS[index % len(charts.COLORS)]
         rtt_series.append(charts.Series(name, [(r["ts"], r["rtt_avg"]) for r in rows], color))
         loss_series.append(charts.Series(name, [(r["ts"], r["loss"]) for r in rows], color))
@@ -216,7 +226,8 @@ async def device_detail(request: Request, device_id: int, hours: int = 24, user=
         items=items,
         backups=backups,
         timeline=monitor.device_timeline(device_id, 40),
-        charts=_device_charts(device_id, hours if hours in (1, 6, 24, 168) else 24),
+        charts=_device_charts(device_id, hours if hours in (1, 6, 24, 168) else 24,
+                              resolve_lang(request, user)),
         hours=hours if hours in (1, 6, 24, 168) else 24,
         actions=permissions.allowed_actions(user),
     )

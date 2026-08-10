@@ -9,6 +9,9 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    # Повисшая задача ждёт своего таймаута по 90 с, и таких тестов десятки:
+    # без ограничения прогон занимал восемнадцать минут вместо двух.
+    timeout-minutes: 12
 
     strategy:
       fail-fast: false
