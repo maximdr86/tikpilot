@@ -1,0 +1,507 @@
+{% extends "base.html" %}
+{% block title %}Логи с устройств · Tikpilot{% endblock %}
+
+{% block content %}
+{% include "partials/log_tabs.html" %}
+
+<div class="page-head">
+    <div>
+        <h1>Логи с устройств</h1>
+        <div class="sub">
+            {% if state.enabled %}
+                приём работает ·
+                {% if state.udp_port %}UDP {{ state.udp_port }}{% endif %}
+                {% if state.udp_port and state.tcp_port %}·{% endif %}
+                {% if state.tcp_port %}TCP {{ state.tcp_port }}{% endif %} ·
+                принято строк: {{ state.received }}
+                {% if state.dropped %} · отброшено: {{ state.dropped }}{% endif %}
+                {% if state.ignored %} · не сохранено по правилу: {{ state.ignored }}{% endif %}
+                · хранится {{ total }}
+                {% if skipped %} · скрыто правилами в этом окне: {{ skipped }}{% endif %}
+            {% elif state.error %}
+                <span class="badge offline">приём не поднялся</span>
+                <span class="mono small">{{ state.error }}</span>
+            {% else %}
+                <span class="badge unknown">приём выключен</span>
+                чтобы включить, добавьте <span class="mono">SYSLOG_ENABLED=1</span> в файл .env
+            {% endif %}
+        </div>
+    </div>
+    <div class="btn-row">
+        <label class="check">
+            <input type="checkbox" id="sl-follow" checked>
+            <span>Следить за концом</span>
+        </label>
+        <a class="btn" id="sl-export" href="/syslog/export">Выгрузить текстом</a>
+        <button class="btn danger" onclick="clearSyslog()">Очистить</button>
+    </div>
+</div>
+
+<form class="filters" method="get" action="/syslog">
+    <div class="field grow">
+        <label for="sl-q">Содержит текст</label>
+        <input type="search" id="sl-q" name="q" value="{{ f_q }}"
+               placeholder="часть сообщения, темы или имени точки">
+    </div>
+    <div class="field">
+        <label for="sl-device">Точка</label>
+        <select id="sl-device" name="device_id">
+            <option value="">Все точки</option>
+            {% for d in devices %}
+                <option value="{{ d.id }}" {% if f_device == d.id|string %}selected{% endif %}>{{ d.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="sl-severity">Важность</label>
+        <select id="sl-severity" name="severity">
+            <option value="">Любая</option>
+            {% for s in severities %}
+                <option value="{{ s }}" {% if f_severity == s %}selected{% endif %}>
+                    {{ severity_labels.get(s, s) | t }} и выше
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="sl-topics">Тема</label>
+        <input type="search" id="sl-topics" name="topics" value="{{ f_topics }}"
+               placeholder="system, dhcp, wireless">
+    </div>
+    {% if hiding or show_hidden %}
+    <div class="field">
+        <label>&nbsp;</label>
+        <label class="check" style="margin-top:6px">
+            <input type="checkbox" name="hidden" value="1" {% if show_hidden %}checked{% endif %}>
+            <span>Показать скрытые правилами</span>
+        </label>
+    </div>
+    {% endif %}
+    <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn primary" type="submit">Найти</button>
+    </div>
+    {% if f_q or f_device or f_severity or f_topics or f_hidden %}
+    <div class="field">
+        <label>&nbsp;</label>
+        <a class="btn" href="/syslog">Сбросить</a>
+    </div>
+    {% endif %}
+</form>
+
+<div class="panel">
+    {# Лента, а не таблица: строку журнала читают целиком, слева направо,
+       и колонки с рамками этому только мешают. Моноширинный шрифт тут
+       не украшение: в сообщениях роутера полно адресов и MAC, и они
+       должны выравниваться по столбцу. #}
+    <div class="console" id="syslog-box">
+        {% if total > entries | length %}
+            {# Старые строки подгружаются прокруткой вверх. Строка-заглушка
+               нужна, чтобы человек знал, что выше что-то есть: пустой верх
+               ленты выглядит как её начало. #}
+            <div class="c-line c-info" id="sl-older">
+                выше ещё {{ total - (entries | length) }}, прокрутите вверх
+            </div>
+        {% endif %}
+        {% for e in entries %}
+            <div class="c-line {% if e.color %}sl-{{ e.color }}{% else %}c-{{ e.level }}{% endif %}"
+                 title="{{ e.raw }}">
+                <span class="c-ts" title="{{ e.ts | dt }}">{{ e.ts | log_time }}</span>
+                <span class="c-src" title="{{ e.device_name or e.source }}">{% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ e.device_name }}</a>{% else %}{{ e.source }}{% endif %}</span>
+                <span class="c-topic" title="{{ e.topics }}">{{ e.topics }}</span>
+                <span class="c-text">{{ e.message }}</span>
+            </div>
+        {% else %}
+            <div class="c-line c-info c-empty">
+                {% if f_q or f_device or f_severity or f_topics %}По этому запросу ничего не найдено
+                {% else %}Строк пока нет. Настройте на роутерах отправку журнала на адрес панели{% endif %}
+            </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- ---------------------------------------------------------- правила журнала -->
+<div class="panel" data-fold="syslog-rules">
+    <h2>Правила
+        <span class="h2-extra muted">правил: {{ rules | length }} · побеждает первое подошедшее</span>
+    </h2>
+    {% if rules %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+            <tr>
+                <th class="nowrap">Порядок</th>
+                <th>Образец</th>
+                <th class="nowrap">Как искать</th>
+                <th class="nowrap">Что делать</th>
+                <th>Пояснение</th>
+                <th class="no-sort"></th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for r in rules %}
+                <tr {% if not r.enabled %}class="muted"{% endif %}>
+                    <td class="nowrap">
+                        <button class="btn sm" onclick="moveRule({{ r.id }}, 'up')">↑</button>
+                        <button class="btn sm" onclick="moveRule({{ r.id }}, 'down')">↓</button>
+                    </td>
+                    <td class="mono small">{{ r.pattern }}</td>
+                    <td class="nowrap small muted">{% if r.is_regex %}выражение{% else %}просто текст{% endif %}</td>
+                    <td class="nowrap">
+                        {% if r.action == 'hide' %}
+                            <span class="badge unknown">не показывать</span>
+                        {% elif r.action == 'drop' %}
+                            <span class="badge offline">не сохранять</span>
+                        {% else %}
+                            <span class="badge sl-{{ r.color }}">{{ colors.get(r.color, r.color) | t }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="small muted">{{ r.note }}</td>
+                    <td class="nowrap">
+                        <button class="btn sm" onclick="toggleRule2({{ r.id }})">
+                            {% if r.enabled %}Выключить{% else %}Включить{% endif %}
+                        </button>
+                        <button class="btn sm danger" onclick="deleteRule2({{ r.id }})">×</button>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">Правил пока нет, все строки показываются обычным цветом</div>
+    {% endif %}
+
+    <div class="panel-body">
+        <div class="grid cols-5">
+            <div class="field">
+                <label for="rule-pattern">Образец</label>
+                <input type="text" id="rule-pattern" placeholder="login failure">
+            </div>
+            <div class="field">
+                <label for="rule-action">Что делать</label>
+                <select id="rule-action" onchange="ruleActionChanged()">
+                    {% for key, name in actions.items() %}
+                        <option value="{{ key }}">{{ name | t }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field" id="rule-color-field">
+                <label for="rule-color">Цвет</label>
+                <select id="rule-color">
+                    {% for key, name in colors.items() %}
+                        <option value="{{ key }}">{{ name | t }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label for="rule-note">Пояснение</label>
+                <input type="text" id="rule-note" placeholder="зачем это правило">
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button class="btn primary" onclick="addRule()">Добавить</button>
+            </div>
+        </div>
+        <label class="check">
+            <input type="checkbox" id="rule-regex">
+            <span>Это регулярное выражение, а не просто текст</span>
+        </label>
+        <div class="hint" style="margin-top:8px">
+            «Не показывать» убирает строки из ленты, но они остаются в базе
+            и в выгрузке: правило можно выключить и увидеть всё обратно.
+            «Не сохранять» отбрасывает их на приёме, и это уже навсегда,
+            зато шум не занимает место и не съедает потолок хранения.
+        </div>
+    </div>
+</div>
+
+{% if state.rejected %}
+<div class="alert warn">
+    Строки приходят с адресов, которых панель не знает, и поэтому отбрасываются.
+    Обычно это туннельный адрес точки: роутер выбирает отправителя по маршруту
+    до панели, а панель знает его по адресу управления. Проверьте, чья это
+    точка, и разрешите приём.
+    <div class="table-wrap" style="margin-top:9px">
+        <table>
+            <thead><tr>
+                <th class="nowrap">Адрес</th>
+                <th>Подписывается как</th>
+                <th class="nowrap">Строк отброшено</th>
+                <th class="no-sort"></th>
+            </tr></thead>
+            <tbody>
+            {% for address, item in state.rejected.items() %}
+                <tr>
+                    <td class="mono nowrap">{{ address }}</td>
+                    <td class="small">{{ item.host or '—' }}</td>
+                    <td class="nowrap">{{ item.count }}</td>
+                    <td class="nowrap">
+                        <button class="btn sm primary"
+                                onclick="allowSource('{{ address }}', '{{ item.host }}')">
+                            Принимать
+                        </button>
+                        <button class="btn sm"
+                                title="Разрешить всю сеть /24, к которой принадлежит адрес"
+                                onclick="allowNetwork('{{ address }}')">
+                            И всю сеть
+                        </button>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if sources %}
+<div class="panel" data-fold="syslog-sources">
+    <h2>Разрешённые адреса
+        <span class="h2-extra muted">сверх адресов управления · {{ sources | length }}</span>
+    </h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr>
+                <th class="nowrap">Адрес</th>
+                <th>Точка</th>
+                <th class="nowrap">Добавлен</th>
+                <th class="no-sort"></th>
+            </tr></thead>
+            <tbody>
+            {% for s in sources %}
+                <tr>
+                    <td class="mono nowrap">{{ s.address }}</td>
+                    <td>
+                        {% if s.device_id %}<a href="/devices/{{ s.device_id }}">{{ s.device_name }}</a>
+                        {% else %}<span class="muted small">не привязан</span>{% endif %}
+                    </td>
+                    <td class="nowrap small muted">{{ s.created_at | dt_short }}</td>
+                    <td class="nowrap">
+                        <button class="btn sm danger" onclick="forgetSource('{{ s.address }}')">×</button>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="hint">
+    Строки принимаются только с адресов заведённых устройств: syslog ничем
+    не подписан, и открытый для всех приёмник это приглашение забить диск.
+    Чтобы принимать с ещё не заведённых точек, перечислите их сети
+    в <span class="mono">SYSLOG_NETWORKS</span>.
+    <br>
+    На роутере отправка включается двумя строками, где 10.0.0.1 это адрес панели,
+    а 10.10.0.9 адрес самой точки, по которому её знает панель:
+    <span class="mono">/system logging action add name=tikpilot target=remote
+    remote=10.0.0.1 remote-port={{ state.udp_port or 5514 }} remote-log-format=cef
+    src-address=10.10.0.9</span> и
+    <span class="mono">/system logging add action=tikpilot topics=info</span>.
+    Тем можно указать несколько правил: отдельно ошибки, отдельно нужные темы.
+    Формат именно CEF: с форматом по умолчанию строки на практике до панели
+    не доходили. Действие «Слать журнал в панель» ставит всё это само.
+    <br>
+    Хранится {{ retention_days }} дней, но не больше потолка по числу строк:
+    срок отвечает на вопрос «сколько помним», а потолок спасает диск, когда
+    одна точка за ночь пишет миллион строк об одной и той же ошибке.
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Крайние номера показанного: свежий снизу, старый сверху
+    let syslogLast = {{ entries[-1].id if entries else 0 }};
+    let syslogFirst = {{ entries[0].id if entries else 0 }};
+    let syslogTimer = null;
+    let loadingOlder = false;
+
+    /** Фильтры страницы одной строкой: лента и выгрузка должны совпадать. */
+    function syslogFilters() {
+        return {
+            q: document.getElementById('sl-q').value,
+            device_id: document.getElementById('sl-device').value,
+            severity: document.getElementById('sl-severity').value,
+            topics: document.getElementById('sl-topics').value,
+            // Живая лента должна прятать то же самое, что и страница,
+            // иначе скрытые строки возвращались бы через минуту сами
+            hidden: {{ ('1' if show_hidden else '') | tojson }},
+        };
+    }
+
+    function syslogRow(row) {
+        const line = document.createElement('div');
+        line.className = 'c-line ' + (row.color ? 'sl-' + row.color : 'c-' + row.level);
+        if (row.raw) { line.title = row.raw; }
+
+        const part = (text, cls) => {
+            const el = document.createElement('span');
+            el.className = cls;
+            // Именно textContent: строка пришла с устройства и в разметку
+            // попадать не должна ни при каких обстоятельствах
+            el.textContent = text;
+            line.appendChild(el);
+            return el;
+        };
+
+        // Время в базе в UTC, показываем местное, как везде в панели
+        part(new Date(row.ts.replace(' ', 'T') + 'Z')
+                .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+             'c-ts');
+        // Полное значение в подсказке: колонки узкие и обрезают длинное
+        part(row.device_name || row.source, 'c-src').title = row.device_name || row.source;
+        part(row.topics || '', 'c-topic').title = row.topics || '';
+        part(row.message, 'c-text');
+        return line;
+    }
+
+    /** Новые строки: дописываются снизу, как в консоли панели. */
+    async function syslogTick() {
+        const box = document.getElementById('syslog-box');
+        try {
+            const params = new URLSearchParams({ after: syslogLast, ...syslogFilters() });
+            const data = await api('/api/syslog?' + params.toString());
+            if (data.rows.length) {
+                const empty = box.querySelector('.c-empty');
+                if (empty) { empty.remove(); }
+                data.rows.forEach((row) => box.appendChild(syslogRow(row)));
+                syslogLast = data.last;
+                if (!syslogFirst) { syslogFirst = data.rows[0].id; }
+                if (document.getElementById('sl-follow').checked) {
+                    box.scrollTop = box.scrollHeight;
+                }
+            }
+        } catch (err) { /* сеть моргнула, попробуем на следующем тике */ }
+        syslogTimer = setTimeout(syslogTick, 3000);
+    }
+
+    /**
+     * Старые строки при прокрутке к верху.
+     *
+     * После вставки возвращаем прокрутку на прежнее место: иначе лента
+     * прыгает под руками и читать её невозможно.
+     */
+    async function loadOlder() {
+        if (loadingOlder || !syslogFirst) { return; }
+        loadingOlder = true;
+        const box = document.getElementById('syslog-box');
+        const before = box.scrollHeight;
+        try {
+            const params = new URLSearchParams({ before: syslogFirst, ...syslogFilters() });
+            const data = await api('/api/syslog?' + params.toString());
+            const mark = document.getElementById('sl-older');
+            if (data.rows.length) {
+                const anchor = mark || box.firstChild;
+                data.rows.forEach((row) => box.insertBefore(syslogRow(row), anchor));
+                syslogFirst = data.first;
+                box.scrollTop = box.scrollHeight - before;
+            }
+            if (mark && data.rows.length < 300) { mark.remove(); }
+        } catch (err) { /* не вышло, попробуем при следующей прокрутке */ }
+        loadingOlder = false;
+    }
+
+    async function allowSource(address, host) {
+        try {
+            const data = await api('/api/syslog/sources', { json: { address: address, host: host } });
+            toast(data.device_id ? T('Адрес разрешён и привязан к точке')
+                                 : T('Адрес разрешён, точка не опознана'), 'ok');
+            setTimeout(() => window.location.reload(), 900);
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function allowNetwork(address) {
+        // Резервный туннель даёт своей адрес каждой точке, и разрешать их
+        // по одному значит полсотни нажатий. Сеть целиком честнее.
+        const network = address.replace(/\.\d+$/, '.0/24');
+        if (!confirm(T('Принимать журнал со всей сети %s?').replace('%s', network))) { return; }
+        try {
+            await api('/api/syslog/sources', { json: { address: network } });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function forgetSource(address) {
+        try {
+            await api('/api/syslog/sources/delete', { json: { address: address } });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function clearSyslog() {
+        if (!confirm(T('Удалить все строки журнала? Отменить это будет нельзя.'))) { return; }
+        try {
+            const data = await api('/api/syslog/clear', { json: {} });
+            toast(T('Удалено строк: %s').replace('%s', data.removed), 'ok');
+            setTimeout(() => window.location.reload(), 900);
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    /** Цвет нужен только красящему правилу: прятать зелёным нечего. */
+    function ruleActionChanged() {
+        const action = document.getElementById('rule-action').value;
+        document.getElementById('rule-color-field').style.display =
+            action === 'color' ? '' : 'none';
+    }
+
+    async function addRule() {
+        const pattern = document.getElementById('rule-pattern').value.trim();
+        if (!pattern) { toast(T('Введите образец'), 'error'); return; }
+        try {
+            await api('/api/syslog/rules', { json: {
+                pattern: pattern,
+                action: document.getElementById('rule-action').value,
+                color: document.getElementById('rule-color').value,
+                note: document.getElementById('rule-note').value,
+                is_regex: document.getElementById('rule-regex').checked,
+            }});
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function toggleRule2(id) {
+        try {
+            await api(`/api/syslog/rules/${id}/toggle`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function deleteRule2(id) {
+        try {
+            await api(`/api/syslog/rules/${id}/delete`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function moveRule(id, direction) {
+        try {
+            await api(`/api/syslog/rules/${id}/move`, { json: { direction: direction } });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    const syslogBox = document.getElementById('syslog-box');
+    syslogBox.scrollTop = syslogBox.scrollHeight;
+    syslogBox.addEventListener('scroll', () => {
+        if (syslogBox.scrollTop < 40) { loadOlder(); }
+    });
+
+    // Ссылка на выгрузку должна отдавать то же, что видно на экране
+    const exportLink = document.getElementById('sl-export');
+    if (exportLink) {
+        const sync = () => {
+            const params = new URLSearchParams(syslogFilters());
+            exportLink.href = '/syslog/export?' + params.toString();
+        };
+        ['sl-q', 'sl-device', 'sl-severity', 'sl-topics'].forEach((id) => {
+            const field = document.getElementById(id);
+            if (field) { field.addEventListener('change', sync); }
+        });
+        sync();
+    }
+
+    syslogTick();
+</script>
+{% endblock %}

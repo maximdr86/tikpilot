@@ -1,0 +1,30 @@
+{# Карта статусов: весь парк на одном экране, сгруппированный по группам.
+   Группы с недоступными точками показываются первыми. #}
+{% for group in groups %}
+<div class="map-group">
+    <div class="map-head">
+        <span class="badge tag-{{ group.color or 'slate' }}">{{ group.name | t }}</span>
+        <span class="title">{{ group.devices | length }}</span>
+        <span class="small muted">
+            в сети {{ group.online }}{% if group.offline %} ·
+            <span style="color:var(--err);font-weight:600">не отвечает {{ group.offline }}</span>{% endif %}
+        </span>
+    </div>
+
+    <div class="map-grid">
+        {% for d in group.devices %}
+            {% set css = 'shaky' if (d.status == 'online' and d.fail_streak) else d.status %}
+            <a class="map-cell {{ css }}" href="/devices/{{ d.id }}"
+               title="{{ d.name }} · {{ d.host }}{% if d.ros_version %} · RouterOS {{ d.ros_version }}{% endif %}{% if d.status == 'offline' %} · {{ _("не отвечает") }} {{ d.status_changed_at | since }}{% if d.last_error %} · {{ d.last_error | t }}{% endif %}{% elif d.fail_streak %} · {{ _("промахов подряд:") }} {{ d.fail_streak }}{% endif %}">
+                <div class="n">{{ d.name }}</div>
+                <div class="a">
+                    {% if d.status == 'offline' %}{{ d.status_changed_at | since }}
+                    {% else %}{{ d.host }}{% endif %}
+                </div>
+            </a>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="empty">Устройств пока нет</div>
+{% endfor %}

@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+{% block title %}WireGuard · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>WireGuard</h1>
+        <div class="sub">Связи роутер-роутер через хаб</div>
+    </div>
+    <form class="btn-row" method="get" action="/wireguard">
+        <select name="device_id" onchange="this.form.submit()" style="width:auto">
+            <option value="0">выберите хаб</option>
+            {% for d in devices %}
+                <option value="{{ d.id }}" {% if d.id == hub_id %}selected{% endif %}>
+                    {{ d.name }} ({{ d.host }})
+                </option>
+            {% endfor %}
+        </select>
+    </form>
+</div>
+
+{% if not hub_id %}
+<div class="panel">
+    <div class="panel-body">
+        <div class="hint">
+            Выберите роутер, который будет <strong>хабом</strong>: к нему подключаются
+            остальные площадки. Обычно это тот, у которого есть постоянный внешний адрес.
+            <br>
+            Панель работает по обычному API устройства, поэтому ни REST, ни сертификата,
+            ни отдельного пользователя на роутере заводить не нужно.
+        </div>
+    </div>
+</div>
+
+{% elif error %}
+<div class="panel">
+    <div class="panel-body">
+        <div class="alert error">Не удалось прочитать конфигурацию хаба: {{ error | t }}</div>
+        <div class="hint">
+            Проверьте, что устройство на связи и у пользователя API есть политика
+            <span class="mono">write</span>: без неё видно только чтение.
+        </div>
+    </div>
+</div>
+
+{% else %}
+
+<!-- ------------------------------------------------------------- настройки -->
+<div class="panel">
+    <h2>Хаб
+        <span class="h2-extra muted">
+            {% if hub.interface %}
+                интерфейс {{ hub.interface }}{% if hub.public_key %} · ключ есть{% endif %}
+            {% else %}
+                интерфейс не выбран
+            {% endif %}
+        </span>
+    </h2>
+    <div class="panel-body">
+        <div class="grid cols-2">
+            <div>
+                <div class="field">
+                    <label for="wg-iface">Интерфейс WireGuard</label>
+                    <select id="wg-iface">
+                        <option value="">выберите</option>
+                        {% for i in state.interfaces %}
+                            <option value="{{ i.name }}"
+                                {% if i.name == hub.interface %}selected{% endif %}>
+                                {{ i.name }}{% if i['listen-port'] %} · порт {{ i['listen-port'] }}{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <div class="hint">
+                        Интерфейс создаётся на роутере: <span class="mono">/interface/wireguard add name=wg-hub listen-port=13231</span>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="wg-host">Публичный адрес хаба</label>
+                    <input type="text" id="wg-host" value="{{ settings.public_host or hub.public_host }}"
+                           placeholder="vpn.example.com или внешний IP">
+                    <div class="hint">Этот адрес попадёт в конфигурацию споуков как endpoint.</div>
+                </div>
+
+                <div class="field">
+                    <label for="wg-port">Порт</label>
+                    <input type="text" id="wg-port" value="{{ hub.listen_port }}">
+                </div>
+            </div>
+
+            <div>
+                <div class="field">
+                    <label for="wg-tunnel">Туннельный адрес хаба</label>
+                    <input type="text" id="wg-tunnel" value="{{ hub.tunnel_address }}"
+                           placeholder="10.20.0.1/24">
+                    <div class="hint">
+                        {% if hub.tunnel_address %}
+                            Прочитан с интерфейса роутера.
+                        {% else %}
+                            На интерфейсе адреса нет: впишите его и нажмите
+                            «Записать туннельный адрес».
+                        {% endif %}
+                        Из этой подсети выдаются адреса споукам. Маска обязательна:
+                        из <span class="mono">/32</span> выдать нечего.
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="wg-lans">LAN-подсети хаба</label>
+                    <textarea id="wg-lans" rows="2"
+                              placeholder="192.168.10.0/24, 192.168.20.0/24">{{ lan_value }}</textarea>
+                    <div class="hint">
+                        Сети за хабом, которые должны видеть споуки. Попадают в их
+                        конфигурацию и маршруты.
+                        {% if lan_guessed %}
+                            Список определён по адресам роутера: вычеркните лишнее,
+                            например сеть провайдера, и сохраните.
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn primary" onclick="wgSaveHub({{ hub_id }})">Сохранить настройки хаба</button>
+            <button class="btn" onclick="wgSetTunnel({{ hub_id }})">Записать туннельный адрес</button>
+            <button class="btn {% if not firewall_ready %}danger{% endif %}"
+                    onclick="wgFirewall({{ hub_id }})">
+                {% if firewall_ready %}Правила firewall на месте{% else %}Настроить firewall{% endif %}
+            </button>
+        </div>
+        {% if not firewall_ready %}
+        <div class="hint" style="margin-top:8px">
+            Правила ставятся перед первым запрещающим правилом в цепочке. Добавленные
+            после него они бы просто не сработали, и туннель молча не поехал бы.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- ----------------------------------------------------------------- линки -->
+<div class="panel">
+    <h2>Линки
+        <span class="h2-extra muted">{{ links | length }} на интерфейсе {{ hub.interface or '—' }}</span>
+    </h2>
+    {% if links %}
+    <div class="table-wrap">
+        <table class="sortable">
+            <thead>
+            <tr>
+                <th>Линк</th>
+                <th class="nowrap">Туннель</th>
+                <th>Удалённые сети</th>
+                <th class="nowrap" title="Сколько прошло с последнего обмена. Сверху самые свежие">Рукопожатие</th>
+                <th class="nowrap">Трафик</th>
+                <th class="no-sort"></th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for l in links %}
+                <tr>
+                    <td>
+                        <strong>{{ l.name }}</strong>
+                        {% if not l.ours %}<span class="badge unknown">не наш</span>{% endif %}
+                    </td>
+                    <td class="mono nowrap" data-sort="{{ l.tunnel_key }}">{{ l.tunnel_ip or '—' }}</td>
+                    <td class="mono small">{{ l.subnets | join(', ') or '—' }}</td>
+                    <td class="nowrap" data-sort="{{ l.handshake_key }}">
+                        {% if l.handshake %}
+                            <span class="badge online"><span class="led"></span>{{ l.handshake }}</span>
+                        {% else %}
+                            <span class="badge unknown">нет связи</span>
+                        {% endif %}
+                    </td>
+                    <td class="nowrap small muted" data-sort="{{ l.traffic_key }}">↓ {{ l.rx | size }} · ↑ {{ l.tx | size }}</td>
+                    <td class="nowrap">
+                        {% if l.ours %}
+                        <button class="btn sm" data-wg-script="{{ l.name }}">Конфиг</button>
+                        <button class="btn sm danger" data-wg-remove="{{ l.name }}">Удалить</button>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">Линков пока нет. Создайте первый ниже</div>
+    {% endif %}
+</div>
+
+<!-- ------------------------------------------------------------ новый линк -->
+<div class="panel">
+    <h2>Новый линк</h2>
+    <div class="panel-body">
+        <div class="grid cols-2">
+            <div>
+                <div class="field">
+                    <label for="wg-name">Название площадки</label>
+                    <input type="text" id="wg-name" placeholder="Кедр 73">
+                </div>
+                <div class="field">
+                    <label for="wg-ip">Адрес споука в туннеле</label>
+                    <input type="text" id="wg-ip" value="{{ suggested_ip }}">
+                    <div class="hint">Подставлен первый свободный в подсети туннеля.</div>
+                </div>
+            </div>
+            <div>
+                <div class="field">
+                    <label for="wg-subnets">Сети за споуком</label>
+                    <textarea id="wg-subnets" rows="2" placeholder="192.168.55.0/24"></textarea>
+                    <div class="hint">
+                        Здесь указываются сети <strong>дальней</strong> стороны, а не хаба.
+                        Панель предупредит, если перепутать.
+                    </div>
+                </div>
+                <label class="perm">
+                    <input type="checkbox" id="wg-psk" checked>
+                    <span>Дополнительный общий ключ (PSK)
+                        <span class="small muted">Второй слой шифрования, поддерживается обеими сторонами.</span>
+                    </span>
+                </label>
+            </div>
+        </div>
+        <div class="btn-row">
+            <button class="btn primary" onclick="wgCreate({{ hub_id }})">Создать линк</button>
+        </div>
+        <div class="hint" style="margin-top:8px">
+            Приватный ключ споука показывается один раз и нигде не сохраняется.
+            Потеряли скрипт: пересоздайте линк.
+        </div>
+    </div>
+</div>
+
+<!-- -------------------------------------------------------------- маршруты -->
+<div class="panel">
+    <h2>Маршруты
+        <span class="h2-extra muted">через интерфейс туннеля, с меткой панели</span>
+    </h2>
+    {% if routes %}
+    <div class="table-wrap">
+        <table class="sortable">
+            <thead><tr><th>Подсеть</th><th>Шлюз</th><th>Метка</th><th class="no-sort"></th></tr></thead>
+            <tbody>
+            {% for r in routes %}
+                <tr>
+                    <td class="mono">{{ r['dst-address'] }}</td>
+                    <td class="mono small">{{ r.gateway }}</td>
+                    <td class="small muted">{{ r.comment }}</td>
+                    <td class="nowrap">
+                        <button class="btn sm danger" data-wg-route="{{ r['.id'] }}">×</button>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">Маршрутов с меткой панели нет</div>
+    {% endif %}
+    <div class="panel-body">
+        {% if legacy_routes %}
+        <div class="alert warn">
+            Маршрутов через имя интерфейса: {{ legacy_routes }}. Пока пир на интерфейсе
+            один, они работают, но с несколькими роутер отдаёт пакеты не тому.
+            <button class="btn sm" onclick="wgFixGateways({{ hub_id }})">
+                Перевести на туннельные адреса
+            </button>
+        </div>
+        {% endif %}
+        <div class="btn-row">
+            <input type="text" id="wg-route" placeholder="10.30.0.0/24" style="width:190px">
+            <select id="wg-route-gw" style="width:auto">
+                <option value="">шлюз</option>
+                {# По адресу, а не по свежести связи: в списке адресов ищут
+                   глазами нужный, и порядок должен быть предсказуемым.
+                   Сортировка по числу, иначе 10.8.0.9 встанет после .10 #}
+                {% for l in links | selectattr('ours') | selectattr('tunnel_ip')
+                                  | sort(attribute='tunnel_key') %}
+                    <option value="{{ l.tunnel_ip }}">{{ l.tunnel_ip }} · {{ l.name }}</option>
+                {% endfor %}
+            </select>
+            <button class="btn" onclick="wgAddRoute({{ hub_id }})">Добавить маршрут</button>
+        </div>
+        <div class="hint" style="margin-top:8px">
+            В RouterOS <span class="mono">allowed-address</span> у пира решает, какому споуку
+            шифровать пакет, но в таблицу маршрутизации ничего не пишет. Поэтому к сетям
+            за туннелем нужны обычные маршруты, панель создаёт их сама при создании линка.
+            <br>
+            Шлюзом ставится туннельный адрес споука, а не имя интерфейса: когда пиров
+            на интерфейсе несколько, маршрут через интерфейс не говорит роутеру, кому
+            именно отдать пакет.
+        </div>
+    </div>
+</div>
+
+<!-- --------------------------------------------- окно с конфигурацией споука -->
+<div class="modal-backdrop" id="wg-config-modal">
+    <div class="modal wide">
+        <header>
+            <h3>Конфигурация для дальней стороны</h3>
+            <button class="close-x" onclick="closeModal('wg-config-modal')">&times;</button>
+        </header>
+        <div class="body">
+            <div class="btn-row" style="margin-bottom:9px">
+                <button class="btn active" id="wg-tab-rsc" onclick="wgShowTab('rsc')">RouterOS .rsc</button>
+                <button class="btn" id="wg-tab-conf" onclick="wgShowTab('conf')">Обычный клиент</button>
+                <span class="muted">|</span>
+                <button class="btn" onclick="wgCopyConfig()">Скопировать</button>
+                <select id="wg-spoke" style="width:auto">
+                    <option value="">применить на устройстве</option>
+                    {% for d in devices %}
+                        {% if d.id != hub_id %}<option value="{{ d.id }}">{{ d.name }}</option>{% endif %}
+                    {% endfor %}
+                </select>
+                <button class="btn danger" onclick="wgApplySpoke()">Применить</button>
+            </div>
+            <div class="hint" style="margin-bottom:9px">
+                Кнопка «Применить» выполнит этот скрипт на выбранном роутере как обычную
+                задачу: ход виден в разделе «Задачи». Ошибка в подсетях может отрезать
+                удалённую точку, поэтому сначала убедитесь, что сети указаны верно.
+            </div>
+            <div class="wg-config">
+                <textarea id="wg-config-text" rows="20" class="mono" readonly></textarea>
+                <div class="wg-qr" id="wg-qr-box" hidden>
+                    <div id="wg-qr"></div>
+                    <div class="hint">
+                        Отсканируйте приложением WireGuard на телефоне.
+                        Код содержит приватный ключ, поэтому показывать
+                        экран посторонним не стоит.
+                    </div>
+                </div>
+            </div>
+        </div>
+        <footer>
+            <button class="btn" onclick="closeModal('wg-config-modal')">Закрыть</button>
+        </footer>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    wgInit();
+</script>
+{% endblock %}

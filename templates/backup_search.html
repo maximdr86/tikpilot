@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Поиск по конфигурациям · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Поиск по конфигурациям</h1>
+        <div class="sub">
+            По последнему текстовому экспорту каждой точки ·
+            <a href="/backups">к списку копий</a>
+        </div>
+    </div>
+</div>
+
+<form class="filters" method="get" action="/backups/search">
+    <div class="field grow">
+        <label for="s-q">Что искать</label>
+        <input type="search" id="s-q" name="q" value="{{ q }}" autofocus
+               placeholder="адрес, имя правила, кусок строки">
+    </div>
+    <div class="field">
+        <label for="s-device">Точка</label>
+        <select id="s-device" name="device_id">
+            <option value="">Все точки</option>
+            {% for d in devices %}
+                <option value="{{ d.id }}" {% if f_device == d.id|string %}selected{% endif %}>{{ d.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn primary" type="submit">Найти</button>
+    </div>
+</form>
+
+{% if q %}
+<div class="panel">
+    <h2>Найдено
+        <span class="h2-extra muted">
+            точек: {{ found | length }} из {{ scanned }} · совпадений: {{ total_matches }}
+        </span>
+    </h2>
+    {% if found %}
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Точка</th><th>Строки</th><th class="nowrap">Копия от</th></tr></thead>
+            <tbody>
+            {% for item in found %}
+                <tr>
+                    <td>
+                        <strong>{{ item.device_name }}</strong>
+                        <div class="small muted">{{ item.count }} {{ item.count | plural('совпадение', 'совпадения', 'совпадений') }}</div>
+                    </td>
+                    <td>
+                        {% for m in item.matches %}
+                            <div class="mono small"><span class="muted">{{ m.line }}</span> {{ m.text }}</div>
+                        {% endfor %}
+                    </td>
+                    <td class="nowrap small muted">{{ item.created_at | dt_short }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">Ничего не нашлось. Проверено копий: {{ scanned }}</div>
+    {% endif %}
+</div>
+{% else %}
+<div class="panel">
+    <div class="panel-body">
+        <div class="hint">
+            Ищет по последней копии каждой точки, без учёта регистра.
+            Полезно, когда нужно понять, где ещё остался старый адрес сервера
+            или на каких площадках есть правило, которое собрались менять.
+            <br>
+            Точки, с которых ни разу не снимали текстовый экспорт, в поиск
+            не попадают: искать там нечего.
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

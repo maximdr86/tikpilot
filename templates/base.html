@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Tikpilot{% endblock %}</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='4' y='4' width='24' height='24' rx='4' fill='%233b6ea5'/></svg>">
+    {# Тема применяется до отрисовки, иначе страница мигнёт светлым #}
+    <script>
+        try {
+            var t = localStorage.getItem('tikpilot-theme');
+            if (t) { document.documentElement.dataset.theme = t; }
+        } catch (e) { /* приватный режим */ }
+    </script>
+    {# Страницам иногда нужен свой стиль. Единственный такой случай это
+       терминал: эмулятор поставляется со своей таблицей стилей. #}
+    {% block head %}{% endblock %}
+</head>
+<body>
+<div class="layout">
+
+    <!-- ------------------------------------------------------ боковое меню -->
+    <aside class="sidebar">
+        <div class="brand"><span class="dot"></span> Tikpilot</div>
+
+        <div class="nav-group">Обзор</div>
+        <a class="nav-link {% if active == 'dashboard' %}active{% endif %}" href="/">Дашборд</a>
+        <a class="nav-link {% if active == 'monitoring' %}active{% endif %}" href="/monitoring">
+            Мониторинг
+            {% if offline_count %}<span class="count">{{ offline_count }}</span>{% endif %}
+        </a>
+
+        <div class="nav-group">Парк</div>
+        <a class="nav-link {% if active == 'devices' %}active{% endif %}" href="/devices">Устройства</a>
+        <a class="nav-link {% if active == 'groups' %}active{% endif %}" href="/groups">Группы</a>
+        {% if can("clients.view") %}
+        <a class="nav-link {% if active == 'clients' %}active{% endif %}" href="/clients">Клиенты</a>
+        {% endif %}
+        {% if can("wireguard.manage") %}
+        <a class="nav-link {% if active == 'wireguard' %}active{% endif %}" href="/wireguard">WireGuard</a>
+        {% endif %}
+
+        <div class="nav-group">Операции</div>
+        <a class="nav-link {% if active == 'jobs' %}active{% endif %}" href="/jobs">
+            Задачи{% if running_jobs %}<span class="count">{{ running_jobs }}</span>{% endif %}
+        </a>
+        {% if can("backups.view") %}<a class="nav-link {% if active == 'backups' %}active{% endif %}" href="/backups">Бэкапы</a>{% endif %}
+        {# Один пункт на два журнала: вопрос у человека один, «что тут
+           происходило», а источника два. Ведём туда, на что есть право. #}
+        {% if can("terminal.use") %}<a class="nav-link {% if active == 'terminal' %}active{% endif %}" href="/terminal">Терминал</a>{% endif %}
+        <a class="nav-link {% if active == 'scripts' %}active{% endif %}" href="/scripts">Скрипты</a>
+        {% if can("syslog.view") or can("console.view") or can("visits.view") %}
+        <a class="nav-link {% if active in ('syslog', 'console', 'visits') %}active{% endif %}"
+           href="{% if can('syslog.view') %}/syslog{% elif can('console.view') %}/console{% else %}/logs/visits{% endif %}">Логи</a>
+        {% endif %}
+        {% if can("history.view") %}<a class="nav-link {% if active == 'history' %}active{% endif %}" href="/history">История</a>{% endif %}
+
+        <div class="nav-spacer"></div>
+
+        <div class="nav-group">Система</div>
+        {% if can("settings.view") %}
+        <a class="nav-link {% if active == 'settings' %}active{% endif %}" href="/settings">
+            Настройки<span class="count quiet">{{ user.username }}</span>
+        </a>
+        {% endif %}
+        <button class="nav-link" style="background:none;border:none;cursor:pointer;font:inherit;width:100%;text-align:left"
+                onclick="toggleTheme()">Сменить тему</button>
+        <a class="nav-link" href="/logout">Выход</a>
+
+        {# Переключатель языка. Текущий язык не ссылка — нажимать некуда. #}
+        <div class="lang-switch">
+            {% for code, name in languages %}
+                {% if code == lang %}
+                    <span class="lang current">{{ name }}</span>
+                {% else %}
+                    <a class="lang" href="/lang/{{ code }}?next={{ request.url.path }}">{{ name }}</a>
+                {% endif %}
+            {% endfor %}
+        </div>
+
+        <div class="nav-foot">Tikpilot {{ app_version }}</div>
+    </aside>
+
+    <!-- --------------------------------------------------------- контент -->
+    <main class="content">
+        {% block content %}{% endblock %}
+    </main>
+</div>
+
+{# Модальное окно массового действия доступно на всех страницах #}
+{% include "partials/action_modal.html" %}
+
+{# Словарь для строк, зашитых в app.js. Готовится на сервере: браузер
+   не знает ни выбранного языка, ни каталога. #}
+<script>window.I18N = {{ js_i18n | tojson }};</script>
+{% include "partials/validation_js.html" %}
+<script src="/static/sort.js"></script>
+<script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

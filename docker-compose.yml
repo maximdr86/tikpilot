@@ -1,0 +1,26 @@
+services:
+  tikpilot:
+    build: .
+    image: tikpilot:latest
+    container_name: tikpilot
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Здесь живут база, ключи шифрования и скачанные бэкапы
+      - ./data:/data
+    environment:
+      DATA_DIR: /data
+      # Учётка администратора создаётся только при первом запуске
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      # Ключи: если не задать, будут созданы автоматически в /data
+      SECRET_KEY: ${SECRET_KEY:-}
+      FERNET_KEY: ${FERNET_KEY:-}
+      # Параллелизм опроса устройств и таймауты
+      MAX_WORKERS: ${MAX_WORKERS:-12}
+      API_TIMEOUT: ${API_TIMEOUT:-10}
+      FTP_TIMEOUT: ${FTP_TIMEOUT:-30}
+      JOB_RETENTION_DAYS: ${JOB_RETENTION_DAYS:-90}
+      # Включите, если ставите за HTTPS-прокси
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}

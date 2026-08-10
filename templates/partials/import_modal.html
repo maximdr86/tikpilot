@@ -1,0 +1,45 @@
+{# Массовая загрузка устройств из CSV — удобно при первичном наполнении базы. #}
+<div class="modal-backdrop" id="import-modal">
+    <div class="modal">
+        <form id="import-form" onsubmit="importCsv(event)">
+            <header>
+                <h3>Импорт устройств из CSV</h3>
+                <button type="button" class="close-x" onclick="closeModal('import-modal')">&times;</button>
+            </header>
+
+            <div class="body">
+                <div class="alert info">
+                    Первая строка файла это заголовки. Распознаются колонки:
+                    <span class="mono">name, host, username, password, api_port, ftp_port, group, comment</span>.
+                    Разделитель (<span class="mono">,</span> или <span class="mono">;</span>) определяется автоматически.
+                    Несуществующие группы создаются на лету.
+                </div>
+
+                <div class="field">
+                    <label for="import-file">Файл CSV *</label>
+                    <input type="file" id="import-file" name="file" accept=".csv,text/csv" required>
+                </div>
+
+                <div class="field">
+                    <label for="import-group">Группа по умолчанию (если колонка group пустая)</label>
+                    <select id="import-group" name="default_group">
+                        <option value="">без группы</option>
+                        {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+                    </select>
+                </div>
+
+                <details>
+                    <summary class="muted small" style="cursor:pointer">Пример файла</summary>
+                    <pre class="mono small" style="background:var(--panel-2);padding:10px;border-radius:8px;overflow:auto">name;host;username;password;group;comment
+core-01;10.0.0.1;tikpilot;Secret123;Core;{{ _("магистраль") }}
+acc-01;10.0.1.10;tikpilot;Secret123;Access;{{ _("подъезд 1") }}</pre>
+                </details>
+            </div>
+
+            <footer>
+                <button type="button" class="btn" onclick="closeModal('import-modal')">Отмена</button>
+                <button type="submit" class="btn primary">Импортировать</button>
+            </footer>
+        </form>
+    </div>
+</div>

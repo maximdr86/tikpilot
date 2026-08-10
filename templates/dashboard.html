@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block title %}Дашборд · Tikpilot{% endblock %}
+
+{% block content %}
+{% if armed_rollbacks %}
+{# Первое, что человек видит, открыв панель. Через несколько минут эти
+   точки сами вернутся к прежней конфигурации и перезагрузятся, и узнать
+   об этом постфактум из истории куда неприятнее. #}
+<div class="alert warn">
+    <strong>Ждут подтверждения:</strong>
+    {% for r in armed_rollbacks %}
+        <a href="/devices/{{ r.device_id }}">{{ r.device_name }}</a>
+        <span class="small muted">до {{ r.expires_at | dt_short }}</span>{% if not loop.last %} · {% endif %}
+    {% endfor %}
+    <div class="small" style="margin-top:4px">
+        Без подтверждения устройства откатят конфигурацию сами и перезагрузятся.
+    </div>
+    <div class="btn-row" style="margin-top:8px">
+        <button class="btn primary" onclick="confirmAllRollbacks(this)">
+            Подтвердить все ({{ armed_rollbacks | length }})
+        </button>
+    </div>
+</div>
+<script>
+    /**
+     * Снять все страховки разом.
+     *
+     * Взвести можно на весь парк одним нажатием, значит и снимать надо
+     * так же. Обход занимает секунды, но кнопку на это время блокируем:
+     * второе нажатие пошлёт второй обход по тем же точкам.
+     */
+    async function confirmAllRollbacks(button) {
+        button.disabled = true;
+        button.textContent = T('Подтверждаю...');
+        try {
+            const data = await api('/api/rollbacks/confirm-all', { method: 'POST' });
+            if (data.failed) {
+                toast(T('Не удалось снять: ') + data.failed, 'error');
+            }
+            window.location.reload();
+        } catch (err) {
+            toast(err.message, 'error');
+            button.disabled = false;
+        }
+    }
+</script>
+{% endif %}
+
+{# Человек, зарегистрировавшийся по приглашению, попадает сюда первым делом
+   и видит пустой экран. Без объяснения это выглядит как поломка, а не как
+   «прав ещё не выдали». #}
+{% if not user.permissions %}
+<div class="alert">
+    Учётная запись создана, но прав у неё пока нет. Разделы панели откроются,
+    когда администратор их выдаст. Пароль знаете только вы, менять его через
+    администратора не нужно.
+</div>
+{% endif %}
+
+<div class="page-head">
+    <div>
+        <h1>Дашборд</h1>
+        <div class="sub">
+            Общее состояние парка устройств
+            {% if monitor_on %}
+                · <a href="/monitoring">мониторинг работает</a>,
+                последняя проверка {{ monitor_state.last_cycle | dt_short }}
+            {% else %}
+                · <span class="badge unknown">мониторинг выключен</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="btn-row">
+        <button class="btn primary" onclick="openActionModal({all:true}, '{{ _("ВСЕ устройства (%(p0)s шт.)", p0=(stats.total or 0)) }}', 'check')">
+            Проверить все
+        </button>
+        <button class="btn" onclick="openActionModal({all:true}, '{{ _("ВСЕ устройства (%(p0)s шт.)", p0=(stats.total or 0)) }}', 'check_updates')">
+            Проверить обновления
+        </button>
+        <a class="btn" href="/monitoring">Мониторинг</a>
+    </div>
+</div>
+
+<!-- ------------------------------------------------------------- плитки -->
+<div class="grid cols-4">
+    <div class="stat info">
+        <div class="label">Всего устройств</div>
+        <div class="value" id="s-total">{{ stats.total or 0 }}</div>
+    </div>
+    <div class="stat ok">
+        <div class="label">В сети</div>
+        <div class="value" id="s-online">{{ stats.online or 0 }}</div>
+    </div>
+    <div class="stat err">
+        <div class="label">Не отвечают</div>
+        <div class="value" id="s-offline">{{ stats.offline or 0 }}</div>
+    </div>
+    <div class="stat warn">
+        <div class="label">Не проверялись</div>
+        <div class="value" id="s-unknown">{{ stats.unknown or 0 }}</div>
+    </div>
+</div>
+
+<!-- --------------------------------------------------- ждут обновления -->
+{% if pending_updates %}
+<div class="panel">
+    <h2>
+        Доступны обновления RouterOS
+        <span class="h2-extra muted">{{ pending_updates | length }} {{ pending_updates | length | plural('устройство', 'устройства', 'устройств') }}</span>
+    </h2>
+    <div class="panel-body">
+        <div class="btn-row">
+            <button class="btn danger"
+                    onclick="openActionModal({device_ids: {{ pending_updates | map(attribute='id') | list | tojson }}},
+                                             '{{ _("устройства с доступным обновлением (%(p0)s шт.)", p0=(pending_updates | length)) }}',
+                                             'upgrade_ros')">
+                Обновить все, где есть обновление
+            </button>
+            <a class="btn" href="/devices?status=update">Показать списком</a>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Имя</th><th>Адрес</th><th class="nowrap">Установлено</th><th class="nowrap">Доступно</th><th class="nowrap">Канал</th></tr></thead>
+            <tbody>
+            {% for d in pending_updates %}
+                <tr>
+                    <td><a href="/devices/{{ d.id }}">{{ d.name }}</a></td>
+                    <td class="mono">{{ d.host }}</td>
+                    <td class="mono">{{ d.ros_version }}</td>
+                    <td class="mono" style="color:var(--warn)">{{ d.latest_version }}</td>
+                    <td class="small muted">{{ d.update_channel or '—' }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- ------------------------------------------------------ недоступные -->
+{% if offline %}
+<div class="panel">
+    <h2>
+        Недоступные устройства
+        <span class="h2-extra"><a href="/monitoring">вся картина в мониторинге →</a></span>
+    </h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Имя</th><th>Адрес</th><th>Ошибка</th><th class="nowrap">Проверка</th></tr></thead>
+            <tbody>
+            {% for d in offline %}
+                <tr>
+                    <td><a href="/devices/{{ d.id }}">{{ d.name }}</a></td>
+                    <td class="mono">{{ d.host }}</td>
+                    <td class="small muted">{{ d.last_error | t }}</td>
+                    <td class="nowrap small muted">{{ d.last_check | dt_short }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="grid cols-2">
+    <!-- ------------------------------------------------------ по группам -->
+    <div class="panel">
+        <h2>По группам</h2>
+        {% if groups %}
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Группа</th><th class="nowrap">Всего</th><th class="nowrap">В сети</th><th></th></tr></thead>
+                <tbody>
+                {% for g in groups %}
+                    <tr>
+                        <td><span class="badge tag-{{ g.color or 'slate' }}">{{ g.name | t }}</span></td>
+                        <td>{{ g.total }}</td>
+                        <td>{{ g.online or 0 }}</td>
+                        <td class="nowrap"><a class="small" href="/devices?group_id={{ g.id }}">открыть</a></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty">Групп пока нет. <a href="/groups">Создать первую</a></div>
+        {% endif %}
+    </div>
+
+    <!-- ------------------------------------------------- версии RouterOS -->
+    <div class="panel">
+        <h2>Версии RouterOS</h2>
+        {% if versions %}
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Версия</th><th class="nowrap">Устройств</th></tr></thead>
+                <tbody>
+                {% for v in versions %}
+                    <tr><td class="mono">{{ v.ros_version }}</td><td>{{ v.c }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty">Нет данных. Запустите проверку устройств</div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- ------------------------------------------------------ последние задачи -->
+<div class="panel">
+    <h2>Последние задачи <span class="h2-extra"><a href="/jobs">вся история →</a></span></h2>
+    {% if recent_jobs %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+            <tr><th>#</th><th>Действие</th><th>Кто</th><th class="nowrap">Прогресс</th><th>Статус</th><th class="nowrap">Когда</th></tr>
+            </thead>
+            <tbody>
+            {% for j in recent_jobs %}
+                <tr>
+                    <td><a href="/jobs/{{ j.id }}">{{ j.id }}</a></td>
+                    <td>{{ j.action_label | t }}</td>
+                    <td class="muted">{{ j.username }}</td>
+                    <td class="nowrap small">
+                        {# Числа без подписей читаются как загадка: «47 / 2» может
+                           быть чем угодно. Слова длиннее, зато не требуют догадок. #}
+                        {{ j.done }}/{{ j.total }} ·
+                        <span style="color:var(--ok)">{{ j.ok_count }} успешно</span>
+                        {% if j.fail_count %}
+                            · <span style="color:var(--err)">{{ j.fail_count }} с ошибкой</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="badge {{ j.status }}">{{ {'pending':'В очереди','running':'Выполняется','done':'Завершена','cancelled':'Отменена'}.get(j.status, j.status) | t }}</span></td>
+                    <td class="nowrap small muted">{{ j.created_at | dt_short }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">Задач ещё не было</div>
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Плитки обновляются сами — дашборд можно держать открытым
+    setInterval(async () => {
+        if (document.hidden) { return; }
+        try {
+            const s = await api('/api/stats');
+            document.getElementById('s-total').textContent   = s.total   || 0;
+            document.getElementById('s-online').textContent  = s.online  || 0;
+            document.getElementById('s-offline').textContent = s.offline || 0;
+            document.getElementById('s-unknown').textContent = s.unknown || 0;
+        } catch (e) { /* игнорируем разовые сбои */ }
+    }, {{ ui_refresh_interval * 1000 }});
+</script>
+{% endblock %}

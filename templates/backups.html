@@ -1,0 +1,366 @@
+{% extends "base.html" %}
+{% block title %}Бэкапы · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Бэкапы</h1>
+        <div class="sub">
+            {% if filtered %}
+                Найдено: {{ found_count }} · {{ found_size | size }}
+                <span class="muted">(всего {{ total_count }} · {{ total_size | size }})</span>
+            {% else %}
+                Файлов: {{ total_count }} · Занято: {{ total_size | size }}
+            {% endif %}
+        </div>
+    </div>
+    <div class="btn-row">
+        <a class="btn" href="/backups/search">Поиск по конфигурациям</a>
+        <button class="btn primary" onclick="openActionModal({all:true}, '{{ _("ВСЕ устройства") }}', 'backup')">
+            Снять бэкап со всех
+        </button>
+    </div>
+</div>
+
+<!-- --------------------------------------------------------------- фильтры -->
+<form class="filters" method="get" action="/backups">
+    <div class="field grow">
+        <label for="b-q">Поиск</label>
+        <input type="search" id="b-q" name="q" value="{{ f_q }}"
+               placeholder="имя устройства или файла">
+    </div>
+    <div class="field">
+        <label for="b-device">Устройство</label>
+        <select id="b-device" name="device_id">
+            <option value="">Все устройства</option>
+            {% for d in devices %}
+                <option value="{{ d.id }}" {% if f_device == d.id|string %}selected{% endif %}>{{ d.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="b-kind">Тип</label>
+        <select id="b-kind" name="kind">
+            <option value="">Любой</option>
+            <option value="binary" {% if f_kind == 'binary' %}selected{% endif %}>Бинарный</option>
+            <option value="export" {% if f_kind == 'export' %}selected{% endif %}>Export</option>
+        </select>
+    </div>
+    <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn primary" type="submit">Найти</button>
+    </div>
+    {% if filtered %}
+    <div class="field">
+        <label>&nbsp;</label>
+        <a class="btn" href="/backups">Сбросить</a>
+    </div>
+    {% endif %}
+    <div class="field">
+        <label>&nbsp;</label>
+        <div class="hint" style="padding:7px 0">Заголовки таблицы кликабельны: сортировка</div>
+    </div>
+</form>
+
+<div class="panel">
+<div class="table-wrap">
+    <table class="sortable" id="backups-table">
+        <thead>
+        <tr>
+            <th>Устройство</th>
+            <th>Файл</th>
+            <th class="nowrap">Тип</th>
+            <th class="nowrap">Размер</th>
+            <th class="nowrap">Создан</th>
+            <th class="no-sort"></th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for b in backups %}
+            <tr>
+                <td>
+                    {% if b.device_id %}<a href="/devices/{{ b.device_id }}">{{ b.device_name }}</a>
+                    {% else %}{{ b.device_name }}{% endif %}
+                </td>
+                <td class="mono small">{{ b.filename.split('/')[-1] }}</td>
+                <td class="nowrap"><span class="badge">{{ ('бинарный' if b.kind == 'binary' else 'export') | t }}</span></td>
+                {# data-sort с числом и меткой времени: иначе «1,2 МиБ» и «сегодня 14:31»
+                   сортировались бы как текст, то есть бессмысленно #}
+                <td class="nowrap small" data-sort="{{ b.size }}">{{ b.size | size }}</td>
+                <td class="nowrap small muted" data-sort="{{ b.created_at }}">{{ b.created_at | dt_short }}</td>
+                <td class="nowrap">
+                    {% if b.kind == 'export' %}
+                        <a class="btn sm" href="/backups/{{ b.id }}/diff">Изменения</a>
+                    {% endif %}
+                    <a class="btn sm" href="/backups/{{ b.id }}/download">Скачать</a>
+                    <button class="btn sm danger" onclick="deleteBackup({{ b.id }})">×</button>
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="6" class="empty">
+                {% if filtered %}По этому запросу ничего не найдено
+                {% else %}Бэкапов пока нет. Запустите действие «Снять бэкап»{% endif %}
+            </td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+</div>
+
+{% include "partials/pager.html" %}
+
+<!-- ------------------------------------------------------------ расписание -->
+{% if can('backups.schedule') %}
+<div class="panel">
+    <h2>Расписание
+        <span class="h2-extra muted">{{ rules | length }} правил</span>
+    </h2>
+    {% if rules %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+            <tr>
+                <th>Что снимать</th>
+                <th class="nowrap">Когда</th>
+                <th class="nowrap">Хранить</th>
+                <th>Последний запуск</th>
+                <th class="nowrap">Следующий</th>
+                <th class="no-sort"></th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for r in rules %}
+                <tr {% if not r.enabled %}class="muted"{% endif %}>
+                    <td>
+                        <strong>{{ r.target_label | t }}</strong>
+                        {% if r.name %}<div class="small muted">{{ r.name }}</div>{% endif %}
+                        {% if r.target != 'panel' %}
+                            <div class="small muted">
+                                {% if r.do_binary %}.backup{% endif %}
+                                {% if r.do_binary and r.do_export %}·{% endif %}
+                                {% if r.do_export %}.rsc{% endif %}
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td class="nowrap">{{ r.at_time }} <span class="small muted">{{ r.days_label | t }}</span></td>
+                    <td class="nowrap">{{ r.keep }}</td>
+                    <td class="small muted">{{ r.last_result | t or '—' }}</td>
+                    <td class="nowrap small muted">
+                        {% if r.enabled %}{{ r.next_run_at | dt_short }}{% else %}выключено{% endif %}
+                    </td>
+                    <td class="nowrap">
+                        <button class="btn sm" onclick="runRule({{ r.id }})">Запустить</button>
+                        <button class="btn sm" onclick="toggleRule({{ r.id }})">
+                            {% if r.enabled %}Выключить{% else %}Включить{% endif %}
+                        </button>
+                        <button class="btn sm danger" onclick="deleteRule({{ r.id }})">×</button>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">Правил пока нет, бэкапы снимаются только вручную</div>
+    {% endif %}
+
+    <div class="panel-body">
+        <div class="grid cols-3">
+            <div class="field">
+                <label for="r-target">Что снимать</label>
+                <select id="r-target" onchange="ruleTargetChanged()">
+                    <option value="all">Все устройства</option>
+                    <option value="group">Группу</option>
+                    {% if can('panel.backup') %}<option value="panel">Архив панели</option>{% endif %}
+                </select>
+            </div>
+            <div class="field" id="r-group-field" style="display:none">
+                <label for="r-group">Группа</label>
+                <select id="r-group">
+                    {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label for="r-time">Время</label>
+                <input type="time" id="r-time" value="03:00">
+                <div class="hint">Местное время сервера.</div>
+            </div>
+        </div>
+
+        <div class="field">
+            <label>Дни недели</label>
+            <div class="btn-row">
+                {% for number, short in weekdays %}
+                    <label class="check">
+                        <input type="checkbox" class="r-day" value="{{ number }}">
+                        <span>{{ short | t }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+            <div class="hint">Ничего не отмечено: ежедневно.</div>
+        </div>
+
+        <div class="grid cols-3">
+            <div class="field">
+                <label for="r-keep">Хранить копий</label>
+                <input type="number" id="r-keep" value="14" min="1" max="999">
+                <div class="hint">На устройство и на каждый вид файла. Лишние удаляются сразу после снятия новых.</div>
+            </div>
+            <div class="field">
+                <label>Что снимать с устройств</label>
+                <label class="check"><input type="checkbox" id="r-binary" checked><span>Бинарный .backup</span></label>
+                <label class="check"><input type="checkbox" id="r-export" checked><span>Текстовый .rsc</span></label>
+            </div>
+            <div class="field">
+                <label for="r-name">Подпись</label>
+                <input type="text" id="r-name" placeholder="необязательно">
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn primary" onclick="createRule()">Добавить правило</button>
+        </div>
+        <div class="hint" style="margin-top:8px">
+            Пароли в текстовый export по расписанию не попадают: такой файл лежит
+            на диске месяцами, и решение о нём принимается руками.
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- ---------------------------------------------------------- архив панели -->
+{% if can('panel.backup') %}
+<div class="panel">
+    <h2>Архив панели
+        <span class="h2-extra muted">всё нужное, чтобы поднять панель заново</span>
+    </h2>
+    <div class="panel-body">
+        <div class="alert warn">
+            В архиве лежит ключ шифрования вместе с базой, поэтому из него достаются
+            пароли всех роутеров. Считайте файл связкой ключей от всех площадок:
+            не оставляйте на флешке и не отправляйте почтой без своего шифрования.
+        </div>
+        <div class="hint">
+            Нужен на случай гибели сервера: бэкапы роутеров лежат на нём же, и вместе
+            с ним пропадёт ровно то, ради чего они снимались.
+            <br>
+            Внутри лежит не только копия данных, но и сам код этой версии со скриптом
+            разворачивания. На чистой Ubuntu хватит двух команд:
+            <span class="mono">tar xzf tikpilot-panel-*.tar.gz</span> и
+            <span class="mono">sudo bash restore.sh</span> из распакованной папки.
+            Скрипт разложит данные, поставит зависимости, заведёт службу и проверит,
+            что база читается, а пароли расшифровываются. Прежняя установка, если она
+            есть, не удаляется, а отодвигается в сторону.
+        </div>
+        <div class="btn-row" style="margin-top:9px">
+            <button class="btn primary" onclick="makePanelBackup(true)">Собрать архив</button>
+            <button class="btn" onclick="makePanelBackup(false)">Только база и настройки</button>
+        </div>
+    </div>
+
+    {% if archives %}
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Файл</th><th class="nowrap">Размер</th><th class="nowrap">Создан</th><th class="no-sort"></th></tr></thead>
+            <tbody>
+            {% for a in archives %}
+                <tr>
+                    <td class="mono small">{{ a.name }}</td>
+                    <td class="nowrap">{{ a.size | size }}</td>
+                    <td class="nowrap small muted">{{ a.created_at | dt_short }}</td>
+                    <td class="nowrap">
+                        <a class="btn sm" href="/panel-backup/{{ a.name }}">Скачать</a>
+                        <button class="btn sm danger" onclick="deletePanelBackup('{{ a.name }}')">×</button>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    /** Удалить файл бэкапа с сервера. */
+    async function deleteBackup(id) {
+        if (!confirm(T('Удалить файл бэкапа с сервера?'))) { return; }
+        try {
+            await api(`/api/backups/${id}/delete`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    /* ------------------------------------------------------------ расписание */
+
+    function ruleTargetChanged() {
+        const target = document.getElementById('r-target').value;
+        document.getElementById('r-group-field').style.display =
+            target === 'group' ? '' : 'none';
+    }
+
+    async function createRule() {
+        const days = Array.from(document.querySelectorAll('.r-day:checked'))
+            .map((cb) => cb.value).join(',');
+        try {
+            await api('/api/backup-schedules', { json: {
+                target: document.getElementById('r-target').value,
+                group_id: document.getElementById('r-group').value,
+                at_time: document.getElementById('r-time').value,
+                days: days,
+                keep: document.getElementById('r-keep').value,
+                do_binary: document.getElementById('r-binary').checked,
+                do_export: document.getElementById('r-export').checked,
+                name: document.getElementById('r-name').value,
+            }});
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function toggleRule(id) {
+        try {
+            await api(`/api/backup-schedules/${id}/toggle`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function runRule(id) {
+        try {
+            const data = await api(`/api/backup-schedules/${id}/run`, { method: 'POST' });
+            toast(data.result || T('Готово'), 'ok');
+            setTimeout(() => window.location.reload(), 1200);
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function deleteRule(id) {
+        if (!confirm(T('Удалить правило? Уже снятые копии останутся на месте.'))) { return; }
+        try {
+            await api(`/api/backup-schedules/${id}/delete`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    /* ---------------------------------------------------------- архив панели */
+
+    async function makePanelBackup(includeBackups) {
+        if (!confirm(T('Собрать архив? В нём будут пароли всех роутеров в восстановимом виде.'))) { return; }
+        toast(T('Собираю архив, это может занять время'), '');
+        try {
+            await api('/api/panel-backup', { json: { include_backups: includeBackups } });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function deletePanelBackup(name) {
+        if (!confirm(T('Удалить архив панели?'))) { return; }
+        try {
+            await api(`/api/panel-backup/${encodeURIComponent(name)}/delete`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    ruleTargetChanged();
+</script>
+{% endblock %}

@@ -1,0 +1,589 @@
+{% extends "base.html" %}
+{% block title %}Скрипты · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Скрипты</h1>
+        <div class="sub">
+            Заготовки команд и то, что реально лежит на точках
+        </div>
+    </div>
+    <div class="btn-row">
+        {% if can_edit %}
+            <button class="btn primary" onclick="editSnippet(0)">Добавить</button>
+        {% endif %}
+    </div>
+</div>
+
+<!-- --------------------------------------------------------------- библиотека -->
+<div class="panel">
+    <h2>Библиотека
+        <span class="h2-extra muted">записей: {{ snippets | length }}</span>
+    </h2>
+    {% if snippets %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+            <tr>
+                <th>Название</th>
+                <th>Что создаёт</th>
+                <th class="nowrap">Где стоит</th>
+                <th class="nowrap">Где нет</th>
+                <th class="no-sort"></th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for s in snippets %}
+                <tr>
+                    <td>
+                        <strong>{{ s.name }}</strong>
+                        {% if s.note %}<div class="small muted">{{ s.note }}</div>{% endif %}
+                        <div class="small muted">изменено {{ s.updated_at | dt_short }}</div>
+                    </td>
+                    <td class="mono small">
+                        {# Имён обычно два: скрипт и расписание, которое его
+                           запускает. Оба нужны, иначе панель считает своё же
+                           расписание заведённым мимо неё #}
+                        {% for m in s.marker.split(',') if m.strip() %}
+                            <div>{{ m.strip() }}</div>
+                        {% else %}
+                            <span class="muted">имя не задано</span>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {# «Нигде не найдено» и «нечего искать» это разные ответы,
+                           и путать их нельзя: второе означает, что счётчик
+                           просто не настроен. #}
+                        {% if not s.marker %}
+                            <span class="muted small">неизвестно</span>
+                        {% elif s.devices %}
+                            <a href="#" onclick="showSnippetDevices({{ s.id }}, 'devices');return false">
+                                {{ s.devices | length }}
+                                {{ s.devices | length | plural('точка', 'точки', 'точек') }}
+                            </a>
+                            {# Имена сразу, а не только счётчик: список по клику
+                               годится для парка целиком, но не для вопроса
+                               «а у кого именно» про пару точек #}
+                            <div class="small">
+                                {% for d in s.devices[:5] %}
+                                    <a href="/devices/{{ d.id }}">{{ d.name }}</a>{%
+                                        if not loop.last %}, {% endif %}
+                                {% endfor %}
+                                {% if s.devices | length > 5 %}
+                                    <span id="sn-rest-{{ s.id }}" style="display:none">,
+                                        {% for d in s.devices[5:] %}
+                                            <a href="/devices/{{ d.id }}">{{ d.name }}</a>{%
+                                                if not loop.last %}, {% endif %}
+                                        {% endfor %}
+                                    </span>
+                                    <a href="#" id="sn-more-{{ s.id }}" class="muted"
+                                       onclick="showRest('sn', {{ s.id }});return false">
+                                        и ещё {{ s.devices | length - 5 }}</a>
+                                {% endif %}
+                            </div>
+                        {% else %}
+                            <span class="badge unknown">нигде</span>
+                        {% endif %}
+                    </td>
+                    <td class="nowrap">
+                        {% if s.marker %}
+                            {% if s.missing %}
+                                <a href="#" onclick="showSnippetDevices({{ s.id }}, 'missing');return false">
+                                    <span class="badge pending">{{ s.missing | length }}</span>
+                                </a>
+                            {% else %}
+                                <span class="muted small">везде стоит</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="muted small">неизвестно</span>
+                        {% endif %}
+                    </td>
+                    <td class="nowrap">
+                        {# «Раскатать», а не «Запустить»: команды ставят скрипт
+                           и расписание, а работает он потом сам. Кнопка с именем
+                           «Запустить» читалась как «выполнить прямо сейчас». #}
+                        {% if can_edit %}
+                            <button class="btn sm primary" onclick="deploySnippet({{ s.id }})">Раскатать</button>
+                            <button class="btn sm" onclick="editSnippet({{ s.id }})">Изменить</button>
+                            <button class="btn sm danger" onclick="deleteSnippet({{ s.id }})">×</button>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">
+        Библиотека пуста. Сохраните сюда команду, которую придётся повторять:
+        watchdog, настройку журнала, список разрешённых сетей.
+    </div>
+    {% endif %}
+</div>
+
+<!-- ------------------------------------------------------- что есть на точках -->
+<div class="panel" data-fold="fleet-scripts">
+    <h2>Что стоит на точках
+        <span class="h2-extra muted">по данным паспорта устройств</span>
+    </h2>
+    {% if fleet %}
+    {# Фильтр ищет и по имени скрипта, и по именам точек: вопрос обычно
+       звучит как «что стоит на этой точке», а не только «где стоит это» #}
+    <div class="field">
+        <input type="text" id="fleet-filter" placeholder="фильтр по имени скрипта или точки"
+               oninput="filterFleet()">
+    </div>
+    <div class="table-wrap">
+        <table class="sortable" id="fleet-table">
+            <thead>
+            <tr>
+                <th>Имя</th>
+                <th class="nowrap">Вид</th>
+                <th class="num nowrap">Точек</th>
+                <th class="no-sort">На каких точках</th>
+                <th class="num nowrap">Выключено</th>
+                <th>В библиотеке</th>
+                {% if can_remove %}<th class="no-sort"></th>{% endif %}
+            </tr>
+            </thead>
+            <tbody>
+            {% for f in fleet %}
+                <tr>
+                    <td class="mono">{{ f.name }}</td>
+                    <td class="nowrap small muted">
+                        {% if f.kind == 'scheduler' %}расписание{% else %}скрипт{% endif %}
+                    </td>
+                    <td class="num">{{ f.devices | length }}</td>
+                    <td class="small">
+                        {# Имена прямо в строке, а не по клику: искать точку,
+                           где завалялся единственный telegram_on_boot, ради
+                           этого и приходилось обходить парк. Длинные списки
+                           подрезаны, остальное разворачивается в этой же
+                           ячейке: отдельная строка таблицы уезжает при
+                           сортировке, а окно приходится открывать. #}
+                        {% for d in f.devices[:6] %}
+                            <a href="/devices/{{ d.id }}">{{ d.name }}</a>{%
+                                if d.disabled %} <span class="muted">выкл</span>{% endif %}{%
+                                if not loop.last %}, {% endif %}
+                        {% endfor %}
+                        {% if f.devices | length > 6 %}
+                            <span id="fl-rest-{{ loop.index0 }}" style="display:none">,
+                                {% for d in f.devices[6:] %}
+                                    <a href="/devices/{{ d.id }}">{{ d.name }}</a>{%
+                                        if d.disabled %} <span class="muted">выкл</span>{% endif %}{%
+                                        if not loop.last %}, {% endif %}
+                                {% endfor %}
+                            </span>
+                            <a href="#" id="fl-more-{{ loop.index0 }}" class="muted"
+                               onclick="showRest('fl', {{ loop.index0 }});return false">
+                                и ещё {{ f.devices | length - 6 }}</a>
+                        {% endif %}
+                    </td>
+                    <td class="num {% if f.off %}muted{% endif %}">{{ f.off or '' }}</td>
+                    <td class="small">
+                        {% if f.known %}<span class="badge online">есть</span>
+                        {% else %}<span class="muted">нет, заведено вне панели</span>{% endif %}
+                    </td>
+                    {% if can_remove %}
+                    <td class="nowrap">
+                        {# Удаление идёт ровно по тем точкам, где запись нашлась
+                           при обходе, поэтому выбирать их руками не нужно #}
+                        <button class="btn sm danger"
+                                onclick="removeFleet({{ loop.index0 }})">Удалить</button>
+                    </td>
+                    {% endif %}
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">
+        Паспорта устройств ещё не собраны. Скрипты появятся здесь после
+        полного опроса или после кнопки «Собрать сейчас» в карточке точки.
+    </div>
+    {% endif %}
+</div>
+
+<!-- --------------------------------------------------------------- где стоит -->
+{# Окно, а не раскрывающаяся строка: таблица сортируется по клику на заголовок,
+   и вторая строка уезжает от своего числа. Плюс сорок девять имён в одну
+   ячейку не помещаются, а здесь есть поиск. #}
+<div class="modal-backdrop" id="devices-modal">
+    <div class="modal">
+        <header>
+            <h3 id="dv-title">Где стоит</h3>
+            <button type="button" class="close-x" onclick="closeModal('devices-modal')">&times;</button>
+        </header>
+        <div class="body">
+            <div class="field">
+                <input type="text" id="dv-filter" placeholder="поиск по имени точки"
+                       oninput="renderDeviceList()">
+            </div>
+            <div id="dv-list" class="dv-list"></div>
+        </div>
+        <footer>
+            <span class="muted small" id="dv-count"></span>
+            <button type="button" class="btn" onclick="closeModal('devices-modal')">Закрыть</button>
+            <button type="button" class="btn primary" id="dv-deploy"
+                    onclick="deployFromList()">Раскатать сюда</button>
+        </footer>
+    </div>
+</div>
+
+<!-- ---------------------------------------------------------------- раскатка -->
+<div class="modal-backdrop" id="deploy-modal">
+    <div class="modal">
+        <header>
+            <h3 id="deploy-title">Куда раскатать</h3>
+            <button type="button" class="close-x" onclick="closeModal('deploy-modal')">&times;</button>
+        </header>
+        <div class="body">
+            {# Первым стоит вариант, ради которого раздел и нужен: панель знает
+               обе стороны и может посчитать, где скрипта ещё нет. Считать это
+               глазами по списку из полусотни имён невозможно. #}
+            <div class="field">
+                <label class="check">
+                    <input type="radio" name="dep-mode" value="missing" checked
+                           onchange="deployModeChanged()">
+                    <span>Где ещё нет <span id="dep-missing-count" class="muted"></span></span>
+                </label>
+                <label class="check">
+                    <input type="radio" name="dep-mode" value="all" onchange="deployModeChanged()">
+                    <span>На все точки <span id="dep-all-count" class="muted"></span></span>
+                </label>
+                <label class="check">
+                    <input type="radio" name="dep-mode" value="group" onchange="deployModeChanged()">
+                    <span>На группу</span>
+                </label>
+                <label class="check">
+                    <input type="radio" name="dep-mode" value="pick" onchange="deployModeChanged()">
+                    <span>Выбрать точки вручную</span>
+                </label>
+            </div>
+
+            <div class="field" id="dep-group-box" style="display:none">
+                <label for="dep-group">Группа</label>
+                <select id="dep-group">
+                    {% for g in groups %}
+                        <option value="{{ g.id }}">{{ g.name | t }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="field" id="dep-pick-box" style="display:none">
+                <label>Точки</label>
+                <div style="max-height:260px;overflow:auto;border:1px solid var(--border);
+                            border-radius:var(--radius);padding:8px">
+                    {% for d in all_devices %}
+                        <label class="check">
+                            <input type="checkbox" class="dep-device" value="{{ d.id }}">
+                            <span>{{ d.name }}
+                                {% if d.group_name %}<span class="muted small">{{ d.group_name }}</span>{% endif %}
+                            </span>
+                        </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="hint" id="dep-hint"></div>
+        </div>
+        <footer>
+            <button type="button" class="btn" onclick="closeModal('deploy-modal')">Отмена</button>
+            <button type="button" class="btn primary" onclick="startDeploy()">Дальше</button>
+        </footer>
+    </div>
+</div>
+
+<!-- ------------------------------------------------------------------ правка -->
+<div class="modal-backdrop" id="snippet-modal">
+    <div class="modal">
+        <header>
+            <h3 id="snippet-title">Команда</h3>
+            <button type="button" class="close-x" onclick="closeModal('snippet-modal')">&times;</button>
+        </header>
+        <div class="body">
+            <input type="hidden" id="sn-id">
+            <div class="field">
+                <label for="sn-name">Название</label>
+                <input type="text" id="sn-name" placeholder="Сторож LTE">
+            </div>
+            <div class="field">
+                <label for="sn-note">Пояснение</label>
+                <input type="text" id="sn-note" placeholder="зачем это нужно и где применять">
+            </div>
+            <div class="field">
+                <label for="sn-body">Команды</label>
+                <textarea id="sn-body" rows="12" placeholder="/system script&#10;add name=..."></textarea>
+            </div>
+            <div class="field">
+                <label for="sn-marker">Имена на устройстве, через запятую</label>
+                <input type="text" id="sn-marker" placeholder="определятся сами">
+                <div class="hint">
+                    По ним панель считает, где запись раскатана: сверяется
+                    с тем, что лежит на точках, а не с журналом запусков.
+                    Скрипт могли удалить руками, и знать об этом надо.
+                    Имён обычно два, скрипт и его расписание.
+                </div>
+            </div>
+        </div>
+        <footer>
+            <button type="button" class="btn" onclick="closeModal('snippet-modal')">Отмена</button>
+            <button type="button" class="btn primary" onclick="saveSnippet()">Сохранить</button>
+        </footer>
+    </div>
+</div>
+
+<script>
+    const ALL_DEVICES = {{ all_devices | length }};
+    const CAN_DEPLOY = {{ 'true' if can_edit else 'false' }};
+    const FLEET_DATA = [
+        {% for f in fleet %}
+        {name: {{ f.name | tojson }}, kind: {{ f.kind | tojson }},
+         devices: {{ f.devices | tojson }}},
+        {% endfor %}
+    ];
+    const SNIPPET_DATA = {
+        {% for s in snippets %}
+        {{ s.id }}: {name: {{ s.name | tojson }}, note: {{ s.note | tojson }},
+                     body: {{ s.body | tojson }}, marker: {{ s.marker | tojson }},
+                     missing: {{ s.missing | tojson }}},
+        {% endfor %}
+    };
+
+    /**
+     * Снять скрипт или расписание с тех точек, где он нашёлся.
+     *
+     * Дальше обычный диалог действия: там подтверждение, список точек
+     * и запись в журнал. Своего «вы уверены?» здесь нет намеренно,
+     * иначе подтверждений стало бы два подряд.
+     */
+    function removeFleet(index) {
+        const item = FLEET_DATA[index];
+        if (!item || !item.devices.length) { return; }
+        // Пока точек мало, в подтверждении лучше видеть их имена, а не число:
+        // «Удалить на 1 точке» не даёт проверить, на той ли именно
+        const names = item.devices.map((d) => d.name);
+        const label = names.length <= 3
+            ? names.join(', ')
+            : names.length + ' ' + T('точек');
+        openActionModal(
+            {device_ids: item.devices.map((d) => d.id)},
+            label, 'remove_script',
+            {script_name: item.name, kind: item.kind});
+    }
+
+    /** Показать спрятанный хвост списка точек прямо в ячейке. */
+    function showRest(prefix, id) {
+        document.getElementById(prefix + '-rest-' + id).style.display = '';
+        document.getElementById(prefix + '-more-' + id).style.display = 'none';
+    }
+
+    /** Фильтр сводки: по имени скрипта и по именам точек в строке. */
+    function filterFleet() {
+        const needle = document.getElementById('fleet-filter').value.trim().toLowerCase();
+        // При поиске подрезанные списки разворачиваются: иначе строка находится
+        // по спрятанному имени, а на экране этого имени нет
+        $$('#fleet-table [id^="fl-rest-"]').forEach((box) => {
+            box.style.display = needle ? '' : 'none';
+        });
+        $$('#fleet-table [id^="fl-more-"]').forEach((link) => {
+            link.style.display = needle ? 'none' : '';
+        });
+        $$('#fleet-table tbody tr').forEach((row) => {
+            row.style.display = !needle || row.textContent.toLowerCase().includes(needle)
+                ? '' : 'none';
+        });
+    }
+
+    // Что сейчас показано в окне со списком точек
+    let DEVICE_LIST = [];
+    let DEVICE_LIST_SNIPPET = 0;
+
+    /**
+     * Показать список точек.
+     *
+     * @param {string} title — заголовок окна
+     * @param {Array} devices — [{id, name, disabled, kind}]
+     * @param {number} snippetId — если задан, в подвале появляется «Раскатать сюда»
+     */
+    function showDeviceList(title, devices, snippetId) {
+        DEVICE_LIST = devices || [];
+        DEVICE_LIST_SNIPPET = snippetId || 0;
+        document.getElementById('dv-title').textContent = title;
+        document.getElementById('dv-filter').value = '';
+        document.getElementById('dv-deploy').style.display =
+            (snippetId && CAN_DEPLOY && DEVICE_LIST.length) ? '' : 'none';
+        renderDeviceList();
+        openModal('devices-modal');
+    }
+
+    function renderDeviceList() {
+        const needle = document.getElementById('dv-filter').value.trim().toLowerCase();
+        const shown = DEVICE_LIST.filter(
+            (d) => !needle || d.name.toLowerCase().includes(needle));
+        const box = document.getElementById('dv-list');
+        box.textContent = '';
+        shown.forEach((d) => {
+            const line = document.createElement('div');
+            const link = document.createElement('a');
+            link.href = '/devices/' + d.id;
+            link.textContent = d.name;
+            line.appendChild(link);
+            if (d.disabled) {
+                const mark = document.createElement('span');
+                mark.className = 'muted small';
+                mark.textContent = ' ' + T('выключено');
+                line.appendChild(mark);
+            }
+
+            box.appendChild(line);
+        });
+        if (!shown.length) {
+            const empty = document.createElement('div');
+            empty.className = 'muted small';
+            empty.textContent = T('Ничего не найдено');
+            box.appendChild(empty);
+        }
+        document.getElementById('dv-count').textContent =
+            needle ? shown.length + ' / ' + DEVICE_LIST.length : String(DEVICE_LIST.length);
+    }
+
+    /** Библиотека: где стоит или где ещё нет. */
+    function showSnippetDevices(id, which) {
+        const data = SNIPPET_DATA[id];
+        if (!data) { return; }
+        const missing = which === 'missing';
+        showDeviceList(
+            (missing ? T('Где ещё нет: ') : T('Где стоит: ')) + data.name,
+            missing ? data.missing : data.devices,
+            missing ? id : 0);
+    }
+
+    /** Сводка по парку: у кого лежит скрипт с таким именем. */
+    function showFleetDevices(index) {
+        const item = FLEET_DATA[index];
+        if (!item) { return; }
+        showDeviceList(T('Где стоит: ') + item.name, item.devices, 0);
+    }
+
+    /** Из окна «где ещё нет» сразу в диалог раскатки на эти точки. */
+    function deployFromList() {
+        const data = SNIPPET_DATA[DEVICE_LIST_SNIPPET];
+        const ids = DEVICE_LIST.map((d) => d.id);
+        if (!data || !ids.length) { return; }
+        closeModal('devices-modal');
+        openActionModal({device_ids: ids}, ids.length + ' ' + T('точек'),
+                        'cli', {script: data.body});
+    }
+
+    function editSnippet(id) {
+        const data = SNIPPET_DATA[id] || {name: '', note: '', body: '', marker: ''};
+        document.getElementById('sn-id').value = id || '';
+        document.getElementById('sn-name').value = data.name;
+        document.getElementById('sn-note').value = data.note;
+        document.getElementById('sn-body').value = data.body;
+        document.getElementById('sn-marker').value = data.marker;
+        document.getElementById('snippet-title').textContent =
+            id ? T('Изменить команду') : T('Новая команда');
+        openModal('snippet-modal');
+    }
+
+    async function saveSnippet() {
+        try {
+            await api('/api/snippets', { json: {
+                id: document.getElementById('sn-id').value,
+                name: document.getElementById('sn-name').value,
+                note: document.getElementById('sn-note').value,
+                body: document.getElementById('sn-body').value,
+                marker: document.getElementById('sn-marker').value,
+            }});
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function deleteSnippet(id) {
+        const data = SNIPPET_DATA[id] || {name: ''};
+        if (!confirm(T('Удалить из библиотеки? На устройствах ничего не изменится.'))) {
+            return;
+        }
+        try {
+            await api(`/api/snippets/${id}/delete`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    let DEPLOY_ID = 0;
+
+    /** Выбор цели: сначала спрашиваем куда, потом обычный диалог действия. */
+    function deploySnippet(id) {
+        const data = SNIPPET_DATA[id];
+        if (!data) { return; }
+        DEPLOY_ID = id;
+        document.getElementById('deploy-title').textContent =
+            T('Куда раскатать: ') + data.name;
+        document.getElementById('dep-missing-count').textContent =
+            data.marker ? '(' + data.missing.length + ')' : T('(имя не задано)');
+        document.getElementById('dep-all-count').textContent = '(' + ALL_DEVICES + ')';
+
+        const missingMode = document.querySelector('[name="dep-mode"][value="missing"]');
+        missingMode.disabled = !data.marker || data.missing.length === 0;
+        if (missingMode.disabled) {
+            document.querySelector('[name="dep-mode"][value="all"]').checked = true;
+        } else {
+            missingMode.checked = true;
+        }
+        $$('.dep-device').forEach((box) => { box.checked = false; });
+        deployModeChanged();
+        openModal('deploy-modal');
+    }
+
+    function deployModeChanged() {
+        const mode = document.querySelector('[name="dep-mode"]:checked').value;
+        document.getElementById('dep-group-box').style.display =
+            mode === 'group' ? '' : 'none';
+        document.getElementById('dep-pick-box').style.display =
+            mode === 'pick' ? '' : 'none';
+        const data = SNIPPET_DATA[DEPLOY_ID] || {missing: []};
+        document.getElementById('dep-hint').textContent = mode === 'missing'
+            ? T('Точки, где скрипта нет: ') +
+              data.missing.map((d) => d.name).join(', ')
+            : '';
+    }
+
+    /**
+     * Открыть обычный диалог действия с подставленным текстом.
+     *
+     * Именно обычный: подтверждения, выбор действия и страховка у команд
+     * из библиотеки те же самые. Отдельный путь запуска означал бы, что
+     * половина защит его не касается.
+     */
+    function startDeploy() {
+        const data = SNIPPET_DATA[DEPLOY_ID];
+        if (!data) { return; }
+        const mode = document.querySelector('[name="dep-mode"]:checked').value;
+
+        let target = null;
+        let label = '';
+        if (mode === 'all') {
+            target = {all: true};
+            label = T('все точки');
+        } else if (mode === 'group') {
+            const select = document.getElementById('dep-group');
+            target = {group_id: parseInt(select.value, 10)};
+            label = T('группа ') + select.selectedOptions[0].textContent;
+        } else {
+            const ids = mode === 'missing'
+                ? data.missing.map((d) => d.id)
+                : $$('.dep-device:checked').map((box) => parseInt(box.value, 10));
+            if (!ids.length) { toast(T('Не выбрано ни одной точки'), 'error'); return; }
+            target = {device_ids: ids};
+            label = ids.length + ' ' + T('точек');
+        }
+
+        closeModal('deploy-modal');
+        openActionModal(target, label, 'cli', {script: data.body});
+    }
+</script>
+{% endblock %}

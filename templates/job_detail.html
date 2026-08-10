@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Задача #{{ job.id }} · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Задача #{{ job.id }} · {{ (job.action_label or job.action) | t }}</h1>
+        <div class="sub">
+            Запустил <strong>{{ job.username }}</strong> · {{ job.created_at | dt }}
+            {% if job.status == 'pending' and job.scheduled_at %}
+                · <span class="badge pending">ожидает {{ job.scheduled_at | dt }}</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="btn-row">
+        <span class="badge {{ job.status }}" id="job-status">
+            {{ {'pending':'В очереди','running':'Выполняется','done':'Завершена','cancelled':'Отменена'}.get(job.status, job.status) | t }}
+        </span>
+        {% if job.status in ('pending', 'running') %}
+            <button class="btn danger" id="job-cancel" onclick="cancelJob({{ job.id }})">Отменить</button>
+        {% endif %}
+        <a class="btn" href="/jobs">К списку задач</a>
+    </div>
+</div>
+
+<!-- --------------------------------------------------------------- прогресс -->
+<div class="panel">
+    <div class="panel-body">
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:10px">
+        <div id="job-progress-text">
+            {{ job.done }} из {{ job.total }}
+            ({{ ((job.done / job.total * 100) | round | int) if job.total else 0 }}%)
+        </div>
+        <div class="small">
+            Успешно: <strong style="color:var(--ok)" id="job-ok">{{ job.ok_count }}</strong> ·
+            Ошибок: <strong style="color:var(--err)" id="job-fail">{{ job.fail_count }}</strong>
+        </div>
+    </div>
+    <div class="progress">
+        <div class="bar" id="job-bar"
+             style="width: {{ ((job.done / job.total * 100) | round | int) if job.total else 0 }}%"></div>
+    </div>
+    </div>
+</div>
+
+<!-- -------------------------------------------------------------- параметры -->
+{% if params %}
+<div class="panel">
+    <h2>Параметры</h2>
+    <div class="table-wrap">
+        <table>
+            <tbody>
+            {% for p in params %}
+                <tr>
+                    <td class="nowrap muted" style="width:220px">{{ p.label | t }}</td>
+                    <td class="result-cell">{% if p.secret %}••••••••{% else %}{{ p.value }}{% endif %}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- ------------------------------------------------------------ результаты -->
+<div class="panel">
+    <h2>Результаты по устройствам</h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+            <tr>
+                <th>Устройство</th>
+                <th>Адрес</th>
+                <th>Статус</th>
+                <th>Результат</th>
+                <th class="nowrap">Завершено</th>
+            </tr>
+            </thead>
+            <tbody id="job-items">
+                {% include "partials/job_items.html" %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if job.status in ('pending', 'running') %}
+<script>pollJob({{ job.id }});</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,42 @@
+{#
+   Номера страниц под длинной таблицей.
+
+   Показывается всегда, когда страниц больше одной. Строка «с 51 по 100 из 372»
+   нужна не меньше самих номеров: без неё непонятно, много ли осталось
+   и стоит ли уточнять поиск вместо листания.
+
+   Параметры фильтров подставляются из pager.base, поэтому переход
+   на соседнюю страницу не сбрасывает поиск.
+#}
+{% if pager.pages > 1 %}
+<div class="pager">
+    <div class="pager-info muted small">
+        с {{ pager.first }} по {{ pager.last }} из {{ pager.total }}
+    </div>
+    <div class="pager-pages">
+        {% if pager.page > 1 %}
+            <a class="btn sm" href="?{{ pager.base }}page={{ pager.page - 1 }}"
+               title="Предыдущая страница">←</a>
+        {% else %}
+            <span class="btn sm disabled">←</span>
+        {% endif %}
+
+        {% for number in pager.numbers %}
+            {% if number is none %}
+                <span class="pager-gap muted">…</span>
+            {% elif number == pager.page %}
+                <span class="btn sm primary">{{ number }}</span>
+            {% else %}
+                <a class="btn sm" href="?{{ pager.base }}page={{ number }}">{{ number }}</a>
+            {% endif %}
+        {% endfor %}
+
+        {% if pager.page < pager.pages %}
+            <a class="btn sm" href="?{{ pager.base }}page={{ pager.page + 1 }}"
+               title="Следующая страница">→</a>
+        {% else %}
+            <span class="btn sm disabled">→</span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

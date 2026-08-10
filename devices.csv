@@ -1,0 +1,3 @@
+name;host;username;password;api_port;ftp_port;group;comment
+office1;192.168.*1.1;;;8728;21;;
+office2;192.168.*2.1;;;8728;21;;

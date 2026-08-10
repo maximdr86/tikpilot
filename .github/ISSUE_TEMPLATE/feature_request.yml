@@ -1,0 +1,59 @@
+name: Feature request / Предложение
+description: Idea for a new capability / Идея или пожелание
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Русский и английский одинаково приветствуются.
+
+        Самые полезные предложения описывают **задачу**, а не решение:
+        «нужно видеть, какие точки отвалились ночью» лучше, чем
+        «добавьте колонку X» — вариантов решения обычно несколько.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую задачу это решает / What problem does it solve
+      description: Что вы сейчас делаете руками или не можете сделать вообще.
+      placeholder: |
+        Раз в неделю выгружаю список версий RouterOS в таблицу, чтобы отчитаться.
+        Сейчас копирую из интерфейса вручную.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: Как это могло бы выглядеть / How it might work
+      description: Необязательно. Если есть представление об интерфейсе — опишите.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: К чему относится / Area
+      options:
+        - Массовые действия
+        - Мониторинг и графики
+        - Обновление RouterOS
+        - Бэкапы
+        - Интерфейс и удобство
+        - Установка и развёртывание
+        - Другое
+    validations:
+      required: true
+
+  - type: input
+    id: fleet-size
+    attributes:
+      label: Размер вашего парка / Your fleet size
+      description: Помогает понять, для скольких людей это важно.
+      placeholder: "49"
+
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Готовы помочь / Willing to help
+      options:
+        - label: Могу прислать pull request
+        - label: Могу протестировать на своём парке

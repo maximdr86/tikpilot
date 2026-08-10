@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+{#
+   Регистрация по приглашению. Отдельная страница того же вида, что и вход:
+   человек, который её открывает, панель ещё ни разу не видел, и лишние
+   элементы ему только мешают.
+#}
+<html lang="{{ lang }}" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Приглашение · Tikpilot</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script>
+        try {
+            var t = localStorage.getItem('tikpilot-theme');
+            if (t) { document.documentElement.dataset.theme = t; }
+        } catch (e) { /* приватный режим */ }
+    </script>
+</head>
+<body>
+<div class="login-page">
+    {% if invite %}
+    <form class="login-card" method="post" action="/invite/{{ token }}">
+        <div class="head">
+            <h1>Tikpilot</h1>
+            <div class="sub">Придумайте себе логин и пароль</div>
+        </div>
+
+        <div class="body">
+            {% if error %}<div class="alert error">{{ error | t }}</div>{% endif %}
+
+            {% if invite.note %}
+                <div class="hint" style="margin-bottom:11px">
+                    Приглашение для: <strong>{{ invite.note }}</strong>
+                </div>
+            {% endif %}
+
+            <div class="field">
+                <label for="username">Логин</label>
+                <input type="text" id="username" name="username" autocomplete="username"
+                       autofocus required>
+            </div>
+            <div class="field">
+                <label for="password">Пароль</label>
+                <input type="password" id="password" name="password"
+                       autocomplete="new-password" required minlength="6">
+            </div>
+            <div class="field">
+                <label for="password2">Повторите пароль</label>
+                <input type="password" id="password2" name="password2"
+                       autocomplete="new-password" required minlength="6">
+            </div>
+
+            <button class="btn primary" type="submit" style="width:100%">Создать учётную запись</button>
+
+            <div class="hint" style="margin-top:11px">
+                Пароль знаете только вы: администратору он не передаётся и нигде
+                не показывается. Прав у новой учётной записи нет ни одного,
+                их выдаст администратор после того, как вы войдёте.
+            </div>
+
+            <div class="lang-switch login">
+                {% for code, name in languages %}
+                    {% if code == lang %}<span class="lang current">{{ name }}</span>
+                    {% else %}<a class="lang" href="/lang/{{ code }}?next=/invite/{{ token }}">{{ name }}</a>{% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </form>
+    {% else %}
+    <div class="login-card">
+        <div class="head">
+            <h1>Tikpilot</h1>
+            <div class="sub">Ссылка не работает</div>
+        </div>
+        <div class="body">
+            {# Три причины (нет такой, уже использована, просрочена) отвечают
+               одинаково намеренно: разница подсказала бы перебирающему, что
+               он на верном пути. Человеку с настоящей ссылкой она всё равно
+               не помогла бы, ему в любом случае нужна новая. #}
+            <div class="alert error">
+                Приглашение недействительно. Возможно, им уже воспользовались
+                или истёк срок.
+            </div>
+            <div class="hint">Попросите администратора выслать новую ссылку.</div>
+            <a class="btn" href="/login" style="width:100%;margin-top:11px">На страницу входа</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% include "partials/validation_js.html" %}
+</body>
+</html>

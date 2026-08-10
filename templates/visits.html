@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Публичные ссылки · Tikpilot{% endblock %}
+
+{% block content %}
+{% include "partials/log_tabs.html" %}
+
+<div class="page-head">
+    <div>
+        <h1>Заходы по публичным ссылкам</h1>
+        <div class="sub">
+            за неделю сеансов: {{ week_sessions }} с {{ week_addresses }}
+            {{ week_addresses | plural('адреса', 'адресов', 'адресов') }}
+            {% if week_fails %}
+                · <span class="badge offline">по неверной ссылке: {{ week_fails }}</span>
+            {% endif %}
+            · записи хранятся {{ retention_days }}
+            {{ retention_days | plural('день', 'дня', 'дней') }}
+        </div>
+    </div>
+</div>
+
+<!-- --------------------------------------------------------- смотрят сейчас -->
+<div class="panel">
+    <h2>Смотрят сейчас
+        <span class="h2-extra muted">страница отмечается открытой, пока обновляется сама</span>
+    </h2>
+    <div class="table-wrap" id="watching-box">
+        {% include "partials/watching.html" %}
+    </div>
+</div>
+
+<form class="filters" method="get" action="/logs/visits">
+    <div class="field grow">
+        <label for="v-q">Поиск</label>
+        <input type="search" id="v-q" name="q" value="{{ f_q }}"
+               placeholder="адрес, устройство или название группы">
+    </div>
+    <div class="field">
+        <label for="v-group">Группа</label>
+        <select id="v-group" name="group_id">
+            <option value="">Все ссылки</option>
+            {% for g in groups %}
+                <option value="{{ g.id }}" {% if f_group == g.id|string %}selected{% endif %}>{{ g.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="v-kind">Показывать</label>
+        <select id="v-kind" name="kind">
+            <option value="" {% if not f_kind %}selected{% endif %}>Людей</option>
+            <option value="bot" {% if f_kind == 'bot' %}selected{% endif %}>Предпросмотр ссылки</option>
+            <option value="fail" {% if f_kind == 'fail' %}selected{% endif %}>По неверной ссылке</option>
+        </select>
+    </div>
+    <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn primary" type="submit">Найти</button>
+    </div>
+    {% if f_q or f_group or f_kind %}
+    <div class="field">
+        <label>&nbsp;</label>
+        <a class="btn" href="/logs/visits">Сбросить</a>
+    </div>
+    {% endif %}
+</form>
+
+<div class="panel">
+    <div class="table-wrap">
+        <table class="sortable">
+            <thead>
+            <tr>
+                <th class="nowrap">Последняя активность</th>
+                <th>Группа</th>
+                <th class="nowrap">Адрес</th>
+                <th>Устройство</th>
+                <th class="nowrap">Начало</th>
+                <th class="num nowrap">Обновлений</th>
+                <th>Откуда</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for r in rows %}
+                <tr>
+                    <td class="nowrap small muted" data-sort="{{ r.last_at }}">{{ r.last_at | dt }}</td>
+                    <td>
+                        {% if r.ok %}
+                            {{ r.group_name }}
+                        {% else %}
+                            <span class="badge offline">ссылка не найдена</span>
+                            <span class="mono small muted">{{ r.token_tail }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="nowrap mono small">{{ r.ip }}</td>
+                    <td class="small" title="{{ r.agent }}">
+                        {% if r.bot %}<span class="badge unknown">робот</span> {% endif %}
+                        {{ r.device or ('неизвестное устройство' | t) }}
+                    </td>
+                    <td class="nowrap small muted">{{ r.started_at | dt_short }}</td>
+                    <td class="num small muted">{{ r.hits }}</td>
+                    <td class="small muted">{{ r.referer or '' }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="7" class="empty">Записей нет</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% include "partials/pager.html" %}
+
+<div class="panel">
+    <div class="panel-body">
+        <div class="hint">
+            Строка это сеанс, а не запрос: публичная страница обновляет себя
+            раз в минуту, и вкладка, открытая на весь день, остаётся одной
+            строкой со счётчиком обновлений. Через полчаса тишины следующий
+            заход считается новым сеансом.
+            <br>
+            Ссылку, отправленную в мессенджер, открывает сначала сам
+            мессенджер, чтобы показать превью. Такие заходы отмечены как
+            роботы и в списке людей не показываются: иначе выходило бы, что
+            подрядчик открыл страницу через секунду после отправки.
+            <br>
+            Заходы по несуществующему токену собраны отдельно. Один такой
+            это опечатка, десяток подряд с одного адреса это перебор:
+            ссылку стоит отозвать и выдать новую.
+        </div>
+    </div>
+</div>
+
+<script>
+    // Блок «смотрят сейчас» обновляется сам: смысл строки пропадает,
+    // если для неё нужно нажимать F5
+    (function () {
+        var box = document.getElementById('watching-box');
+        if (!box) return;
+        var params = new URLSearchParams(window.location.search);
+        var url = '/logs/visits/live?group_id=' + (params.get('group_id') || '');
+        setInterval(function () {
+            fetch(url, {headers: {'X-Requested-With': 'fetch'}})
+                .then(function (r) { return r.ok ? r.text() : null; })
+                .then(function (html) { if (html !== null) box.innerHTML = html; })
+                .catch(function () { /* сеть моргнула, следующий раз получится */ });
+        }, 30000);
+    })();
+</script>
+{% endblock %}
