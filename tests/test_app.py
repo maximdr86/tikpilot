@@ -2314,6 +2314,30 @@ def test_new_database_wins_over_the_old_one(tmp_path):
             os.environ["DATA_DIR"] = saved
 
 
+def test_empty_form_field_answers_like_a_form_not_like_a_protocol(client):
+    """
+    Пустое поле формы получает человеческий ответ, а не JSON от FastAPI.
+
+    Обязательное поле, пришедшее пустым, часть версий Starlette считает
+    отсутствующим и отвечает страницей `{"detail": [... "Field required"]}`.
+    Это ответ протокола на человеческую ошибку: в панели такое должно
+    возвращаться подсказкой в форме.
+    """
+    page = client.post("/settings/users", data={"new_username": "", "password": "123456"})
+    assert page.status_code == 200
+    assert "Укажите имя пользователя" in page.text
+    assert "Field required" not in page.text
+
+    # И вход с пустыми полями тоже отвечает страницей входа, а не JSON:
+    # 401 здесь правильный код, важно, что тело человеческое
+    with _anon() as anon:
+        answer = anon.post("/login", data={"username": "", "password": ""},
+                           follow_redirects=False)
+        assert answer.status_code == 401
+        assert "Field required" not in answer.text
+        assert "<form" in answer.text
+
+
 def test_settings_messages_are_translated(client):
     """
     Сообщения после действий на странице настроек переводятся.
