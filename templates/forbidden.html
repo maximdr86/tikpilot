@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Нет доступа · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h1>Нет доступа</h1></div>
+</div>
+
+<div class="panel">
+    <div class="panel-body">
+        <p>У вашей учётной записи нет права на этот раздел.</p>
+        <p class="muted">
+            Если доступ нужен для работы, попросите администратора выдать его
+            в разделе «Настройки → Пользователи».
+        </p>
+        <div class="btn-row" style="margin-top:12px">
+            <a class="btn primary" href="/">На дашборд</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

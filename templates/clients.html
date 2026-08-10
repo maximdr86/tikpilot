@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Клиенты · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Клиенты <span class="muted">({{ fresh }} на связи)</span></h1>
+        <div class="sub">
+            Что подключено к площадкам · всего записей: {{ total }}
+        </div>
+    </div>
+    <div class="btn-row">
+        <button class="btn primary" onclick="collectClients()">Собрать сейчас</button>
+        {% if clients %}
+        <button class="btn danger" onclick="forgetAll()">
+            {% if f_q or f_device or f_seen or f_link %}Забыть найденных{% else %}Забыть всех{% endif %}
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<form class="filters" method="get" action="/clients">
+    <div class="field grow">
+        <label for="cl-q">Поиск</label>
+        <input type="search" id="cl-q" name="q" value="{{ f_q }}"
+               placeholder="имя, подпись, комментарий, MAC, адрес или вендор">
+    </div>
+    <div class="field">
+        <label for="cl-device">Точка</label>
+        <select id="cl-device" name="device_id">
+            <option value="">Все точки</option>
+            {% for d in devices %}
+                <option value="{{ d.id }}" {% if f_device == d.id|string %}selected{% endif %}>{{ d.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="cl-link">Подключение</label>
+        <select id="cl-link" name="link">
+            <option value="">Любое</option>
+            <option value="wired" {% if f_link == 'wired' %}selected{% endif %}>По кабелю</option>
+            <option value="wireless" {% if f_link == 'wireless' %}selected{% endif %}>По воздуху</option>
+        </select>
+    </div>
+    <div class="field">
+        <label for="cl-seen">Состояние</label>
+        <select id="cl-seen" name="seen">
+            <option value="">Все</option>
+            <option value="online" {% if f_seen == 'online' %}selected{% endif %}>На связи</option>
+            <option value="gone" {% if f_seen == 'gone' %}selected{% endif %}>Пропали</option>
+        </select>
+    </div>
+    <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn primary" type="submit">Найти</button>
+    </div>
+    {% if f_q or f_device or f_seen or f_link %}
+    <div class="field">
+        <label>&nbsp;</label>
+        <a class="btn" href="/clients">Сбросить</a>
+    </div>
+    {% endif %}
+</form>
+
+<div class="panel">
+<div class="table-wrap">
+    <table class="sortable" id="clients-table">
+        <thead>
+        <tr>
+            <th>Имя / вендор / MAC</th>
+            <th class="nowrap">Адрес</th>
+            <th class="nowrap">Подключение</th>
+            <th class="nowrap">Порт</th>
+            <th class="nowrap">VLAN</th>
+            <th>Точка</th>
+            <th class="nowrap">Видели</th>
+            <th class="no-sort"></th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for c in clients %}
+            <tr>
+                <td>
+                    {# Порядок неслучаен: своя подпись важнее комментария
+                       на роутере, а тот важнее имени, которое устройство
+                       сообщает о себе само. Комментарий писал человек. #}
+                    {% set title = c.label or c.comment or c.hostname %}
+                    <strong>{{ title or ('без имени' | t) }}</strong>
+                    {% if c.label %}<span class="badge">своя подпись</span>{% endif %}
+                    {% if not c.label and c.comment %}<span class="badge" title="Комментарий, проставленный на самом роутере">с роутера</span>{% endif %}
+                    {% if not c.dynamic %}<span class="badge" title="Адрес закреплён за этим MAC">закреплён</span>{% endif %}
+                    {# Остальные имена показываем ниже, чтобы ни одно
+                       не потерялось: искать будут по любому из них #}
+                    {% if c.comment and c.comment != title %}<div class="small">{{ c.comment }}</div>{% endif %}
+                    {% if c.hostname and c.hostname != title %}<div class="small muted">{{ c.hostname }}</div>{% endif %}
+                    <div class="small muted">{{ c.vendor | t or '—' }}</div>
+                    <div class="mono small muted">{{ c.mac }}</div>
+                </td>
+                <td class="mono nowrap">{{ c.ip or '—' }}</td>
+                <td class="nowrap small">
+                    {% if c.link == 'wireless' %}
+                        <span class="badge air">по воздуху</span>
+                        {% if c.ssid %}<div class="small muted">{{ c.ssid }}</div>{% endif %}
+                        {% if c.signal %}<div class="small muted">{{ c.signal }} дБм</div>{% endif %}
+                    {% else %}
+                        <span class="badge">по кабелю</span>
+                    {% endif %}
+                </td>
+                <td class="mono nowrap small">{{ c.port or '—' }}</td>
+                <td class="nowrap">{% if c.vlan %}<span class="badge">{{ c.vlan }}</span>{% else %}—{% endif %}</td>
+                <td><a href="/devices/{{ c.device_id }}">{{ c.device_name }}</a></td>
+                <td class="nowrap small muted" data-sort="{{ c.last_seen }}">
+                    {{ c.last_seen | since }}
+                    <div class="small">{{ c.first_seen | dt_short }}<span class="muted"> впервые</span></div>
+                </td>
+                <td class="nowrap">
+                    <button class="btn sm" onclick="labelClient({{ c.id }}, '{{ c.label }}')">Подпись</button>
+                    <button class="btn sm danger" onclick="forgetClient({{ c.id }})">×</button>
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="7" class="empty">
+                {% if f_q or f_device or f_seen or f_link %}По этому запросу ничего не найдено
+                {% else %}Клиентов пока нет. Они появятся после полного опроса или по кнопке «Собрать сейчас»{% endif %}
+            </td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+</div>
+
+{% if limited %}
+<div class="hint">Показана первая тысяча записей. Уточните поиск, чтобы увидеть остальные.</div>
+{% endif %}
+
+<div class="hint">
+    Собирается с самого роутера: аренды DHCP дают имя и адрес, ARP ловит тех,
+    у кого адрес прописан руками, таблица моста говорит, в какой порт воткнут
+    кабель, таблица регистрации показывает подключённых по воздуху с сетью
+    и уровнем сигнала. Данные сливаются по MAC, потому что имя и адрес
+    меняются, а он нет.
+    <br>
+    В списке нет самого роутера и оборудования провайдера: свои интерфейсы
+    видны в таблице моста как локальные, а шлюз оператора узнаётся по маршруту
+    по умолчанию. В колонке «порт» только настоящий порт или беспроводной
+    интерфейс: «bridge» на вопрос «куда воткнут кабель» не отвечает.
+    <br>
+    Комментарий, проставленный на роутере у аренды или записи ARP, показывается
+    как имя: раз железку уже назвали там, называть её второй раз здесь незачем.
+    Своя подпись в панели, если она есть, важнее комментария.
+    <br>
+    Обновляется вместе с полным опросом, раз в {{ full_minutes }} минут.
+    Пропавшие не удаляются сразу: строка с давним «видели» отвечает на вопрос,
+    когда железка была на месте в последний раз.
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function collectClients() {
+        // Выбрана точка, значит опрашиваем только её: обход всего парка
+        // ради одной площадки это минуты ожидания на ровном месте
+        const only = document.getElementById('cl-device').value;
+        toast(only ? T('Опрашиваю точку') : T('Опрашиваю точки, это займёт время'), '');
+        try {
+            const data = await api('/api/clients/collect' + (only ? '?device_id=' + only : ''),
+                                   { method: 'POST' });
+            toast(T('Точек: %s, клиентов: %s')
+                .replace('%s', data.devices).replace('%s', data.clients), 'ok');
+            setTimeout(() => window.location.reload(), 1200);
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function labelClient(id, current) {
+        const label = prompt(T('Как называется эта железка? Пустое поле снимет подпись.'), current || '');
+        if (label === null) { return; }
+        try {
+            await api(`/api/clients/${id}/label`, { json: { label: label } });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    /** Забыть всех, кто попал под текущие фильтры. */
+    async function forgetAll() {
+        const params = new URLSearchParams(window.location.search);
+        const filtered = params.toString().length > 0;
+        const question = filtered
+            ? T('Забыть все найденные записи? Подписанные останутся.')
+            : T('Забыть всех клиентов? Подписанные останутся.');
+        if (!confirm(question + '\n'
+            + T('Список соберётся заново при следующем опросе, на сеть это не влияет.'))) { return; }
+        try {
+            const data = await api('/api/clients/forget-all', { json: {
+                q: params.get('q') || '',
+                device_id: params.get('device_id') || '',
+                seen: params.get('seen') || '',
+                link: params.get('link') || '',
+            }});
+            toast(T('Забыто записей: %s').replace('%s', data.removed), 'ok');
+            setTimeout(() => window.location.reload(), 800);
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function forgetClient(id) {
+        if (!confirm(T('Забыть эту запись? На саму сеть это не влияет, и если железка снова появится, она запишется заново.'))) { return; }
+        try {
+            await api(`/api/clients/${id}/delete`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,22 @@
+{# Строки с результатами выполнения задачи по каждому устройству.
+   Обновляются по таймеру, пока задача выполняется. #}
+{% for it in items %}
+<tr>
+    <td>
+        {% if it.device_id %}<a href="/devices/{{ it.device_id }}">{{ it.device_name }}</a>
+        {% else %}{{ it.device_name }}{% endif %}
+    </td>
+    <td class="mono nowrap">{{ it.device_host }}</td>
+    <td>
+        {% if it.status == 'ok' %}<span class="badge ok">успешно</span>
+        {% elif it.status == 'error' %}<span class="badge error">ошибка</span>
+        {% elif it.status == 'running' %}<span class="badge running">выполняется</span>
+        {% elif it.status == 'skipped' %}<span class="badge skipped">пропущено</span>
+        {% else %}<span class="badge pending">в очереди</span>{% endif %}
+    </td>
+    <td class="result-cell">{{ it.result | t }}</td>
+    <td class="nowrap small muted">{{ it.finished_at | dt_short }}</td>
+</tr>
+{% else %}
+<tr><td colspan="5" class="empty">Нет данных</td></tr>
+{% endfor %}

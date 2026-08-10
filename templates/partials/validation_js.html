@@ -1,0 +1,27 @@
+{# Подсказки браузера о незаполненных полях.
+
+   Их рисует сам браузер и на своём языке: у человека с русским Chrome
+   на английской странице всплывает «Заполните это поле». Выглядит как
+   недоделанный перевод, хотя наш текст тут ни при чём. Подменяем сообщение
+   на язык страницы.
+
+   Блок самодостаточный: страница входа не подключает app.js, а поля с
+   обязательным заполнением там тоже есть. #}
+<script>
+window.I18N = window.I18N || {{ js_i18n | tojson }};
+(function () {
+    function T(text) { return (window.I18N && window.I18N[text]) || text; }
+
+    document.addEventListener('invalid', function (e) {
+        var el = e.target;
+        if (!el.setCustomValidity || !el.validity) { return; }
+        el.setCustomValidity(el.validity.valueMissing ? T('Заполните это поле.') : '');
+    }, true);
+
+    // Свой текст остаётся на поле навсегда, поэтому снимаем его при вводе,
+    // иначе поле считается ошибочным даже после исправления.
+    document.addEventListener('input', function (e) {
+        if (e.target.setCustomValidity) { e.target.setCustomValidity(''); }
+    }, true);
+})();
+</script>

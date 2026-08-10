@@ -1,0 +1,591 @@
+"""Раздел «Устройства»: список, фильтры, CRUD и массовый импорт."""
+
+from __future__ import annotations
+
+import csv
+import io
+from typing import Any
+
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi.responses import JSONResponse, RedirectResponse
+
+from .. import sessions
+from ..auth import client_ip, current_user
+from ..crypto import encrypt
+from ..database import execute, log_audit, query, query_one, utcnow
+from ..mikrotik import is_newer
+from .. import permissions
+from ..auth import Forbidden, require
+from .deps import form_bool, render, render_partial, templates
+
+router = APIRouter()
+
+
+# ------------------------------------------------------------------ выборка
+def _fetch_devices(q: str = "", group_id: str = "", status: str = "",
+                   user: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """
+    Список устройств с учётом фильтров.
+
+    Пустые значения фильтров игнорируются, поиск идёт по имени, адресу,
+    комментарию и identity. Дополнительно к полям таблицы возвращается
+    признак update_available — доступно ли обновление RouterOS.
+
+    Значение status='update' — особый фильтр: только устройства с обновлением.
+    """
+    sql = [
+        "SELECT d.*, g.name AS group_name, g.color AS group_color",
+        "FROM devices d LEFT JOIN groups g ON g.id = d.group_id",
+        "WHERE 1=1",
+    ]
+    params: list[Any] = []
+
+    # Область видимости пользователя. Без user (фоновые вызовы) виден весь парк.
+    if user is not None:
+        from .. import permissions
+
+        where, scope_params = permissions.scope_sql(user)
+        if where:
+            sql.append(where.lstrip())
+            params += scope_params
+
+    if q:
+        # Модель тоже ищется: «покажи все hAP ac lite» это обычный вопрос
+        # перед обновлением прошивки или закупкой замены
+        sql.append("AND (d.name LIKE ? OR d.host LIKE ? OR d.comment LIKE ? "
+                   "OR d.identity LIKE ? OR d.board_name LIKE ?)")
+        like = f"%{q}%"
+        params += [like] * 5
+    if group_id == "none":
+        sql.append("AND d.group_id IS NULL")
+    elif group_id:
+        sql.append("AND d.group_id = ?")
+        params.append(group_id)
+    if status and status != "update":
+        sql.append("AND d.status = ?")
+        params.append(status)
+
+    sql.append("ORDER BY g.name COLLATE NOCASE, d.name COLLATE NOCASE")
+
+    rows = [dict(r) for r in query(" ".join(sql), params)]
+    for row in rows:
+        row["update_available"] = _update_available(row)
+        row["ahead_of_channel"] = _ahead_of_channel(row)
+
+    if status == "update":
+        rows = [r for r in rows if r["update_available"]]
+    return rows
+
+
+def _update_available(row: dict[str, Any]) -> bool:
+    """
+    Есть ли на устройстве непоставленное обновление.
+
+    Именно «доступная версия НОВЕЕ установленной», а не просто «другая»:
+    после переключения канала stable → long-term доступная версия может
+    оказаться старше, и это не обновление, а откат назад.
+    """
+    return is_newer(row.get("latest_version"), row.get("ros_version"))
+
+
+def _ahead_of_channel(row: dict[str, Any]) -> bool:
+    """Установлена версия новее, чем предлагает выбранный канал обновлений."""
+    return is_newer(row.get("ros_version"), row.get("latest_version"))
+
+
+def _groups() -> list[Any]:
+    return query("SELECT * FROM groups ORDER BY name COLLATE NOCASE")
+
+
+# -------------------------------------------------------------------- страницы
+@router.get("/devices")
+async def devices_page(
+    request: Request,
+    q: str = "",
+    group_id: str = "",
+    status: str = "",
+    user=Depends(current_user),
+):
+    """Основная страница со списком устройств."""
+    from ..actions import list_actions
+
+    return render(
+        "devices.html",
+        request,
+        user,
+        active="devices",
+        devices=_fetch_devices(q, group_id, status, user),
+        groups=_groups(),
+        actions=permissions.allowed_actions(user),
+        f_q=q,
+        f_group=group_id,
+        f_status=status,
+    )
+
+
+@router.get("/devices/rows")
+async def devices_rows(
+    request: Request,
+    q: str = "",
+    group_id: str = "",
+    status: str = "",
+    user=Depends(current_user),
+):
+    """HTML-фрагмент с телом таблицы — используется для живого обновления."""
+    return render_partial(
+        "partials/device_rows.html",
+        request,
+        user,
+        devices=_fetch_devices(q, group_id, status, user),
+    )
+
+
+def _device_charts(device_id: int, hours: int) -> dict[str, str]:
+    """Подготовить SVG-графики задержки, потерь и нагрузки для карточки."""
+    from .. import charts, monitor
+
+    latency = monitor.latency_history(device_id, hours)
+    metrics = monitor.metrics_history(device_id, hours)
+
+    rtt_series, loss_series = [], []
+    for index, (name, rows) in enumerate(latency.items()):
+        color = charts.COLORS[index % len(charts.COLORS)]
+        rtt_series.append(charts.Series(name, [(r["ts"], r["rtt_avg"]) for r in rows], color))
+        loss_series.append(charts.Series(name, [(r["ts"], r["loss"]) for r in rows], color))
+
+    cpu_series = [charts.Series(
+        "Загрузка CPU, %",
+        [(r["ts"], r["cpu_load"]) for r in metrics],
+        charts.COLORS[0],
+    )]
+    memory_series = [charts.Series(
+        "Свободно памяти, МиБ",
+        [(r["ts"], (r["free_memory"] / 1048576) if r["free_memory"] else None) for r in metrics],
+        charts.COLORS[1],
+    )]
+
+    return {
+        "rtt": charts.line_chart(rtt_series, unit=" мс") if rtt_series else charts.line_chart([]),
+        "rtt_legend": charts.legend(rtt_series) if rtt_series else "",
+        "loss": charts.line_chart(loss_series, unit=" %", y_min=0) if loss_series else "",
+        "cpu": charts.line_chart(cpu_series, unit=" %", y_min=0, y_max=100),
+        "memory": charts.line_chart(memory_series, unit=" МиБ", y_min=0),
+        "has_latency": bool(latency),
+        "has_metrics": bool(metrics),
+    }
+
+
+@router.get("/devices/{device_id}")
+async def device_detail(request: Request, device_id: int, hours: int = 24, user=Depends(current_user)):
+    """Карточка устройства: параметры, последние задачи и бэкапы."""
+    # Устройство вне области видимости для этого пользователя не существует
+    if not permissions.can_touch(user, [device_id]):
+        raise Forbidden()
+    device = query_one(
+        "SELECT d.*, g.name AS group_name FROM devices d "
+        "LEFT JOIN groups g ON g.id = d.group_id WHERE d.id = ?",
+        (device_id,),
+    )
+    if device is None:
+        return RedirectResponse("/devices", status_code=303)
+
+    items = query(
+        "SELECT ji.*, j.action_label, j.username FROM job_items ji "
+        "JOIN jobs j ON j.id = ji.job_id WHERE ji.device_id = ? "
+        "ORDER BY ji.id DESC LIMIT 30",
+        (device_id,),
+    )
+    backups = query(
+        "SELECT * FROM backups WHERE device_id = ? ORDER BY id DESC LIMIT 20",
+        (device_id,),
+    )
+    from .. import inventory, monitor, rollback
+    from ..actions import list_actions
+
+    return render(
+        "device_detail.html",
+        request,
+        user,
+        active="devices",
+        device=device,
+        passport=inventory.load(device_id),
+        armed_rollback=rollback.current(device_id),
+        update_available=_update_available(dict(device)),
+        ahead_of_channel=_ahead_of_channel(dict(device)),
+        groups=_groups(),
+        items=items,
+        backups=backups,
+        timeline=monitor.device_timeline(device_id, 40),
+        charts=_device_charts(device_id, hours if hours in (1, 6, 24, 168) else 24),
+        hours=hours if hours in (1, 6, 24, 168) else 24,
+        actions=permissions.allowed_actions(user),
+    )
+
+
+@router.post("/api/devices/{device_id}/inventory/forget")
+async def forget_inventory(request: Request, device_id: int, user=Depends(current_user)):
+    """
+    Забыть собранный паспорт. Устройство не трогаем.
+
+    Право то же, что и на сбор: кто может перечитать паспорт, тот может
+    и выбросить неудачный. Ничего необратимого здесь нет, следующий обход
+    соберёт всё заново.
+    """
+    from .. import inventory
+
+    if not permissions.can_touch(user, [device_id]):
+        raise Forbidden()
+
+    device = query_one("SELECT * FROM devices WHERE id = ?", (device_id,))
+    if device is None:
+        return JSONResponse({"error": "Устройство не найдено"}, status_code=404)
+
+    inventory.forget(device_id)
+    log_audit(user["username"], "Забыт паспорт устройства", str(device["name"]), "",
+              client_ip(request))
+    return {"ok": True}
+
+
+@router.post("/api/devices/{device_id}/inventory")
+def collect_inventory(request: Request, device_id: int, user=Depends(current_user)):
+    """
+    Собрать паспорт точки прямо сейчас.
+
+    Обработчик обычный, а не `async`: внутри поход по сети, и в асинхронном
+    виде он вставал бы поперёк цикла событий, останавливая панель целиком
+    для всех сразу.
+    """
+    from .. import inventory
+    from ..sessions import pool
+
+    if not permissions.can_touch(user, [device_id]):
+        raise Forbidden()
+
+    device = query_one("SELECT * FROM devices WHERE id = ? AND enabled = 1", (device_id,))
+    if device is None:
+        return JSONResponse({"error": "Устройство не найдено"}, status_code=404)
+
+    try:
+        with pool.borrow(dict(device)) as mt:
+            data = inventory.collect(mt)
+    except Exception as exc:  # noqa: BLE001 — показать человеку, а не молчать
+        return JSONResponse({"error": str(exc)[:300]}, status_code=502)
+
+    # Паспорт без единого порта и сервиса это не паспорт, а обрывок:
+    # такое бывает, когда связь пропала посреди обхода. Затирать им
+    # прежний снимок нельзя, вчерашние данные полезнее пустоты
+    if not data.get("ports") and not data.get("services"):
+        return JSONResponse(
+            {"error": "Устройство ответило неполно, паспорт не сохранён. "
+                      "Попробуйте ещё раз, когда связь станет устойчивее."},
+            status_code=502)
+
+    inventory.save(device_id, data)
+    log_audit(user["username"], "Собран паспорт устройства", str(device["name"]),
+              "портов: %d, сервисов: %d" % (len(data.get("ports", [])),
+                                            len(data.get("services", []))),
+              client_ip(request))
+    return {"ok": True, "ports": len(data.get("ports", []))}
+
+
+@router.post("/api/rollbacks/confirm-all")
+def rollback_confirm_all(request: Request, user=Depends(current_user)):
+    """
+    Подтвердить все взведённые страховки сразу.
+
+    Обработчик обычный, а не `async`: внутри обход устройств по сети.
+
+    Кнопка нужна потому, что взвести страховку можно на весь парк одним
+    нажатием. Раз есть массовое взведение, обязано быть и массовое
+    снятие, иначе возможность превращается в ловушку.
+    """
+    from .. import rollback
+
+    if not permissions.can_run(user, "safe_change"):
+        raise Forbidden()
+
+    result = rollback.confirm_all(user["username"], permissions.scope_sql(user))
+    log_audit(user["username"], "Подтверждены все изменения",
+              f"точек: {result['total']}", f"снято: {result['done']}",
+              client_ip(request))
+    return {"ok": True, **result}
+
+
+@router.post("/api/devices/{device_id}/rollback/{what}")
+def rollback_decide(request: Request, device_id: int, what: str,
+                    user=Depends(current_user)):
+    """
+    Подтвердить изменение или откатить его немедленно.
+
+    Обработчик обычный, а не `async`: внутри поход к устройству.
+
+    Права те же, что на само изменение: подтверждение это его вторая
+    половина, и разделять их значило бы, что взвести страховку может
+    один человек, а снять её некому.
+    """
+    from .. import rollback
+    from ..sessions import pool
+
+    if not permissions.can_touch(user, [device_id]) or not permissions.can_run(user, "safe_change"):
+        raise Forbidden()
+
+    device = query_one("SELECT * FROM devices WHERE id = ?", (device_id,))
+    if device is None or rollback.current(device_id) is None:
+        return JSONResponse({"error": "Страховка не найдена"}, status_code=404)
+
+    try:
+        with pool.borrow(dict(device)) as mt:
+            if what == "confirm":
+                rollback.confirm(mt, device_id, user["username"])
+            else:
+                rollback.rollback_now(mt, device_id, user["username"])
+    except Exception as exc:  # noqa: BLE001 — показать человеку, а не молчать
+        return JSONResponse({"error": str(exc)[:300]}, status_code=502)
+
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------- CRUD
+def _device_form_values(form: dict[str, Any]) -> dict[str, Any]:
+    """Нормализовать данные формы устройства."""
+    return {
+        "name": (form.get("name") or "").strip(),
+        "host": (form.get("host") or "").strip(),
+        "api_port": int(form.get("api_port") or 8728),
+        "ftp_port": int(form.get("ftp_port") or 21),
+        "use_ssl": form_bool(form.get("use_ssl")),
+        "username": (form.get("username") or "").strip(),
+        "group_id": int(form["group_id"]) if (form.get("group_id") or "").strip() else None,
+        "comment": (form.get("comment") or "").strip(),
+        "latency_targets": (form.get("latency_targets") or "").strip(),
+        "enabled": form_bool(form.get("enabled") or "1"),
+    }
+
+
+@router.post("/api/devices")
+async def create_device(request: Request, user=Depends(require("devices.edit"))):
+    """Создать устройство (JSON-ответ, форма отправляется через fetch)."""
+    form = dict(await request.form())
+    values = _device_form_values(form)
+    if not values["name"] or not values["host"] or not values["username"]:
+        return JSONResponse({"error": "Заполните имя, адрес и логин"}, status_code=400)
+
+    now = utcnow()
+    device_id = execute(
+        "INSERT INTO devices (name, host, api_port, ftp_port, use_ssl, username, password_enc, "
+        "group_id, comment, latency_targets, enabled, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            values["name"],
+            values["host"],
+            values["api_port"],
+            values["ftp_port"],
+            values["use_ssl"],
+            values["username"],
+            encrypt(form.get("password") or ""),
+            values["group_id"],
+            values["comment"],
+            values["latency_targets"],
+            values["enabled"],
+            now,
+            now,
+        ),
+    )
+    log_audit(user["username"], "Добавлено устройство", values["name"], values["host"], client_ip(request))
+    return {"ok": True, "id": device_id}
+
+
+@router.post("/api/devices/{device_id}/update")
+async def update_device(request: Request, device_id: int,
+                        user=Depends(require("devices.edit"))):
+    """Обновить устройство. Пустое поле пароля оставляет прежний пароль."""
+    if not permissions.can_touch(user, [device_id]):
+        raise Forbidden()
+    form = dict(await request.form())
+    values = _device_form_values(form)
+    if not values["name"] or not values["host"] or not values["username"]:
+        return JSONResponse({"error": "Заполните имя, адрес и логин"}, status_code=400)
+
+    password = form.get("password") or ""
+    sql = (
+        "UPDATE devices SET name=?, host=?, api_port=?, ftp_port=?, use_ssl=?, username=?, "
+        "group_id=?, comment=?, latency_targets=?, enabled=?, updated_at=?"
+    )
+    params: list[Any] = [
+        values["name"],
+        values["host"],
+        values["api_port"],
+        values["ftp_port"],
+        values["use_ssl"],
+        values["username"],
+        values["group_id"],
+        values["comment"],
+        values["latency_targets"],
+        values["enabled"],
+        utcnow(),
+    ]
+    if password:
+        sql += ", password_enc=?"
+        params.append(encrypt(password))
+    sql += " WHERE id=?"
+    params.append(device_id)
+
+    execute(sql, params)
+    # Адрес или учётные данные могли измениться — старая сессия больше не годится
+    sessions.pool.drop(device_id)
+    log_audit(user["username"], "Изменено устройство", values["name"], values["host"], client_ip(request))
+    return {"ok": True}
+
+
+@router.get("/api/devices/{device_id}")
+async def get_device(device_id: int, user=Depends(require("devices.edit"))):
+    """Данные устройства для формы редактирования (пароль не отдаём)."""
+    if not permissions.can_touch(user, [device_id]):
+        raise Forbidden()
+    row = query_one("SELECT * FROM devices WHERE id = ?", (device_id,))
+    if row is None:
+        return JSONResponse({"error": "Устройство не найдено"}, status_code=404)
+    data = dict(row)
+    data.pop("password_enc", None)
+    return data
+
+
+@router.post("/api/devices/{device_id}/delete")
+async def delete_device(request: Request, device_id: int,
+                        user=Depends(require("devices.edit"))):
+    """Удалить устройство."""
+    if not permissions.can_touch(user, [device_id]):
+        raise Forbidden()
+    row = query_one("SELECT name FROM devices WHERE id = ?", (device_id,))
+    execute("DELETE FROM devices WHERE id = ?", (device_id,))
+    sessions.pool.drop(device_id)
+    log_audit(user["username"], "Удалено устройство", row["name"] if row else str(device_id), ip=client_ip(request))
+    return {"ok": True}
+
+
+@router.post("/api/devices/bulk-delete")
+async def bulk_delete(request: Request, user=Depends(require("devices.edit"))):
+    """Удалить несколько устройств разом."""
+    payload = await request.json()
+    ids = [int(i) for i in payload.get("device_ids", [])]
+    if not ids:
+        return JSONResponse({"error": "Не выбрано ни одного устройства"}, status_code=400)
+    placeholders = ",".join("?" * len(ids))
+    execute(f"DELETE FROM devices WHERE id IN ({placeholders})", ids)
+    for device_id in ids:
+        sessions.pool.drop(device_id)
+    log_audit(user["username"], "Массовое удаление устройств", f"{len(ids)} шт.", ip=client_ip(request))
+    return {"ok": True, "deleted": len(ids)}
+
+
+@router.post("/api/devices/bulk-group")
+async def bulk_set_group(request: Request, user=Depends(require("devices.edit"))):
+    """Переместить выбранные устройства в группу."""
+    payload = await request.json()
+    ids = [int(i) for i in payload.get("device_ids", [])]
+    group_id = payload.get("group_id")
+    group_id = int(group_id) if group_id else None
+    if not ids:
+        return JSONResponse({"error": "Не выбрано ни одного устройства"}, status_code=400)
+    placeholders = ",".join("?" * len(ids))
+    execute(
+        f"UPDATE devices SET group_id = ?, updated_at = ? WHERE id IN ({placeholders})",
+        [group_id, utcnow(), *ids],
+    )
+    log_audit(user["username"], "Смена группы устройств", f"{len(ids)} шт.", ip=client_ip(request))
+    return {"ok": True}
+
+
+# -------------------------------------------------------------------- импорт
+@router.post("/api/devices/import")
+async def import_devices(
+    request: Request,
+    file: UploadFile = File(...),
+    default_group: str = Form(""),
+    user=Depends(require("devices.edit")),
+):
+    """
+    Импорт устройств из CSV.
+
+    Ожидаемые колонки (регистр не важен, лишние игнорируются):
+        name, host, username, password, api_port, ftp_port, group, comment
+    Разделитель определяется автоматически (запятая или точка с запятой).
+    """
+    raw = (await file.read()).decode("utf-8-sig", errors="replace")
+    try:
+        dialect = csv.Sniffer().sniff(raw[:2048], delimiters=",;\t")
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.DictReader(io.StringIO(raw), dialect=dialect)
+
+    groups = {g["name"].lower(): g["id"] for g in _groups()}
+    created = 0
+    errors: list[str] = []
+    now = utcnow()
+
+    for line_no, row in enumerate(reader, start=2):
+        row = { (k or "").strip().lower(): (v or "").strip() for k, v in row.items() }
+        name, host = row.get("name"), row.get("host")
+        if not name or not host:
+            errors.append(f"строка {line_no}: не заполнены name/host")
+            continue
+
+        group_name = row.get("group", "")
+        group_id: int | None = None
+        if group_name:
+            key = group_name.lower()
+            if key not in groups:
+                groups[key] = execute(
+                    "INSERT INTO groups (name, comment, created_at) VALUES (?,?,?)",
+                    (group_name, "Создана при импорте", now),
+                )
+            group_id = groups[key]
+        elif default_group:
+            group_id = int(default_group)
+
+        execute(
+            "INSERT INTO devices (name, host, api_port, ftp_port, username, password_enc, group_id, "
+            "comment, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (
+                name,
+                host,
+                int(row.get("api_port") or 8728),
+                int(row.get("ftp_port") or 21),
+                row.get("username") or "admin",
+                encrypt(row.get("password") or ""),
+                group_id,
+                row.get("comment") or "",
+                now,
+                now,
+            ),
+        )
+        created += 1
+
+    log_audit(user["username"], "Импорт устройств", f"{created} шт.", "; ".join(errors[:10]), client_ip(request))
+    return {"ok": True, "created": created, "errors": errors[:20]}
+
+
+@router.get("/api/devices/export/csv")
+async def export_devices(user=Depends(current_user)):
+    """Выгрузить список устройств в CSV (без паролей)."""
+    from fastapi.responses import Response
+
+    rows = _fetch_devices(user=user)
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=";")
+    # Модель в выгрузке нужна ровно за тем же, зачем в таблице: план
+    # обновления парка обычно составляют в электронной таблице, и там
+    # «какая это коробка» столбец не менее важный, чем версия
+    writer.writerow(["name", "host", "api_port", "ftp_port", "username", "group",
+                     "comment", "status", "version", "model", "architecture"])
+    for r in rows:
+        writer.writerow(
+            [r["name"], r["host"], r["api_port"], r["ftp_port"], r["username"],
+             r["group_name"] or "", r["comment"], r["status"], r["ros_version"],
+             r["board_name"], r["architecture"]]
+        )
+    return Response(
+        buf.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="devices.csv"'},
+    )

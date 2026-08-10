@@ -1,0 +1,32 @@
+{#
+   Кто держит публичную страницу открытой прямо сейчас.
+
+   Отдельный фрагмент, потому что он обновляется сам: смысл строки
+   «смотрит сейчас» пропадает, если её надо обновлять руками.
+#}
+{% if watching %}
+    <table>
+        <thead>
+        <tr>
+            <th>Группа</th>
+            <th class="nowrap">Адрес</th>
+            <th>Устройство</th>
+            <th class="nowrap">Открыл</th>
+            <th class="num nowrap">Обновлений</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for w in watching %}
+            <tr>
+                <td><span class="dot-live"></span>{{ w.group_name }}</td>
+                <td class="nowrap mono small">{{ w.ip }}</td>
+                <td class="small">{{ w.device or ('неизвестное устройство' | t) }}</td>
+                <td class="nowrap small muted" title="{{ w.started_at | dt }}">{{ w.started_at | since }} назад</td>
+                <td class="num small muted">{{ w.hits }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% else %}
+    <div class="empty">Сейчас публичные страницы никто не смотрит</div>
+{% endif %}

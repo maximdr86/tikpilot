@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Сравнение конфигураций · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>{{ current.device_name }}</h1>
+        <div class="sub">
+            Что изменилось в конфигурации ·
+            <a href="/backups?device_id={{ current.device_id }}">все копии точки</a>
+        </div>
+    </div>
+    <div class="btn-row">
+        {# Обе стороны выбираются отдельно: вопрос «что поменялось за неделю»
+           это не всегда сравнение с самой свежей копией. #}
+        <select id="d-left" style="width:auto"
+                onchange="compareBackups()">
+            {% for h in history %}
+                <option value="{{ h.id }}" {% if previous and h.id == previous.id %}selected{% endif %}>
+                    было: {{ h.created_at | dt_short }}
+                </option>
+            {% endfor %}
+        </select>
+        <select id="d-right" style="width:auto" onchange="compareBackups()">
+            {% for h in history %}
+                <option value="{{ h.id }}" {% if h.id == current.id %}selected{% endif %}>
+                    стало: {{ h.created_at | dt_short }}
+                </option>
+            {% endfor %}
+        </select>
+        {% if side_by_side %}
+            <a class="btn" href="?other={{ previous.id if previous else 0 }}&view=unified">Одной колонкой</a>
+        {% else %}
+            <a class="btn" href="?other={{ previous.id if previous else 0 }}">Двумя колонками</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="panel">
+    <h2>
+        {% if previous %}
+            {{ previous.created_at | dt_short }} → {{ current.created_at | dt_short }}
+        {% else %}
+            Первая копия
+        {% endif %}
+        <span class="h2-extra muted">
+            {% if result.added or result.removed %}
+                изменённых строк: {{ result.added + result.removed }}
+                <span class="muted">(добавлено {{ result.added }}, убрано {{ result.removed }})</span>
+            {% else %}
+                строк: {{ result.new_lines }}
+            {% endif %}
+        </span>
+    </h2>
+
+    <div class="panel-body">
+        {% if not previous %}
+            <div class="alert info">
+                Более ранней копии этой точки нет, сравнивать не с чем.
+                Следующий бэкап уже будет с чем сопоставить.
+            </div>
+        {% elif result.same %}
+            <div class="alert ok">
+                Конфигурация не менялась. Дата и версия в шапке экспорта меняются
+                при каждом снятии, поэтому в сравнении они не учитываются.
+            </div>
+        {% else %}
+            <div class="hint">
+                Показаны изменённые места с соседними строками, номера как
+                в скачанном файле. Слева было, справа стало.
+            </div>
+        {% endif %}
+    </div>
+
+    {% if result.rows and side_by_side %}
+    <div class="table-wrap">
+        <table class="dt">
+            {# Ширины колонок заданы явно. При table-layout: fixed браузер
+               берёт их из первой строки, а там ячейки с colspan, у которых
+               ширины нет: без colgroup узкая колонка номеров разъезжалась
+               на половину панели. #}
+            <colgroup>
+                <col class="dt-c-no"><col>
+                <col class="dt-c-no"><col>
+            </colgroup>
+            <thead>
+            <tr>
+                <th colspan="2">{% if previous %}{{ previous.created_at | dt_short }}{% else %}пусто{% endif %}</th>
+                <th colspan="2" class="dt-right">{{ current.created_at | dt_short }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in result.rows %}
+                {% if row.kind == 'skip' %}
+                    <tr class="dt-skip">
+                        <td colspan="4">
+                            без изменений: {{ row.skipped }}
+                            {{ row.skipped | plural('строка', 'строки', 'строк') }}
+                        </td>
+                    </tr>
+                {% else %}
+                    {# Пустая ячейка это «строки здесь нет», а не «строка
+                       пустая». Без штриховки эти два случая выглядят
+                       одинаково, и по диффу непонятно, что произошло. #}
+                    <tr>
+                        <td class="dt-no">{{ row.left_no or '' }}</td>
+                        <td class="dt-line {% if row.kind in ('del', 'change') %}dt-del{% elif row.kind == 'add' %}dt-none{% endif %}">{{ row.left }}</td>
+                        <td class="dt-no dt-right">{{ row.right_no or '' }}</td>
+                        <td class="dt-line {% if row.kind in ('add', 'change') %}dt-add{% elif row.kind == 'del' %}dt-none{% endif %}">{{ row.right }}</td>
+                    </tr>
+                {% endif %}
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% elif result.rows %}
+    <div class="table-wrap">
+        <pre class="diff">{% for row in result.rows %}<span class="d-{{ row.kind }}">{{ row.text }}</span>
+{% endfor %}</pre>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    /**
+     * Открыть сравнение выбранной пары.
+     *
+     * Правая копия это адрес страницы, левая параметр: так ссылку можно
+     * отправить, и она откроется тем же самым сравнением.
+     */
+    function compareBackups() {
+        var left = document.getElementById('d-left').value;
+        var right = document.getElementById('d-right').value;
+        var view = {{ ('' if side_by_side else 'unified') | tojson }};
+        window.location.href = '/backups/' + right + '/diff?other=' + left +
+            (view ? '&view=' + view : '');
+    }
+</script>
+{% endblock %}

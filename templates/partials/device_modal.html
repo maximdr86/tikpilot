@@ -1,0 +1,89 @@
+{# Форма добавления/редактирования устройства.
+   Один и тот же диалог используется для обоих случаев — режим определяется
+   атрибутом data-device-id на форме. #}
+<div class="modal-backdrop" id="device-modal">
+    <div class="modal">
+        <form id="device-form" onsubmit="saveDevice(event)">
+            <header>
+                <h3 id="device-modal-title">Новое устройство</h3>
+                <button type="button" class="close-x" onclick="closeModal('device-modal')">&times;</button>
+            </header>
+
+            <div class="body">
+                <div class="grid cols-2">
+                    <div class="field">
+                        <label for="d-name">Имя *</label>
+                        <input type="text" id="d-name" name="name" required placeholder="core-rtr-01">
+                    </div>
+                    <div class="field">
+                        <label for="d-host">IP или hostname *</label>
+                        <input type="text" id="d-host" name="host" required placeholder="10.0.0.1">
+                    </div>
+                </div>
+
+                <div class="grid cols-2">
+                    <div class="field">
+                        <label for="d-api-port">Порт API</label>
+                        <input type="number" id="d-api-port" name="api_port" value="8728" min="1" max="65535">
+                        <div class="hint">8728 обычный API, 8729 API-SSL</div>
+                    </div>
+                    <div class="field">
+                        <label for="d-ftp-port">Порт FTP</label>
+                        <input type="number" id="d-ftp-port" name="ftp_port" value="21" min="1" max="65535">
+                        <div class="hint">Используется для скачивания бэкапов</div>
+                    </div>
+                </div>
+
+                <div class="grid cols-2">
+                    <div class="field">
+                        <label for="d-username">Логин *</label>
+                        <input type="text" id="d-username" name="username" required placeholder="tikpilot">
+                        <div class="hint">Рекомендуется отдельный API-пользователь</div>
+                    </div>
+                    <div class="field">
+                        <label for="device-password">Пароль</label>
+                        <input type="password" id="device-password" name="password" autocomplete="new-password">
+                        <div class="hint">Хранится в базе в зашифрованном виде</div>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="d-group">Группа</label>
+                    <select id="d-group" name="group_id">
+                        <option value="">без группы</option>
+                        {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="d-comment">Комментарий</label>
+                    <input type="text" id="d-comment" name="comment" placeholder="например: узел на ул. Ленина, 5">
+                </div>
+
+                <div class="field">
+                    <label for="d-latency">Цели пинга для этой точки</label>
+                    <input type="text" id="d-latency" name="latency_targets"
+                           placeholder="оставьте пустым, возьмутся общие настройки">
+                    <div class="hint">
+                        Адреса через запятую. Устройство пингует их само во время полного опроса.
+                        Шлюз по умолчанию добавляется автоматически.
+                    </div>
+                </div>
+
+                <div class="check" style="margin-bottom:10px">
+                    <input type="checkbox" id="d-ssl" name="use_ssl" value="1">
+                    <label for="d-ssl">Использовать API-SSL (порт 8729)</label>
+                </div>
+                <div class="check">
+                    <input type="checkbox" id="d-enabled" name="enabled" value="1" checked>
+                    <label for="d-enabled">Устройство активно (участвует в массовых операциях)</label>
+                </div>
+            </div>
+
+            <footer>
+                <button type="button" class="btn" onclick="closeModal('device-modal')">Отмена</button>
+                <button type="submit" class="btn primary">Сохранить</button>
+            </footer>
+        </form>
+    </div>
+</div>

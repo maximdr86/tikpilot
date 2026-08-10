@@ -1,0 +1,75 @@
+name: tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Нижняя и верхняя границы поддержки: если пакеты разъедутся,
+        # это увидим здесь, а не у пользователя при установке.
+        python-version: ["3.10", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Тесты
+        # Реальный роутер не нужен: tests/fake_router.py говорит на протоколе
+        # RouterOS API. Мониторинг выключен, иначе фоновый поток будет мешать.
+        env:
+          DATA_DIR: ${{ runner.temp }}/tikpilot-data
+          MONITOR_ENABLED: "0"
+        run: pytest -q
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Синтаксис shell-скриптов
+        # Установщик правится редко, а ломается тихо: ошибку видно только
+        # при запуске на живом сервере.
+        run: bash -n install-ubuntu.sh restore-data.sh check-data.sh run.sh migrate-from-rosmanager.sh
+
+      - name: Проверка синтаксиса и шаблонов
+        run: |
+          python -m pip install --upgrade pip
+          pip install jinja2
+          python -m compileall -q app tests
+          python - <<'PY'
+          # Шаблон со сломанным тегом ломает страницу только в рантайме —
+          # дешевле поймать здесь.
+          import glob, sys, jinja2
+          env = jinja2.Environment(loader=jinja2.FileSystemLoader("templates"))
+          bad = 0
+          for path in glob.glob("templates/**/*.html", recursive=True):
+              try:
+                  env.parse(open(path, encoding="utf-8").read(), filename=path)
+              except jinja2.TemplateSyntaxError as exc:
+                  print(f"{path}:{exc.lineno}: {exc.message}")
+                  bad += 1
+          sys.exit(1 if bad else 0)
+          PY

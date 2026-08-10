@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Вход · Tikpilot</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script>
+        try {
+            var t = localStorage.getItem('tikpilot-theme');
+            if (t) { document.documentElement.dataset.theme = t; }
+        } catch (e) { /* приватный режим */ }
+    </script>
+</head>
+<body>
+<div class="login-page">
+    <form class="login-card" method="post" action="/login">
+        <div class="head">
+            <h1>Tikpilot</h1>
+            <div class="sub">Управление парком MikroTik</div>
+        </div>
+
+        <div class="body">
+            {% if error %}<div class="alert error">{{ error | t }}</div>{% endif %}
+
+            <div class="field">
+                <label for="username">Логин</label>
+                <input type="text" id="username" name="username" autocomplete="username" autofocus required>
+            </div>
+            <div class="field">
+                <label for="password">Пароль</label>
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
+            </div>
+
+            <input type="hidden" name="next" value="{{ next }}">
+            <button class="btn primary" type="submit" style="width:100%">Войти</button>
+
+            <div class="lang-switch login">
+                {% for code, name in languages %}
+                    {% if code == lang %}<span class="lang current">{{ name }}</span>
+                    {% else %}<a class="lang" href="/lang/{{ code }}?next=/login">{{ name }}</a>{% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </form>
+</div>
+{% include "partials/validation_js.html" %}
+</body>
+</html>

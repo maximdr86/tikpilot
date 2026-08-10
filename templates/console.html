@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Логи панели · Tikpilot{% endblock %}
+
+{% block content %}
+{% include "partials/log_tabs.html" %}
+
+<div class="page-head">
+    <div>
+        <h1>Логи панели</h1>
+        <div class="sub">
+            Что панель делает прямо сейчас · последние {{ capacity }} строк
+        </div>
+    </div>
+    <div class="btn-row">
+        <label class="check">
+            <input type="checkbox" id="c-follow" checked>
+            <span>Следить за концом</span>
+        </label>
+        <select id="c-level" style="width:auto" onchange="consoleReload()">
+            <option value="">Всё подряд</option>
+            <option value="warning">Предупреждения и ошибки</option>
+            <option value="error">Только ошибки</option>
+        </select>
+        <input type="search" id="c-q" placeholder="фильтр по тексту"
+               style="width:200px" oninput="consoleReload()">
+        <button class="btn" onclick="consoleClear()">Очистить</button>
+    </div>
+</div>
+
+<div class="now-strip" id="now-strip">
+    <span class="now-item muted">собираю сведения…</span>
+</div>
+
+<div class="panel">
+    <div class="console" id="console-box">
+        {% for row in rows %}
+            <div class="c-line c-{{ row.level }}">
+                <span class="c-ts">{{ row.ts | dt_short }}</span>
+                <span class="c-src">{{ row.source | t }}</span>
+                <span class="c-text">{{ row.text | t }}</span>
+            </div>
+        {% else %}
+            <div class="c-line c-info c-empty">Пока тихо. Строки появятся, как только панель что-нибудь сделает</div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="hint">
+    Строки живут в памяти и пропадают при перезапуске: консоль показывает
+    настоящее, а не историю. История падений лежит в мониторинге, история
+    задач в разделе «Задачи», а кто что делал в панели, показывает журнал действий.
+    <br>
+    Пароли и ключи в консоль не попадают: значения таких полей вырезаются
+    до того, как строка окажется в буфере.
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let consoleLast = {{ rows[-1].id if rows else 0 }};
+    let consoleTimer = null;
+
+    function consoleLine(row) {
+        const line = document.createElement('div');
+        line.className = 'c-line c-' + row.level;
+        const ts = document.createElement('span');
+        ts.className = 'c-ts';
+        // Время приходит в UTC: показываем местное, как везде в панели
+        ts.textContent = new Date(row.ts.replace(' ', 'T') + 'Z')
+            .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const src = document.createElement('span');
+        src.className = 'c-src';
+        src.textContent = T(row.source);
+        const text = document.createElement('span');
+        text.className = 'c-text';
+        // Именно textContent: строка приходит от устройств и в разметку
+        // попадать не должна ни при каких обстоятельствах
+        text.textContent = T(row.text);
+        line.append(ts, src, text);
+        return line;
+    }
+
+    /** Строка «сейчас»: что идёт в эту секунду. */
+    async function nowTick() {
+        try {
+            const data = await api('/api/console/now');
+            const strip = document.getElementById('now-strip');
+            strip.innerHTML = '';
+
+            const item = (text, cls) => {
+                const el = document.createElement('span');
+                el.className = 'now-item ' + (cls || '');
+                el.textContent = text;
+                strip.appendChild(el);
+            };
+
+            if (data.jobs.length) {
+                data.jobs.forEach((job) => {
+                    const percent = job.total ? Math.round(100 * job.done / job.total) : 0;
+                    item(`${T(job.action_label)}: ${job.done}/${job.total} (${percent}%)`, 'busy');
+                });
+            } else {
+                item(T('Задач нет'), 'calm');
+            }
+            if (data.pending) { item(T('в очереди: %s').replace('%s', data.pending)); }
+
+            const m = data.monitor;
+            if (!m.enabled) {
+                item(T('Мониторинг выключен'), 'warn');
+            } else if (m.last_cycle) {
+                // Время в UTC: считаем, сколько прошло, и показываем секунды.
+                // «Проверка была 3 с назад» отвечает на вопрос «жива ли она»
+                // лучше, чем время последнего цикла.
+                const ago = Math.max(0, Math.round(
+                    (Date.now() - new Date(m.last_cycle.replace(' ', 'T') + 'Z')) / 1000));
+                item(T('проверка %s с назад, за %s с').replace('%s', ago).replace('%s', m.duration));
+                item(T('устройств: %s').replace('%s', m.checked));
+                item(T('сессий: %s').replace('%s', m.sessions));
+            } else {
+                item(T('проверок ещё не было'));
+            }
+
+            if (data.schedule.at) {
+                const when = new Date(data.schedule.at.replace(' ', 'T') + 'Z');
+                item(T('бэкап: %s в %s')
+                    .replace('%s', T(data.schedule.what))
+                    .replace('%s', when.toLocaleString([], {
+                        day: '2-digit', month: '2-digit',
+                        hour: '2-digit', minute: '2-digit' })));
+            }
+        } catch (err) { /* строка не главное — переживём до следующего тика */ }
+    }
+
+    async function consoleTick() {
+        const box = document.getElementById('console-box');
+        try {
+            const params = new URLSearchParams({
+                after: consoleLast,
+                level: document.getElementById('c-level').value,
+                q: document.getElementById('c-q').value,
+            });
+            const data = await api('/api/console?' + params.toString());
+            if (data.rows.length) {
+                const empty = box.querySelector('.c-empty');
+                if (empty) { empty.remove(); }
+                data.rows.forEach((row) => box.appendChild(consoleLine(row)));
+                consoleLast = data.last;
+
+                // Держим в DOM не больше, чем в буфере на сервере
+                while (box.children.length > {{ capacity }}) { box.firstChild.remove(); }
+                if (document.getElementById('c-follow').checked) {
+                    box.scrollTop = box.scrollHeight;
+                }
+            }
+        } catch (err) { /* сеть моргнула — попробуем на следующем тике */ }
+        await nowTick();
+        consoleTimer = setTimeout(consoleTick, 2000);
+    }
+
+    /** Перечитать всё заново: фильтры поменялись. */
+    function consoleReload() {
+        document.getElementById('console-box').innerHTML = '';
+        consoleLast = 0;
+    }
+
+    async function consoleClear() {
+        if (!confirm(T('Очистить консоль? Журнал сервера и история задач останутся.'))) { return; }
+        try {
+            await api('/api/console/clear', { method: 'POST' });
+            consoleReload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    const box = document.getElementById('console-box');
+    box.scrollTop = box.scrollHeight;
+    consoleTick();
+</script>
+{% endblock %}

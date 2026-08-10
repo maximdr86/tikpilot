@@ -1,0 +1,456 @@
+{% extends "base.html" %}
+{% block title %}{{ device.name }} · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>{{ device.name }}</h1>
+        <div class="sub">
+            <span class="mono">{{ device.host }}:{{ device.api_port }}</span>
+            {% if device.group_name %} · {{ device.group_name }}{% endif %}
+            {% if device.comment %} · {{ device.comment }}{% endif %}
+        </div>
+    </div>
+    <div class="btn-row">
+        <button class="btn primary"
+                onclick="openActionModal({device_ids: [{{ device.id }}]}, '{{ _("устройство «%(p0)s»", p0=(device.name)) }}')">
+            Выполнить действие
+        </button>
+        <button class="btn"
+                onclick="openActionModal({device_ids: [{{ device.id }}]}, '{{ _("устройство «%(p0)s»", p0=(device.name)) }}', 'check')">Проверить</button>
+        <button class="btn"
+                onclick="openActionModal({device_ids: [{{ device.id }}]}, '{{ _("устройство «%(p0)s»", p0=(device.name)) }}', 'check_updates')">Обновления</button>
+        <button class="btn" onclick="editDevice({{ device.id }})">Изменить</button>
+        <a class="btn" href="/devices">К списку</a>
+    </div>
+</div>
+
+{# Взведённая страховка это состояние, о котором нельзя забыть: через
+   несколько минут точка сама вернётся к прежней конфигурации и
+   перезагрузится. Поэтому блок стоит выше всего остального. #}
+{% if armed_rollback %}
+<div class="alert warn">
+    <strong>Страховка взведена.</strong>
+    Если не подтвердить до {{ armed_rollback.expires_at | dt }}, устройство
+    восстановит прежнюю конфигурацию и перезагрузится.
+    {% if armed_rollback.note %}
+        <div class="small mono" style="margin-top:4px">{{ armed_rollback.note }}</div>
+    {% endif %}
+    <div class="small" style="margin-top:4px">
+        Если сомневаетесь, откатите сами, не дожидаясь срока.
+    </div>
+    <div class="btn-row" style="margin-top:8px">
+        <button class="btn primary" onclick="decideRollback({{ device.id }}, 'confirm')">
+            Всё работает, подтвердить
+        </button>
+        <button class="btn danger" onclick="decideRollback({{ device.id }}, 'now')">
+            Откатить сейчас
+        </button>
+    </div>
+</div>
+{% endif %}
+
+<!-- ------------------------------------------------------------- состояние -->
+<div class="grid cols-4">
+    <div class="stat">
+        <div class="label">Статус</div>
+        <div class="value" style="font-size:20px;margin-top:10px">
+            {% if device.status == 'online' %}<span class="badge online"><span class="led"></span>онлайн</span>
+            {% elif device.status == 'offline' %}<span class="badge offline"><span class="led"></span>оффлайн</span>
+            {% else %}<span class="badge unknown"><span class="led"></span>неизвестно</span>{% endif %}
+        </div>
+    </div>
+    <div class="stat">
+        <div class="label">RouterOS</div>
+        <div class="value" style="font-size:20px">{{ device.ros_version or '—' }}</div>
+        {% if update_available %}
+            <div class="small" style="color:var(--warn);margin-top:6px">
+                доступна {{ device.latest_version }}
+                <button class="btn sm danger" style="margin-left:6px"
+                        onclick="openActionModal({device_ids: [{{ device.id }}]}, '{{ _("устройство «%(p0)s»", p0=(device.name)) }}', 'upgrade_ros')">
+                    Обновить
+                </button>
+            </div>
+        {% endif %}
+    </div>
+    <div class="stat">
+        <div class="label">Модель</div>
+        <div class="value" style="font-size:20px">{{ device.board_name or '—' }}</div>
+    </div>
+    <div class="stat">
+        <div class="label">Uptime</div>
+        <div class="value" style="font-size:20px">{{ device.uptime or '—' }}</div>
+        {# Датчики есть не у всех плат: у hAP их нет вовсе, у RB5009 есть
+           температура, у CCR ещё и питание. Пустую плитку ради этого
+           не заводим, показываем строкой там, где значение появилось. #}
+        {% if device.temperature or device.voltage %}
+        <div class="small muted" style="margin-top:6px">
+            {% if device.temperature %}{{ device.temperature }} °C{% endif %}
+            {% if device.temperature and device.voltage %} · {% endif %}
+            {% if device.voltage %}{{ device.voltage }} В{% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="panel">
+    <h2>Параметры подключения</h2>
+    <div class="table-wrap">
+        <table>
+            <tbody>
+            <tr><td class="muted" style="width:220px">Адрес</td><td class="mono">{{ device.host }}</td></tr>
+            <tr><td class="muted">Порт API</td><td class="mono">{{ device.api_port }}{% if device.use_ssl %} (SSL){% endif %}</td></tr>
+            <tr><td class="muted">Порт FTP</td><td class="mono">{{ device.ftp_port }}</td></tr>
+            <tr><td class="muted">Пользователь</td><td class="mono">{{ device.username }}</td></tr>
+            <tr><td class="muted">Пароль</td><td class="mono">•••••••• <span class="small muted">(хранится зашифрованным)</span></td></tr>
+            <tr><td class="muted">Identity</td><td class="mono">{{ device.identity or '—' }}</td></tr>
+            <tr><td class="muted">Архитектура</td><td class="mono">{{ device.architecture or '—' }}</td></tr>
+            <tr>
+                <td class="muted">Обновления</td>
+                <td class="mono">
+                    {% if not device.latest_version %}—
+                    {% elif update_available %}
+                        доступна {{ device.latest_version }}, канал {{ device.update_channel or '?' }}
+                        <span class="small muted">({{ device.update_status }})</span>
+                    {% elif ahead_of_channel %}
+                        <span style="color:var(--warn)">установлена версия новее, чем {{ device.latest_version }}
+                        в канале {{ device.update_channel or '?' }}</span>
+                        <div class="small muted">
+                            Обновлять нечего. Переход на {{ device.latest_version }} был бы откатом назад:
+                            он не выполняется через обновление и может испортить конфигурацию.
+                        </div>
+                    {% else %}
+                        актуальная версия, канал {{ device.update_channel or '?' }}
+                    {% endif %}
+                </td>
+            </tr>
+            <tr><td class="muted">Загрузка CPU</td><td class="mono">{{ device.cpu_load or '—' }}{% if device.cpu_load %} %{% endif %}</td></tr>
+            <tr><td class="muted">Свободно памяти</td><td class="mono">{{ device.free_memory or '—' }}</td></tr>
+            <tr><td class="muted">Последняя проверка</td><td>{{ device.last_check | dt }}</td></tr>
+            <tr><td class="muted">Последний раз отвечало</td><td>{{ device.last_seen | dt }}</td></tr>
+            <tr>
+                <td class="muted">В текущем статусе</td>
+                <td>{{ device.status_changed_at | since }}{% if device.fail_streak %}
+                    <span class="badge pending">промахов подряд: {{ device.fail_streak }}</span>{% endif %}
+</td>
+            </tr>
+            {% if device.last_error %}
+            <tr><td class="muted">Последняя ошибка</td><td style="color:var(--err)">{{ device.last_error | t }}</td></tr>
+            {% endif %}
+            <tr><td class="muted">Добавлено</td><td>{{ device.created_at | dt }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ------------------------------------------------------------- графики -->
+<div class="panel">
+    <h2>
+        Задержка и потери
+        <span class="h2-extra">
+            <a href="?hours=6" {% if hours == 6 %}style="font-weight:600"{% endif %}>6 ч</a> ·
+            <a href="?hours=24" {% if hours == 24 %}style="font-weight:600"{% endif %}>сутки</a> ·
+            <a href="?hours=168" {% if hours == 168 %}style="font-weight:600"{% endif %}>неделя</a>
+        </span>
+    </h2>
+    <div class="panel-body">
+        {% if charts.has_latency %}
+            <div class="small muted" style="margin-bottom:2px">Средняя задержка</div>
+            {{ charts.rtt | safe }}
+            {{ charts.rtt_legend | safe }}
+            <div class="small muted" style="margin:12px 0 2px">Потери пакетов</div>
+            {{ charts.loss | safe }}
+        {% else %}
+            <div class="hint">
+                Замеров пока нет. Устройство пингует цели во время полного опроса,
+                подождите один цикл. Цели настраиваются в карточке устройства
+                и переменной <span class="mono">LATENCY_TARGETS</span>.
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- --------------------------------------------------------------- паспорт -->
+{# Порты, сервисы и соседи собираются в полном опросе и показываются из базы:
+   карточка обязана открываться мгновенно и работать, когда точка лежит.
+   Как раз про упавшую точку и спрашивают «что там было настроено». #}
+<div class="panel" data-fold="passport">
+    <h2>Порты и сервисы
+        <span class="h2-extra muted">
+            {% if device.inventory_at %}
+                собрано {{ device.inventory_at | dt_short }}
+            {% else %}
+                ещё не собирали
+            {% endif %}
+        </span>
+        <span class="h2-extra">
+            <button class="btn sm" onclick="collectPassport({{ device.id }})">Собрать сейчас</button>
+            {% if passport.has_data %}
+                {# Нужна, когда в снимке ерунда, а точка на связь не выходит:
+                   заменить его нечем, а лежит он и в карточке, и в сводке #}
+                <button class="btn sm" onclick="forgetPassport({{ device.id }})">Забыть</button>
+            {% endif %}
+        </span>
+    </h2>
+
+    {% if passport.risky %}
+    <div class="panel-body">
+        <div class="alert warn">
+            Открыты небезопасные сервисы:
+            {% for s in passport.risky %}<span class="mono">{{ s.name }}:{{ s.port }}</span>{% if not loop.last %}, {% endif %}{% endfor %}.
+            Они передают пароль в открытом виде или пускают к управлению,
+            и ограничения по адресам у них нет.
+        </div>
+    </div>
+    {% endif %}
+
+    {% if passport.has_data %}
+    <div class="panel-body">
+        {% if passport.services %}
+        <div class="small muted" style="margin-bottom:5px">Сервисы</div>
+        <div class="chip-row" style="margin-bottom:10px">
+            {% for s in passport.services %}
+                <span class="chip {% if not s.enabled %}off{% elif s.risky %}risk{% else %}on{% endif %}"
+                      title="{% if s.address %}только с {{ s.address }}{% elif s.enabled %}доступен отовсюду{% else %}выключен{% endif %}">
+                    {{ s.name }}:{{ s.port }}{% if s.risky %} !{% endif %}
+                    {% if s.address %}<span class="muted small">по списку</span>{% endif %}
+                </span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if passport.dynamic %}
+        {# Динамические записи RouterOS поднимает сам: dhcp-клиент, resolver,
+           wireguard. Через /ip/service их не выключить, и в один ряд
+           с настроенными они не встают. #}
+        <div class="small muted" style="margin-bottom:5px">
+            Динамические <span class="muted">(их поднял сам роутер)</span>
+        </div>
+        <div class="chip-row" style="margin-bottom:14px">
+            {% for s in passport.dynamic %}
+                <span class="chip off">{{ s.name }}{% if s.port %}:{{ s.port }}{% endif %}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if passport.ports %}
+        <div class="small muted" style="margin-bottom:5px">
+            Порты <span class="muted">({{ passport.ports | length }})</span>
+        </div>
+        <div class="ports">
+            {% for p in passport.ports %}
+                <div class="port">
+                    <div class="port-box sp-{{ p.speed_class or 'down' }}
+                                {% if p.disabled %}port-off{% endif %}"
+                         title="{{ p.name }}{% if p.speed %} · {{ p.speed }} Мбит{% endif %}{% if p.poe_status %} · PoE: {{ p.poe_status }}{% endif %}{% if p.comment %} · {{ p.comment }}{% endif %}">
+                        {% if p.poe_status and p.poe_status.startswith('powered') %}
+                            <span class="port-poe">PoE</span>
+                        {% endif %}
+                    </div>
+                    <div class="port-name mono">{{ p.name }}</div>
+                </div>
+            {% endfor %}
+        </div>
+        <div class="port-legend small muted">
+            <span><i class="sp-down"></i>нет линка</span>
+            <span><i class="sp-10m"></i>10M</span>
+            <span><i class="sp-100m"></i>100M</span>
+            <span><i class="sp-1g"></i>1G</span>
+            <span><i class="sp-25g"></i>2.5G</span>
+            <span><i class="sp-10g"></i>10G и выше</span>
+            <span><i class="sp-up"></i>линк есть, скорость не сказали</span>
+        </div>
+        {% endif %}
+
+        {% if passport.logical %}
+        <div class="small muted" style="margin:14px 0 5px">
+            Мосты, VLAN и бонды <span class="muted">({{ passport.logical | length }})</span>
+        </div>
+        <div class="chip-row">
+            {% for p in passport.logical %}
+                <span class="chip {% if p.running %}on{% else %}off{% endif %}">
+                    <span class="mono">{{ p.name }}</span>
+                    <span class="muted small">{{ p.kind }}</span>
+                    {% if p.detail %}<span class="muted small">{{ p.detail }}</span>{% endif %}
+                </span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if passport.scripts %}
+        <div class="small muted" style="margin:14px 0 5px">
+            Скрипты и расписания <span class="muted">({{ passport.scripts | length }})</span>
+        </div>
+        <div class="chip-row">
+            {% for s in passport.scripts %}
+                <span class="chip {% if s.disabled %}off{% endif %}"
+                      title="{{ s.detail }}{% if s.comment %} · {{ s.comment }}{% endif %}">
+                    <span class="mono">{{ s.name }}</span>
+                    <span class="muted small">{% if s.kind == 'scheduler' %}расписание{% else %}скрипт{% endif %}</span>
+                    {% if s.runs %}<span class="muted small">запусков: {{ s.runs }}</span>{% endif %}
+                </span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if passport.neighbors %}
+        <div class="small muted" style="margin:14px 0 5px">
+            Соседи <span class="muted">({{ passport.neighbors | length }})</span>
+        </div>
+        <div class="chip-row">
+            {% for n in passport.neighbors %}
+                <span class="chip">
+                    {% if n.known_id %}
+                        <a href="/devices/{{ n.known_id }}"><strong>{{ n.identity or n.address }}</strong></a>
+                    {% else %}
+                        <strong>{{ n.identity or n.address }}</strong>
+                    {% endif %}
+                    {% if n.identity and n.address %}<span class="mono small muted">{{ n.address }}</span>{% endif %}
+                    <span class="muted small">{{ n.interface }}</span>
+                    {% if n.board %}<span class="muted small">{{ n.board }}</span>{% endif %}
+                </span>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="panel-body">
+        <div class="hint">
+            Паспорт ещё не собран. Он читается при полном опросе, подождите
+            один цикл или нажмите «Собрать сейчас». Сбор выключается
+            переменной <span class="mono">INVENTORY_ENABLED</span>.
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="grid cols-2">
+    <div class="panel">
+        <h2>Загрузка процессора</h2>
+        <div class="panel-body">{{ charts.cpu | safe }}</div>
+    </div>
+    <div class="panel">
+        <h2>Свободная память</h2>
+        <div class="panel-body">{{ charts.memory | safe }}</div>
+    </div>
+</div>
+
+<!-- ---------------------------------------------------------------- лента -->
+<div class="panel">
+    <h2>Хронология <span class="h2-extra muted">статусы, операции и бэкапы вместе</span></h2>
+    {% if timeline %}
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th class="nowrap">Время</th><th class="nowrap">Событие</th><th>Что произошло</th></tr></thead>
+            <tbody>
+            {% for e in timeline %}
+                <tr>
+                    <td class="nowrap small muted">{{ e.ts | dt }}</td>
+                    <td class="nowrap">
+                        {% if e.kind == 'status' and e.status == 'online' %}
+                            <span class="badge online"><span class="led"></span>поднялось</span>
+                        {% elif e.kind == 'status' %}
+                            <span class="badge offline"><span class="led"></span>упало</span>
+                        {% elif e.kind == 'backup' %}
+                            <span class="badge">бэкап</span>
+                        {% elif e.status == 'ok' %}
+                            <span class="badge ok">операция</span>
+                        {% else %}
+                            <span class="badge error">операция</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <strong>{{ e.title | t }}</strong>
+                        {% if e.who %}<span class="small muted">· {{ e.who }}</span>{% endif %}
+                        {% if e.downtime %}<span class="small muted">· лежало {{ e.downtime | duration }}</span>{% endif %}
+                        {% if e.details %}<div class="small muted result-cell">{{ e.details | t }}</div>{% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">Событий пока нет</div>
+    {% endif %}
+</div>
+
+<div class="grid cols-2">
+    <!-- --------------------------------------------------------- бэкапы -->
+    <div class="panel">
+        <h2>Бэкапы</h2>
+        {% if backups %}
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Файл</th><th class="nowrap">Тип</th><th class="nowrap">Размер</th><th></th></tr></thead>
+                <tbody>
+                {% for b in backups %}
+                    <tr>
+                        <td class="mono small">{{ b.filename.split('/')[-1] }}<div class="muted small">{{ b.created_at | dt_short }}</div></td>
+                        <td class="nowrap"><span class="badge">{{ ('бинарный' if b.kind == 'binary' else 'export') | t }}</span></td>
+                        <td class="nowrap small">{{ b.size | size }}</td>
+                        <td class="nowrap"><a class="btn sm" href="/backups/{{ b.id }}/download">Скачать</a></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty">Бэкапов ещё нет</div>
+        {% endif %}
+    </div>
+
+</div>
+
+{% include "partials/device_modal.html" %}
+
+<script>
+    /**
+     * Собрать паспорт по кнопке.
+     *
+     * Поход по сети занимает секунды, поэтому кнопка на это время
+     * блокируется: иначе человек нажимает её трижды и получает три
+     * одновременных обхода одной и той же точки.
+     */
+    /**
+     * Подтвердить изменение или откатить его немедленно.
+     *
+     * Откат спрашивает согласия: устройство при этом перезагружается,
+     * и нажать такую кнопку мимо очень легко.
+     */
+    async function decideRollback(deviceId, what) {
+        if (what !== 'confirm' &&
+            !confirm(T('Откатить конфигурацию? Устройство перезагрузится.'))) {
+            return;
+        }
+        try {
+            await api(`/api/devices/${deviceId}/rollback/${what}`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function collectPassport(deviceId) {
+        const button = event.target;
+        button.disabled = true;
+        button.textContent = T('Собираю...');
+        try {
+            await api(`/api/devices/${deviceId}/inventory`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) {
+            toast(err.message, 'error');
+            button.disabled = false;
+            button.textContent = T('Собрать сейчас');
+        }
+    }
+
+    async function forgetPassport(deviceId) {
+        if (!confirm(T('Забыть собранный паспорт? На устройстве ничего не изменится, следующий обход соберёт всё заново.'))) {
+            return;
+        }
+        try {
+            await api(`/api/devices/${deviceId}/inventory/forget`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+</script>
+{% endblock %}

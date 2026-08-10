@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Терминал · Tikpilot{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/vendor/xterm.css">
+{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Терминал</h1>
+        <div class="sub">
+            {% if enabled %}
+                Полная командная строка RouterOS по SSH · сессия закрывается
+                после {{ idle_minutes }} минут без нажатий
+            {% else %}
+                <span class="badge unknown">терминал выключен</span>
+                чтобы включить, уберите <span class="mono">TERMINAL_ENABLED=0</span> из .env
+            {% endif %}
+        </div>
+    </div>
+    <div class="btn-row">
+        <select id="t-device" style="width:auto" onchange="pickDevice()">
+            <option value="">Выберите точку</option>
+            {% for d in devices %}
+                <option value="{{ d.id }}" {% if device and device.id == d.id %}selected{% endif %}>
+                    {{ d.name }}{% if d.status != 'online' %} (не отвечает){% endif %}
+                </option>
+            {% endfor %}
+        </select>
+        {% if device %}
+            <button class="btn primary" id="t-connect" onclick="connect()">Подключиться</button>
+            <button class="btn" id="t-disconnect" onclick="disconnect()" style="display:none">Отключиться</button>
+        {% endif %}
+    </div>
+</div>
+
+{% if device %}
+<div class="panel">
+    <div class="panel-body" style="padding-bottom:0">
+        <div class="hint" id="t-status">
+            {{ device.name }} · <span class="mono">{{ device.host }}:{{ device.ssh_port or 22 }}</span>
+            {% if fingerprint %}
+                · ключ запомнен <span class="mono small">{{ fingerprint }}</span>
+                <button class="btn sm" onclick="forgetKey()">Забыть ключ</button>
+            {% else %}
+                · ключ ещё не запоминался, он будет записан при первом подключении
+            {% endif %}
+        </div>
+    </div>
+    <div id="terminal-box" class="terminal-box"></div>
+</div>
+{% else %}
+<div class="panel">
+    <div class="empty">Выберите точку вверху страницы</div>
+</div>
+{% endif %}
+
+<div class="hint">
+    Это настоящая командная строка устройства, а не окно панели: работают
+    дополнение по табу, подсказка по <span class="mono">?</span> и команды
+    с бесконечным выводом.
+    <br>
+    Здесь нет подтверждений, которые есть у массовых действий. Перезагрузка
+    сорока точек оттуда требует согласия со списком, а тут достаточно опечатки.
+    Поэтому право на терминал выдаётся отдельно, а всё набранное попадает
+    в журнал действий строкой на команду.
+    <br>
+    Для входа по SSH у пользователя RouterOS должна быть политика
+    <span class="mono">ssh</span>: панели для остальной работы хватает
+    <span class="mono">api</span>, а терминалу нет. Ключ устройства
+    запоминается при первом подключении и сверяется при следующих: если он
+    сменился, панель откажется соединяться. После законной перезаливки
+    роутера ключ забывается кнопкой выше.
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/vendor/xterm.js"></script>
+<script>
+    let term = null;
+    let socket = null;
+
+    function pickDevice() {
+        const id = document.getElementById('t-device').value;
+        window.location.href = id ? '/terminal?device_id=' + id : '/terminal';
+    }
+
+    function status(text, cls) {
+        const box = document.getElementById('t-status');
+        if (box) { box.className = 'hint ' + (cls || ''); }
+    }
+
+    function connect() {
+        const id = document.getElementById('t-device').value;
+        if (!id || socket) { return; }
+
+        const box = document.getElementById('terminal-box');
+        // Цвета берём из темы панели: терминал не должен быть чужеродным
+        // окном, как это было с лентой логов до правки
+        const style = getComputedStyle(document.documentElement);
+        term = new Terminal({
+            fontFamily: 'ui-monospace, "Cascadia Mono", Consolas, monospace',
+            fontSize: 13,
+            cursorBlink: true,
+            theme: {
+                background: style.getPropertyValue('--log-bg').trim(),
+                foreground: style.getPropertyValue('--log-text').trim(),
+            },
+        });
+        term.open(box);
+        fit();
+
+        const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        socket = new WebSocket(`${scheme}://${window.location.host}/ws/terminal/${id}`);
+
+        socket.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            if (message.type === 'data') {
+                term.write(message.text);
+            } else if (message.type === 'ready') {
+                sendSize();
+                term.focus();
+            } else if (message.type === 'error') {
+                // Ошибку пишем в само окно: человек смотрит туда, а не на тосты
+                term.write('\r\n\x1b[31m' + message.text + '\x1b[0m\r\n');
+            }
+        };
+        socket.onclose = () => {
+            if (term) { term.write('\r\n\x1b[33mСоединение закрыто.\x1b[0m\r\n'); }
+            socket = null;
+            document.getElementById('t-connect').style.display = '';
+            document.getElementById('t-disconnect').style.display = 'none';
+        };
+
+        term.onData((data) => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: 'data', text: data }));
+            }
+        });
+
+        document.getElementById('t-connect').style.display = 'none';
+        document.getElementById('t-disconnect').style.display = '';
+    }
+
+    function disconnect() {
+        if (socket) { socket.close(); }
+    }
+
+    /**
+     * Подогнать число строк и колонок под размер окна.
+     *
+     * Считаем сами, а не отдельной надстройкой: размер символа берётся
+     * из самого терминала, а лишний файл в статике ради двух делений
+     * не нужен.
+     */
+    function fit() {
+        if (!term) { return; }
+        const box = document.getElementById('terminal-box');
+        const dims = term._core._renderService.dimensions.css.cell;
+        if (!dims || !dims.width || !dims.height) { return; }
+        const cols = Math.max(20, Math.floor((box.clientWidth - 16) / dims.width));
+        const rows = Math.max(5, Math.floor((box.clientHeight - 16) / dims.height));
+        term.resize(cols, rows);
+    }
+
+    function sendSize() {
+        if (socket && socket.readyState === WebSocket.OPEN && term) {
+            socket.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+        }
+    }
+
+    window.addEventListener('resize', () => { fit(); sendSize(); });
+
+    async function forgetKey() {
+        const id = document.getElementById('t-device').value;
+        if (!confirm(T('Забыть ключ устройства? Делайте это только если роутер переустанавливали.'))) { return; }
+        try {
+            await api(`/api/terminal/${id}/forget-key`, { json: {} });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+</script>
+{% endblock %}

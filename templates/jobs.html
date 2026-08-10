@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Задачи · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Задачи</h1>
+        <div class="sub">История массовых операций (последние 200)</div>
+    </div>
+    <a class="btn" href="/devices">К устройствам</a>
+</div>
+
+<div class="panel">
+<div class="table-wrap">
+    <table class="sortable">
+        <thead>
+        <tr>
+            <th class="nowrap">#</th>
+            <th>Действие</th>
+            <th>Инициатор</th>
+            <th class="nowrap">Устройств</th>
+            <th class="nowrap">Успешно</th>
+            <th class="nowrap">Ошибок</th>
+            <th>Статус</th>
+            <th class="nowrap">Запущена</th>
+            <th class="nowrap">Завершена</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for j in jobs %}
+            <tr>
+                <td><a href="/jobs/{{ j.id }}"><strong>{{ j.id }}</strong></a></td>
+                <td><a href="/jobs/{{ j.id }}">{{ (j.action_label or j.action) | t }}</a></td>
+                <td class="muted">{{ j.username }}</td>
+                <td>{{ j.total }}</td>
+                <td style="color:var(--ok)">{{ j.ok_count }}</td>
+                <td style="color:var(--err)">{{ j.fail_count }}</td>
+                <td class="nowrap">
+                    <span class="badge {{ j.status }}">
+                        {{ {'pending':'В очереди','running':'Выполняется','done':'Завершена','cancelled':'Отменена'}.get(j.status, j.status) | t }}
+                    </span>
+                    {% if j.status == 'pending' and j.scheduled_at %}
+                        <div class="small muted">запуск {{ j.scheduled_at | dt_short }}</div>
+                    {% endif %}
+                </td>
+                <td class="nowrap small muted" data-sort="{{ j.created_at or '' }}">{{ j.created_at | dt_short }}</td>
+                <td class="nowrap small muted" data-sort="{{ j.finished_at or '' }}">{{ j.finished_at | dt_short }}</td>
+            </tr>
+        {% else %}
+            <tr><td colspan="9" class="empty">Задач ещё не было</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+</div>
+{% endblock %}

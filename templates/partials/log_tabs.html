@@ -1,0 +1,28 @@
+{#
+   Переключатель между двумя журналами.
+
+   Их два, и это не случайность: один про то, что делает сама панель,
+   другой про то, что рассказывают о себе роутеры. Раздел общий, потому
+   что вопрос у человека один и тот же («что тут происходило»), а вот
+   источники разные, и смешивать их строки в одну ленту нельзя: у них
+   разное время жизни и разный смысл.
+
+   Вкладка показывается только та, на которую есть право.
+#}
+<div class="btn-row" style="margin-bottom:13px">
+    {% if can("syslog.view") %}
+        <a class="btn {% if active == 'syslog' %}primary{% endif %}" href="/syslog">
+            С устройств
+        </a>
+    {% endif %}
+    {% if can("console.view") %}
+        <a class="btn {% if active == 'console' %}primary{% endif %}" href="/console">
+            Панели
+        </a>
+    {% endif %}
+    {% if can("visits.view") %}
+        <a class="btn {% if active == 'visits' %}primary{% endif %}" href="/logs/visits">
+            Публичные ссылки
+        </a>
+    {% endif %}
+</div>

@@ -1,0 +1,36 @@
+{# Универсальное окно запуска массового действия.
+   Список действий и форма параметров строятся на клиенте по данным /api/actions,
+   поэтому новое действие в actions.py появляется здесь автоматически. #}
+<div class="modal-backdrop" id="action-modal">
+    <div class="modal">
+        <header>
+            <h3>Массовое действие</h3>
+            <button class="close-x" onclick="closeModal('action-modal')">&times;</button>
+        </header>
+        <div class="body">
+            <div class="alert info">
+                Цель: <strong id="action-target-label"></strong>
+            </div>
+            <div class="field">
+                <label for="action-select">Действие</label>
+                <select id="action-select" onchange="renderActionParams()"></select>
+            </div>
+            <div id="action-params"></div>
+
+            {# Окно обслуживания: тяжёлые операции удобнее ставить на ночь #}
+            <div class="field" style="border-top:1px solid var(--border); padding-top:11px">
+                <label for="action-schedule">Когда выполнить</label>
+                <div style="display:flex; gap:7px; align-items:center; flex-wrap:wrap">
+                    <input type="datetime-local" id="action-schedule" style="width:auto">
+                    <button type="button" class="btn sm" onclick="clearSchedule()">Сейчас</button>
+                    <button type="button" class="btn sm" onclick="scheduleTonight()">Сегодня в 02:00</button>
+                </div>
+                <div class="hint">Пусто: запустить немедленно. Задача будет ждать указанного времени.</div>
+            </div>
+        </div>
+        <footer>
+            <button class="btn" onclick="closeModal('action-modal')">Отмена</button>
+            <button class="btn primary" id="action-submit" onclick="submitAction()">Выполнить</button>
+        </footer>
+    </div>
+</div>

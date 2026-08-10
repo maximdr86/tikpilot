@@ -1,0 +1,66 @@
+{# Строки таблицы устройств. Отдаются отдельно, чтобы обновлять список
+   без перезагрузки страницы (фильтры, поиск, после правок). #}
+{% if devices %}
+    {% for d in devices %}
+    <tr>
+        <td><input type="checkbox" class="row-check" value="{{ d.id }}"></td>
+        <td>
+            <a href="/devices/{{ d.id }}"><strong>{{ d.name }}</strong></a>
+            {% if not d.enabled %}<span class="badge" title="Устройство отключено в Tikpilot">выкл</span>{% endif %}
+            {% if d.comment %}<div class="small muted">{{ d.comment }}</div>{% endif %}
+        </td>
+        <td class="mono nowrap">{{ d.host }}{% if d.api_port != 8728 %}:{{ d.api_port }}{% endif %}</td>
+        <td>
+            {% if d.group_name %}
+                <span class="badge tag-{{ d.group_color or 'slate' }}">{{ d.group_name | t }}</span>
+            {% else %}<span class="muted small">—</span>{% endif %}
+        </td>
+        {# Модель отдельной колонкой, а архитектура подписью под ней: вопрос
+           «что там за коробка» задают чаще, чем «какой у неё процессор»,
+           а вместе они отвечают ещё и на «подойдёт ли ей эта прошивка». #}
+        <td class="nowrap">
+            {% if d.board_name %}
+                {{ d.board_name }}
+                {% if d.architecture %}<div class="small muted mono">{{ d.architecture }}</div>{% endif %}
+            {% else %}<span class="muted small">—</span>{% endif %}
+        </td>
+        <td class="mono nowrap" data-sort="{{ d.ros_version | sort_version }}">
+            {{ d.ros_version or '—' }}
+            {# Метка появляется, только если доступная версия действительно НОВЕЕ.
+               Если канал предлагает более старую (например, после перехода
+               stable → long-term), обновлять нечего — это был бы откат. #}
+            {% if d.update_available %}
+                <span class="badge pending" title="Канал: {{ d.update_channel or '?' }}">&#8593; {{ d.latest_version }}</span>
+            {% elif d.ahead_of_channel %}
+                <span class="badge" title="В канале {{ d.update_channel or '?' }} доступна только {{ d.latest_version }}, переход на неё был бы откатом назад">
+                    новее канала
+                </span>
+            {% endif %}
+        </td>
+        <td class="nowrap small" data-sort="{{ d.uptime | uptime_seconds }}">{{ d.uptime or '—' }}</td>
+        <td class="nowrap" data-sort="{{ d.status | status_rank }}">
+            {% if d.status == 'online' %}
+                <span class="badge online"><span class="led"></span>онлайн</span>
+                {# Промахи есть, но порога ещё не достигли — точка под подозрением #}
+                {% if d.fail_streak %}
+                    <span class="badge pending" title="{{ d.last_error | t }}">не отвечает {{ d.fail_streak }}×</span>
+                {% endif %}
+            {% elif d.status == 'offline' %}
+                <span class="badge offline" title="{{ d.last_error | t }}"><span class="led"></span>оффлайн</span>
+                <div class="small muted">{{ d.status_changed_at | since }}</div>
+            {% else %}
+                <span class="badge unknown"><span class="led"></span>неизвестно</span>
+            {% endif %}
+        </td>
+        <td class="nowrap small muted" data-sort="{{ d.last_check or '' }}">{{ d.last_check | dt_short }}</td>
+        <td class="nowrap">
+            {# Имя передаётся через data-атрибут: любые кавычки в названии безопасны #}
+            <button class="btn sm" data-edit-device="{{ d.id }}">Изменить</button>
+            <button class="btn sm danger" data-delete-device="{{ d.id }}" data-name="{{ d.name }}"
+                    title="Удалить из Tikpilot">×</button>
+        </td>
+    </tr>
+    {% endfor %}
+{% else %}
+    <tr><td colspan="10" class="empty">Устройства не найдены. Добавьте первое или измените фильтры.</td></tr>
+{% endif %}

@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Группы · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Группы</h1>
+        <div class="sub">Логическое объединение устройств для массовых операций</div>
+    </div>
+    <button class="btn primary" onclick="newGroup()">+ Новая группа</button>
+</div>
+
+<div class="panel">
+<div class="table-wrap">
+    <table class="sortable">
+        <thead>
+        <tr>
+            <th>Название</th>
+            <th>Комментарий</th>
+            <th class="nowrap">Устройств</th>
+            <th class="nowrap">Онлайн</th>
+            <th class="nowrap">Оффлайн</th>
+            <th class="no-sort">Массовые действия</th>
+            {% if can("groups.manage") %}<th class="no-sort">Публичная ссылка</th>{% endif %}
+            <th class="no-sort"></th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for g in groups %}
+            <tr>
+                <td><span class="badge tag-{{ g.color or 'slate' }}">{{ g.name }}</span></td>
+                <td class="muted small">{{ g.comment or '—' }}</td>
+                <td><a href="/devices?group_id={{ g.id }}">{{ g.total }}</a></td>
+                <td style="color:var(--ok)">{{ g.online or 0 }}</td>
+                <td style="color:var(--err)">{{ g.offline or 0 }}</td>
+                <td class="nowrap">
+                    <button class="btn sm primary"
+                            onclick="openActionModal({group_id: {{ g.id }} }, '{{ _("группа «%(p0)s» (%(p1)s шт.)", p0=(g.name), p1=(g.total)) }}')">
+                        Действие
+                    </button>
+                    <button class="btn sm"
+                            onclick="openActionModal({group_id: {{ g.id }} }, '{{ _("группа «%(p0)s»", p0=(g.name)) }}', 'check')">Проверить</button>
+                    <button class="btn sm"
+                            onclick="openActionModal({group_id: {{ g.id }} }, '{{ _("группа «%(p0)s»", p0=(g.name)) }}', 'backup')">Бэкап</button>
+                    <button class="btn sm danger"
+                            onclick="openActionModal({group_id: {{ g.id }} }, '{{ _("группа «%(p0)s» (%(p1)s шт.)", p0=(g.name), p1=(g.total)) }}', 'reboot')">Ребут</button>
+                </td>
+                {% if can("groups.manage") %}
+                <td class="nowrap">
+                    {% if g.public_token %}
+                        <button class="btn sm" data-copy-link="{{ g.public_token }}">Скопировать</button>
+                        <button class="btn sm" data-new-link="{{ g.id }}">Обновить</button>
+                        <button class="btn sm danger" data-revoke-link="{{ g.id }}"
+                                data-name="{{ g.name }}">Отозвать</button>
+                        {% set v = visits.get(g.id) %}
+                        <div class="small muted" style="margin-top:3px">
+                            {% if g.public_last_seen %}
+                                открывали {{ g.public_last_seen | dt_short }} ·
+                                за сутки {{ (v.day if v else 0) or 0 }},
+                                за неделю {{ (v.week if v else 0) or 0 }}
+                            {% else %}
+                                ни разу не открывали
+                            {% endif %}
+                            {% if can("visits.view") %}
+                                {% set now_watching = watching.get(g.id) or 0 %}
+                                <br>
+                                {% if now_watching %}
+                                    <span class="dot-live"></span>
+                                    <a href="/logs/visits?group_id={{ g.id }}">смотрят сейчас: {{ now_watching }}</a>
+                                {% else %}
+                                    <a href="/logs/visits?group_id={{ g.id }}">кто заходил</a>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        <button class="btn sm" data-new-link="{{ g.id }}">Создать</button>
+                    {% endif %}
+                </td>
+                {% endif %}
+                <td class="nowrap">
+                    {# Значения передаются через data-атрибуты — они экранируются как HTML #}
+                    <button class="btn sm" data-edit-group="{{ g.id }}" data-name="{{ g.name }}"
+                            data-comment="{{ g.comment or '' }}" data-color="{{ g.color }}">Изменить</button>
+                    <button class="btn sm danger" data-delete-group="{{ g.id }}" data-name="{{ g.name }}">×</button>
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="8" class="empty">Групп пока нет. Создайте первую, например «Core» или «Регион-1»</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% if can("groups.manage") %}
+<div class="panel-body">
+    <div class="hint">
+        Публичная ссылка открывает лист состояния группы без входа: имена точек,
+        в сети они или нет и с какого времени. Ни адресов, ни версий, ни
+        управления там нет. Годится, чтобы дать подрядчикам. Ссылка отзывается
+        одним нажатием, старый адрес сразу перестаёт работать.
+        <br>
+        Счётчик показывает открытия людьми, а не запросы: страница обновляется
+        сама раз в минуту, и забытая открытой вкладка считается одним
+        обращением. Резкий рост означает, что адрес разошёлся дальше, чем вы
+        рассчитывали.
+    </div>
+</div>
+{% endif %}
+</div>
+
+{% if ungrouped %}
+<div class="panel"><div class="panel-body">
+    Без группы: <a href="/devices?group_id=none"><strong>{{ ungrouped }}</strong> {{ ungrouped | plural('устройство', 'устройства', 'устройств') }}</a>
+</div></div>
+{% endif %}
+
+<!-- --------------------------------------------------------- окно группы -->
+<div class="modal-backdrop" id="group-modal">
+    <div class="modal">
+        <form id="group-form" onsubmit="saveGroup(event)">
+            <header>
+                <h3 id="group-modal-title">Новая группа</h3>
+                <button type="button" class="close-x" onclick="closeModal('group-modal')">&times;</button>
+            </header>
+            <div class="body">
+                <div class="field">
+                    <label for="g-name">Название *</label>
+                    <input type="text" id="g-name" name="name" required placeholder="Core">
+                </div>
+                <div class="field">
+                    <label for="g-comment">Комментарий</label>
+                    <input type="text" id="g-comment" name="comment" placeholder="магистральное оборудование">
+                </div>
+                <div class="field">
+                    <label for="g-color">Цвет метки</label>
+                    <select id="g-color" name="color">
+                        {% for c in colors %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+            <footer>
+                <button type="button" class="btn" onclick="closeModal('group-modal')">Отмена</button>
+                <button type="submit" class="btn primary">Сохранить</button>
+            </footer>
+        </form>
+    </div>
+</div>
+{% endblock %}

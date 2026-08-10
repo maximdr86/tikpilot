@@ -1,0 +1,119 @@
+{# Публичный лист состояния. Отдельная страница, а не наследник base.html:
+   у смотрящего нет ни учётной записи, ни меню, ни доступа к остальному. #}
+<!DOCTYPE html>
+<html lang="{{ lang }}" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>{{ group.name }} · состояние сети</title>
+    <link rel="stylesheet" href="/static/app.css">
+    {# Страница висит на экране целый день, поэтому обновляется сама #}
+    <meta http-equiv="refresh" content="60">
+</head>
+<body class="public-page">
+<div class="public-wrap">
+
+    <div class="public-head">
+        <div>
+            <h1>{{ group.name }}</h1>
+            <div class="sub">Состояние сети · обновляется каждую минуту</div>
+        </div>
+        <div>
+            <div class="public-counts">
+                <span class="badge online"><span class="led"></span>{{ counts.online }} в сети</span>
+                {% if counts.offline %}
+                    <span class="badge offline"><span class="led"></span>{{ counts.offline }} не отвечают</span>
+                {% endif %}
+                {% if counts.unknown %}
+                    <span class="badge unknown">{{ counts.unknown }} не проверялись</span>
+                {% endif %}
+            </div>
+            <div class="public-lang small">
+                {% for code, name in languages %}
+                    {% if code == lang %}
+                        <span class="current">{{ name }}</span>
+                    {% else %}
+                        <a href="?lang={{ code }}">{{ name }}</a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    {# Простой за сутки: главное число этой страницы. Один взгляд отвечает
+       на вопрос «как сегодня было», а не только «как сейчас». #}
+    <div class="public-downtime {% if not downtime_total %}quiet{% endif %}">
+        {% if downtime_total %}
+            Общий простой за сутки: <strong>{{ downtime_total | duration }}</strong>
+            <span class="muted">· затронуто точек: {{ downtime_points }} из {{ total }}</span>
+        {% else %}
+            За сутки простоев не было
+        {% endif %}
+    </div>
+
+    {% if devices %}
+    <div class="panel">
+        <div class="table-wrap">
+            <table class="sortable">
+                <thead>
+                <tr>
+                    <th>Точка</th>
+                    <th class="nowrap">Состояние</th>
+                    <th class="nowrap">С какого времени</th>
+                    <th class="nowrap">Простой за сутки</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for d in devices %}
+                    <tr>
+                        <td><strong>{{ d.name }}</strong></td>
+                        {# Сортировка по состоянию должна начинаться с упавших:
+                           ради них страницу и открывают #}
+                        <td class="nowrap" data-sort="{% if d.status == 'offline' %}0{% elif d.status == 'online' %}2{% else %}1{% endif %}">
+                            {% if d.status == 'online' %}
+                                <span class="badge online"><span class="led"></span>в сети</span>
+                            {% elif d.status == 'offline' %}
+                                <span class="badge offline"><span class="led"></span>не отвечает</span>
+                            {% else %}
+                                <span class="badge unknown">не проверялась</span>
+                            {% endif %}
+                        </td>
+                        <td class="nowrap small muted" data-sort="{{ d.status_changed_at or '' }}">
+                            {% if d.status_changed_at %}
+                                {{ d.status_changed_at | dt_short }}
+                                {% if d.status == 'offline' %}
+                                    <span class="muted">({{ d.status_changed_at | since }})</span>
+                                {% endif %}
+                            {% else %}—{% endif %}
+                        </td>
+                        <td class="nowrap small" data-sort="{{ d.down_seconds }}">
+                            {% if d.down_seconds %}
+                                {{ d.down_seconds | duration }}
+                                {% if d.outages > 1 %}
+                                    <span class="muted">· {{ d.outages }} {{ d.outages | plural('пропадание', 'пропадания', 'пропаданий') }}</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="panel"><div class="empty">В этой группе пока нет точек</div></div>
+    {% endif %}
+
+    <div class="public-foot muted small">
+        Страница только для просмотра. Управление сетью отсюда невозможно.
+    </div>
+</div>
+{# Только сортировка таблицы. Логика панели сюда не подключается: здесь нет
+   ни учётной записи, ни доступа к API, и лишний код на странице для
+   посторонних не нужен. #}
+<script src="/static/sort.js"></script>
+</body>
+</html>

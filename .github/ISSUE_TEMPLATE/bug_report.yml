@@ -1,0 +1,92 @@
+name: Bug report / Сообщить об ошибке
+description: Something does not work / Что-то работает не так
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за отчёт. Русский и английский одинаково приветствуются.
+
+        **Перед отправкой замажьте реальные данные** — в логах и на скриншотах
+        видны названия площадок, внутренние адреса и имя API-пользователя.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Что произошло / What happened
+      description: Что делали, что ожидали, что получилось на самом деле.
+      placeholder: |
+        Запустил массовое обновление RouterOS на группу из 12 точек.
+        Ожидал, что все обновятся. Три точки помечены ошибкой «...».
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Версия Tikpilot / Tikpilot version
+      description: Внизу бокового меню или в разделе «Настройки → О программе».
+      placeholder: "1.10.2"
+    validations:
+      required: true
+
+  - type: input
+    id: ros-version
+    attributes:
+      label: Версия RouterOS / RouterOS version
+      description: Если проблема касается только части парка — укажите версии этих устройств.
+      placeholder: "7.20.2 (stable)"
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Модель устройства / Device model
+      description: >
+        Это важнее, чем кажется: у hAP ac lite 16 МиБ флеш-памяти, и часть
+        проблем встречается только на таких устройствах.
+      placeholder: "hAP ac lite"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Способ установки / Install method
+      options:
+        - Docker
+        - install-ubuntu.sh (systemd)
+        - run.sh / run.bat
+        - uvicorn вручную
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Версия Python / Python version
+      description: Для Docker можно пропустить.
+      placeholder: "3.12.3"
+
+  - type: input
+    id: fleet-size
+    attributes:
+      label: Размер парка / Fleet size
+      description: Часть проблем проявляется только на масштабе.
+      placeholder: "49"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Журнал / Logs
+      description: >
+        `journalctl -u tikpilot -n 100` или `docker compose logs --tail 100 tikpilot`.
+        Вставится как текст, форматировать не нужно.
+      render: text
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Что ещё стоит знать / Anything else
+      description: Скриншоты, особенности сети (туннели, узкие каналы, NAT), что уже пробовали.

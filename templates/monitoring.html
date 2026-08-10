@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}Мониторинг · Tikpilot{% endblock %}
+
+{% block content %}
+{% set period_name = _({1: 'час', 24: 'сутки', 168: 'неделю', 720: 'месяц'}.get(hours, 'сутки')) %}
+
+<div class="page-head">
+    <div>
+        <h1>Мониторинг</h1>
+        <div class="sub">
+            {% if monitor_on %}
+                Проверка каждые {{ monitor_state.interval or '—' }} с ·
+                последний проход {{ monitor_state.last_cycle | dt_short }},
+                {{ monitor_state.checked }} {{ monitor_state.checked | plural('устройство', 'устройства', 'устройств') }} за {{ monitor_state.last_duration }} с ·
+                открытых сессий {{ monitor_state.sessions }}
+            {% else %}
+                <span class="badge unknown">мониторинг выключен</span>
+                чтобы включить, добавьте <span class="mono">MONITOR_ENABLED=1</span> в файл .env
+            {% endif %}
+        </div>
+    </div>
+    <div class="btn-row">
+        <a class="btn {% if hours == 24 %}primary{% endif %}" href="/monitoring?hours=24">Сутки</a>
+        <a class="btn {% if hours == 168 %}primary{% endif %}" href="/monitoring?hours=168">Неделя</a>
+        <a class="btn {% if hours == 720 %}primary{% endif %}" href="/monitoring?hours=720">Месяц</a>
+        <a class="btn" href="/monitoring/report?hours={{ hours }}" target="_blank"
+           title="Готовый к печати документ: сводка, график, таблица по точкам и журнал падений">Отчёт</a>
+        <button class="btn" onclick="openActionModal({all:true}, '{{ _("ВСЕ устройства") }}', 'check')">Проверить все</button>
+    </div>
+</div>
+
+<!-- ------------------------------------------------------------- сводка -->
+<div class="grid cols-5">
+    <div class="stat info">
+        <div class="label">Всего в работе</div>
+        <div class="value" id="m-total">{{ summary.total or 0 }}</div>
+    </div>
+    <div class="stat ok">
+        <div class="label">В сети</div>
+        <div class="value" id="m-online">{{ summary.online or 0 }}</div>
+    </div>
+    <div class="stat err">
+        <div class="label">Не отвечают</div>
+        <div class="value" id="m-offline">{{ summary.offline or 0 }}</div>
+    </div>
+    <div class="stat warn">
+        <div class="label">Под подозрением</div>
+        <div class="value">{{ summary.shaky or 0 }}</div>
+        <div class="note">есть промахи, но порог не достигнут</div>
+    </div>
+    <div class="stat">
+        <div class="label">Средняя доступность</div>
+        <div class="value">{{ average }}<span style="font-size:15px">%</span></div>
+        <div class="note">за {{ period_name }} · событий за сутки: {{ summary.events_24h }}</div>
+    </div>
+</div>
+
+<!-- --------------------------------------------------------- карта статусов -->
+<div class="panel" data-fold="map">
+    <h2>
+        Карта парка
+        <span class="h2-extra muted">
+            обновлено в <span id="refreshed-at">—</span> ·
+            цвет слева: зелёный «в сети», красный «не отвечает», жёлтый «есть промахи»
+        </span>
+    </h2>
+    <div class="panel-body" id="status-map">
+        {% include "partials/status_map.html" %}
+    </div>
+</div>
+
+<!-- ------------------------------------------------------------ доступность -->
+<div class="panel" data-fold="uptime">
+    <h2>
+        Доступность за {{ period_name }}
+        <span class="h2-extra muted">
+            без единого сбоя: {{ perfect }} из {{ rows | length }}
+        </span>
+    </h2>
+
+    {% if troubled %}
+    <div class="table-wrap">
+        <table class="sortable">
+            <thead>
+            <tr>
+                <th>Устройство</th>
+                <th>Адрес</th>
+                <th>Группа</th>
+                <th style="width:210px">Доступность</th>
+                <th class="nowrap">Простой</th>
+                <th class="nowrap">Падений</th>
+                <th>Сейчас</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for r in troubled %}
+                <tr>
+                    <td><a href="/devices/{{ r.id }}"><strong>{{ r.name }}</strong></a></td>
+                    <td class="mono nowrap">{{ r.host }}</td>
+                    <td>
+                        {% if r.group_name %}
+                            <span class="badge tag-{{ r.group_color or 'slate' }}">{{ r.group_name | t }}</span>
+                        {% else %}<span class="muted small">—</span>{% endif %}
+                    </td>
+                    <td class="nowrap" data-sort="{{ r.uptime_percent }}">
+                        {% set cls = 'bad' if r.uptime_percent < 95 else ('warn' if r.uptime_percent < 99.5 else '') %}
+                        <span class="uptime-bar {{ cls }}"><i style="width: {{ r.uptime_percent }}%"></i></span>
+                        <strong>{{ r.uptime_percent }}%</strong>
+                    </td>
+                    <td class="nowrap" data-sort="{{ r.down_seconds }}">{{ r.down_seconds | duration }}</td>
+                    <td class="nowrap">{{ r.outages }}{% if r.flaps %}
+                        <span class="badge pending" title="Короткие пропадания: в простой не считаются">+{{ r.flaps }} {{ r.flaps | plural('моргание', 'моргания', 'морганий') }}</span>{% endif %}</td>
+                    <td>
+                        {% if r.status == 'online' %}<span class="badge online"><span class="led"></span>в сети</span>
+                        {% elif r.status == 'offline' %}<span class="badge offline"><span class="led"></span>не отвечает</span>
+                        {% else %}<span class="badge unknown">неизвестно</span>{% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">
+        {% if rows %}Все {{ rows | length }} {{ rows | length | plural('устройство', 'устройства', 'устройств') }} были в сети без перерывов
+        {% else %}Нет данных, устройства ещё не проверялись{% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- --------------------------------------------------------- задержка канала -->
+<div class="panel" data-fold="latency">
+    <h2>
+        Задержка и потери
+        <span class="h2-extra muted">
+            {% if latency.problems %}
+                {% set points = latency.problems | map(attribute='device_id') | unique | list | length %}
+                {{ latency.problems | length }}
+                {{ latency.problems | length | plural('измерение', 'измерения', 'измерений') }} ·
+                {{ points }} {{ points | plural('устройство', 'устройства', 'устройств') }} ·
+            {% endif %}
+            пинг с самих устройств · сначала худшие, сортировка по клику
+        </span>
+    </h2>
+    {% if latency.problems %}
+    <div class="table-wrap">
+        <table class="sortable">
+            <thead>
+            <tr>
+                <th>Устройство</th>
+                <th>Цель</th>
+                <th class="nowrap">Потери</th>
+                <th class="nowrap">Задержка</th>
+                <th class="nowrap">Максимум</th>
+                <th class="nowrap">Замеров</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for r in latency.problems %}
+                <tr>
+                    <td><a href="/devices/{{ r.device_id }}">{{ r.device_name }}</a></td>
+                    <td class="mono nowrap">
+                        {{ r.target }}{% if r.label %} <span class="badge">{{ r.label }}</span>{% endif %}
+                    </td>
+                    <td class="nowrap" data-sort="{{ r.loss or 0 }}">
+                        {% if r.loss and r.loss > 0 %}
+                            <strong style="color:{{ 'var(--err)' if r.loss >= 5 else 'var(--warn)' }}">{{ r.loss }}%</strong>
+                        {% else %}<span class="muted">0%</span>{% endif %}
+                    </td>
+                    <td class="nowrap" data-sort="{{ r.rtt if r.rtt is not none else -1 }}">{{ r.rtt if r.rtt is not none else '—' }}{% if r.rtt is not none %} мс{% endif %}</td>
+                    <td class="nowrap muted">{{ r.rtt_max if r.rtt_max is not none else '—' }}</td>
+                    <td class="nowrap muted small">{{ r.samples }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% elif not latency.mute %}
+    <div class="empty">
+        Замеров пока нет. Устройства пингуют цели во время полного опроса, подождите цикл.
+    </div>
+    {% else %}
+    <div class="empty">Отвечающих целей с потерями нет</div>
+    {% endif %}
+</div>
+
+<!-- ------------------------------------------------------- молчащие цели -->
+{% if latency.mute %}
+<div class="panel" data-fold="mute">
+    <h2>
+        Цели, не отвечающие на ICMP
+        <span class="h2-extra muted">{{ latency.mute | length }} шт. · это не проблема канала</span>
+    </h2>
+    <div class="panel-body">
+        <div class="hint" style="margin-bottom:9px">
+            Эти адреса не ответили ни разу. Обычно причина одна из двух: провайдер
+            блокирует ICMP (частый случай для шлюзов) либо у площадки нет маршрута
+            до этой цели. Проверки приостановлены, раз в час выполняется повторная
+            попытка. Убрать совсем: снять цель из
+            <span class="mono">LATENCY_TARGETS</span> или из карточки устройства;
+            записи исчезнут сразу после перезапуска.
+        </div>
+        <div class="map-grid">
+            {% for r in latency.mute %}
+                <a class="map-cell unknown" href="/devices/{{ r.device_id }}"
+                   title="{{ r.device_name }}: {{ r.target }} не отвечает на ICMP">
+                    <div class="n">{{ r.device_name }}</div>
+                    <div class="a">{{ r.target }}</div>
+                </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="grid cols-2">
+    <!-- ----------------------------------------------------------- события -->
+    <div class="panel" data-fold="events">
+        <h2>Последние изменения статуса</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th class="nowrap">Время</th><th>Устройство</th><th>Событие</th><th>Подробности</th></tr></thead>
+                <tbody id="events-rows">
+                    {% include "partials/status_events.html" %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ------------------------------------------------- нестабильные точки -->
+    <div class="panel" data-fold="flapping">
+        <h2>Нестабильные точки
+            <span class="h2-extra muted">за сутки{% if flapping | length >= 10 %} · первые 10{% endif %}</span>
+        </h2>
+        {% if flapping %}
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Устройство</th><th>Адрес</th><th class="nowrap">Смен статуса</th><th class="nowrap">из них морганий</th></tr></thead>
+                <tbody>
+                {% for f in flapping %}
+                    <tr>
+                        <td><a href="/devices/{{ f.device_id }}">{{ f.device_name }}</a></td>
+                        <td class="mono">{{ f.device_host }}</td>
+                        <td style="color:var(--warn)"><strong>{{ f.events }}</strong></td>
+                        <td class="muted">{{ f.flaps or 0 }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="panel-body">
+            <div class="hint">
+                Частые смены статуса это обычно проблема канала, а не самого роутера.
+            </div>
+        </div>
+        {% else %}
+        <div class="empty">Мигающих точек нет</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    markRefreshed();
+
+    // Карта, плитки и лента обновляются сами — страницу можно держать открытой
+    setInterval(async () => {
+        if (document.hidden) { return; }
+        if ($('.modal-backdrop.open')) { return; }
+        try {
+            const s = await api('/api/stats');
+            document.getElementById('m-total').textContent   = s.total   || 0;
+            document.getElementById('m-online').textContent  = s.online  || 0;
+            document.getElementById('m-offline').textContent = s.offline || 0;
+
+            document.getElementById('status-map').innerHTML =
+                await (await fetch('/monitoring/map')).text();
+            document.getElementById('events-rows').innerHTML =
+                await (await fetch('/dashboard/events')).text();
+            markRefreshed();
+        } catch (e) { /* сеть моргнула — не страшно */ }
+    }, {{ ui_refresh_interval * 1000 }});
+</script>
+{% endblock %}

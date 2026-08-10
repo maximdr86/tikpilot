@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Устройства · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Устройства</h1>
+        <div class="sub">Всего в базе: {{ devices | length }}</div>
+    </div>
+    <div class="btn-row">
+        {% if can("devices.edit") %}
+        <button class="btn primary" onclick="newDevice()">+ Добавить устройство</button>
+        <button class="btn" onclick="openModal('import-modal')">Импорт CSV</button>
+        {% endif %}
+        <a class="btn" href="/api/devices/export/csv">Экспорт CSV</a>
+        {% if can("action.check") %}
+        <button class="btn" onclick="openActionModal({all:true}, '{{ _("ВСЕ устройства") }}', 'check')">Проверить все</button>
+        {% endif %}
+        {% if can("action.check_updates") %}
+        <button class="btn" onclick="openActionModal({all:true}, '{{ _("ВСЕ устройства") }}', 'check_updates')">
+            Проверить обновления
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<!-- --------------------------------------------------------------- фильтры -->
+<div class="filters">
+    <div class="field grow">
+        <label for="f-q">Поиск</label>
+        <input type="search" id="f-q" value="{{ f_q }}" placeholder="имя, адрес, комментарий, identity, модель"
+               oninput="scheduleReload()">
+    </div>
+    <div class="field">
+        <label for="f-group">Группа</label>
+        <select id="f-group" onchange="reloadDeviceRows()">
+            <option value="">Все группы</option>
+            <option value="none" {% if f_group == 'none' %}selected{% endif %}>Без группы</option>
+            {% for g in groups %}
+                <option value="{{ g.id }}" {% if f_group == g.id|string %}selected{% endif %}>{{ g.name | t }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="f-status">Статус</label>
+        <select id="f-status" onchange="reloadDeviceRows()">
+            <option value="">Любой</option>
+            <option value="online"  {% if f_status == 'online'  %}selected{% endif %}>Онлайн</option>
+            <option value="offline" {% if f_status == 'offline' %}selected{% endif %}>Оффлайн</option>
+            <option value="unknown" {% if f_status == 'unknown' %}selected{% endif %}>Не проверялось</option>
+            <option value="update"  {% if f_status == 'update'  %}selected{% endif %}>Есть обновление</option>
+        </select>
+    </div>
+    <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn" onclick="reloadDeviceRows()">Обновить</button>
+    </div>
+    <div class="field">
+        <label>&nbsp;</label>
+        <div class="small muted" style="padding:8px 0">
+            {% if monitor_on %}
+                <span class="badge online"><span class="led"></span>мониторинг</span>
+                обновлено в <span id="refreshed-at">—</span>
+            {% else %}
+                <span class="badge unknown">мониторинг выключен</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- --------------------------------------------------------------- таблица -->
+<div class="panel">
+<div class="table-wrap">
+    <table class="sortable">
+        <thead>
+        <tr>
+            <th class="no-sort" style="width:36px"><input type="checkbox" id="check-all" onchange="toggleAll(this.checked)"></th>
+            <th>Имя</th>
+            <th>IP / Hostname</th>
+            <th>Группа</th>
+            <th class="nowrap">Модель</th>
+            <th class="nowrap">RouterOS</th>
+            <th class="nowrap">Uptime</th>
+            <th>Статус</th>
+            <th class="nowrap">Проверка</th>
+            <th class="no-sort"></th>
+        </tr>
+        </thead>
+        <tbody id="device-rows">
+            {% include "partials/device_rows.html" %}
+        </tbody>
+    </table>
+</div>
+</div>
+
+<!-- ------------------------------------------------- панель массовых действий -->
+<div class="bulkbar" id="bulkbar">
+    <div class="selected">Выбрано: <span id="bulk-count">0</span></div>
+
+    <button class="btn primary"
+            onclick="openActionModal({device_ids: selectedDeviceIds()}, '{{ _("выбранные устройства (") }}' + selectedDeviceIds().length + '{{ _(" шт.)") }}')">
+        Массовое действие
+    </button>
+{% if can("action.check") %}
+    <button class="btn"
+            onclick="openActionModal({device_ids: selectedDeviceIds()}, '{{ _("выбранные устройства") }}', 'check')">Проверить</button>
+    {% endif %}
+{% if can("action.backup") %}
+    <button class="btn"
+            onclick="openActionModal({device_ids: selectedDeviceIds()}, '{{ _("выбранные устройства") }}', 'backup')">Бэкап</button>
+    {% endif %}
+{% if can("action.reboot") %}
+    <button class="btn danger"
+            onclick="openActionModal({device_ids: selectedDeviceIds()}, '{{ _("выбранные устройства") }}', 'reboot')">Перезагрузить</button>
+    {% endif %}
+{% if can("action.upgrade_ros") %}
+    <button class="btn danger"
+            onclick="openActionModal({device_ids: selectedDeviceIds()}, '{{ _("выбранные устройства (") }}' + selectedDeviceIds().length + '{{ _(" шт.)") }}', 'upgrade_ros')">
+        Обновить RouterOS
+    </button>
+    {% endif %}
+
+    {% if can("devices.edit") %}
+    <span class="muted">|</span>
+    <select id="bulk-group" style="width:auto">
+        <option value="">без группы</option>
+        {% for g in groups %}<option value="{{ g.id }}">{{ g.name | t }}</option>{% endfor %}
+    </select>
+    <button class="btn" onclick="bulkSetGroup()">В группу</button>
+    <button class="btn danger" onclick="bulkDelete()">Удалить</button>
+    {% endif %}
+</div>
+
+{% include "partials/device_modal.html" %}
+{% include "partials/import_modal.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    refreshBulkbar();
+    markRefreshed();
+    // Таблица сама перечитывается — выделение строк и фильтры при этом сохраняются
+    startAutoRefresh({{ ui_refresh_interval }});
+</script>
+{% endblock %}

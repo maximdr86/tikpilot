@@ -1,0 +1,22 @@
+{# Строки ленты «упало / поднялось». Выносим отдельно, чтобы обновлять на лету. #}
+{% for e in events %}
+<tr>
+    <td class="nowrap small muted">{{ e.ts | dt_short }}</td>
+    <td>
+        {% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ e.device_name }}</a>
+        {% else %}{{ e.device_name }}{% endif %}
+        <div class="small muted mono">{{ e.device_host }}</div>
+    </td>
+    <td class="nowrap">
+        {% if e.status == 'online' %}
+            <span class="badge online"><span class="led"></span>поднялось</span>
+            {% if e.downtime %}<div class="small muted">лежало {{ e.downtime | duration }}</div>{% endif %}
+        {% else %}
+            <span class="badge offline"><span class="led"></span>упало</span>
+        {% endif %}
+    </td>
+    <td class="small muted result-cell">{{ e.reason | t }}</td>
+</tr>
+{% else %}
+<tr><td colspan="4" class="empty">Событий нет</td></tr>
+{% endfor %}
