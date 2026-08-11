@@ -202,6 +202,10 @@
                 <div class="btn-row">
                     {% if u.id != user.id %}
                     <button class="btn sm" type="button" onclick="toggleUser({{ u.id }})">Права</button>
+                    {# Сброс без старого пароля: человек его как раз и не помнит.
+                       Себе так менять нельзя, для этого форма выше #}
+                    <button class="btn sm" type="button"
+                            onclick="togglePassword({{ u.id }})">Пароль</button>
                     <form method="post" action="/settings/users/{{ u.id }}/delete"
                           onsubmit="return confirm('{{ _("Удалить пользователя %(p0)s?", p0=(u.username)) }}')" style="display:inline">
                         <button class="btn sm danger" type="submit">Удалить</button>
@@ -213,6 +217,26 @@
             </div>
 
             {% if u.id != user.id %}
+            <form method="post" action="/settings/users/{{ u.id }}/password"
+                  id="user-pass-{{ u.id }}" class="user-form" style="display:none">
+                <div class="field">
+                    <label for="pass-{{ u.id }}">Новый пароль для {{ u.username }}</label>
+                    <input type="password" id="pass-{{ u.id }}" name="password"
+                           autocomplete="new-password" minlength="6"
+                           placeholder="не короче 6 символов">
+                    <div class="hint">
+                        Текущий пароль не спрашивается: сброс на то и нужен, что
+                        человек его не помнит. Все прежние входы этого
+                        администратора завершатся, ему придётся войти заново.
+                        Передайте пароль лично и попросите сменить его на свой.
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn primary" type="submit">Установить пароль</button>
+                    <button class="btn" type="button" onclick="togglePassword({{ u.id }})">Отмена</button>
+                </div>
+            </form>
+
             <form method="post" action="/settings/users/{{ u.id }}/permissions"
                   id="user-form-{{ u.id }}" class="user-form" style="display:none">
 

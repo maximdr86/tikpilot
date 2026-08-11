@@ -9,6 +9,7 @@ from ..auth import (
     authenticate,
     clear_session_cookie,
     client_ip,
+    end_sessions,
     current_user,
     make_session_token,
     read_session,
@@ -258,8 +259,11 @@ async def change_password(
         error = "Новые пароли не совпадают"
     else:
         execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(new_password), user["id"]))
+        # Прочие входы завершаются: сменить пароль обычно и означает
+        # «выгнать того, кто мог его знать»
+        end_sessions(user["id"])
         log_audit(user["username"], "Смена пароля", ip=client_ip(request))
-        message = "Пароль изменён"
+        message = "Пароль изменён, прежние входы на других устройствах завершены"
 
     # Пароль меняет себе кто угодно, а список учётных записей на этой странице
     # видит только тот, кому положено видеть настройки: иначе ответ на смену
@@ -455,6 +459,47 @@ async def save_permissions(request: Request, user_id: int,
             log_audit(user["username"], "Изменены права", target["username"],
                       ", ".join(sorted(keys)) or "нет прав", ip=client_ip(request))
             message = f"Права пользователя {target['username']} сохранены"
+
+    return render("settings.html", request, user, active="settings",
+                  message=message, error=error, diag=_diagnostics(), **_users_context(request))
+
+
+@router.post("/settings/users/{user_id}/password")
+async def reset_user_password(request: Request, user_id: int,
+                              password: str = Form(""),
+                              user=Depends(require("users.manage"))):
+    """
+    Задать другому администратору новый пароль.
+
+    Старый при этом не спрашивается: смысл сброса в том, что человек
+    свой пароль как раз и не помнит. Право `users.manage` и так позволяет
+    завести нового администратора с полными правами, так что ничего
+    сверх этого сброс не даёт.
+
+    Себе пароль так менять нельзя, для этого есть форма выше, и она
+    спрашивает текущий. Разница не формальная: перехваченная сессия
+    не должна давать возможность сменить пароль и закрепиться в панели,
+    не зная прежнего.
+
+    Все прежние входы этого человека завершаются. Сброшенный пароль,
+    после которого чужая вкладка продолжает работать, бесполезен.
+    """
+    error = message = None
+    target = query_one("SELECT id, username FROM users WHERE id = ?", (user_id,))
+
+    if user_id == user["id"]:
+        error = "Свой пароль меняйте через форму «Смена своего пароля»: она спросит текущий"
+    elif target is None:
+        error = "Пользователь не найден"
+    elif len(password) < 6:
+        error = "Пароль должен быть не короче 6 символов"
+    else:
+        execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                (hash_password(password), user_id))
+        end_sessions(user_id)
+        log_audit(user["username"], "Сброшен пароль администратора",
+                  str(target["username"]), "прежние входы завершены", client_ip(request))
+        message = f"Пароль пользователя {target['username']} изменён, прежние входы завершены"
 
     return render("settings.html", request, user, active="settings",
                   message=message, error=error, diag=_diagnostics(), **_users_context(request))

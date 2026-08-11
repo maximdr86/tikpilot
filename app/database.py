@@ -105,7 +105,12 @@ CREATE TABLE IF NOT EXISTS users (
     -- Права: список ключей через запятую, «full» означает полный доступ
     permissions   TEXT NOT NULL DEFAULT 'full',
     -- 1 — виден весь парк, 0 — только выбранные группы и устройства
-    scope_all     INTEGER NOT NULL DEFAULT 1
+    scope_all     INTEGER NOT NULL DEFAULT 1,
+    -- Номер поколения сессий. Растёт при каждой смене пароля, и старые
+    -- cookie после этого перестают действовать: сессия у нас подписанная
+    -- и по себе бессрочная, иначе смена пароля не выгоняла бы того, кто
+    -- уже вошёл, а ради этого её обычно и делают.
+    session_epoch INTEGER NOT NULL DEFAULT 0
 );
 
 -- Настройки хаба WireGuard. Сами линки живут на роутере: он источник
@@ -576,6 +581,9 @@ CREATE TABLE IF NOT EXISTS backup_schedules (
 # Колонки, добавленные уже после первых версий программы.
 # Проверяются при каждом старте, чтобы существующая база обновлялась сама.
 MIGRATIONS: dict[str, list[tuple[str, str]]] = {
+    "users": [
+        ("session_epoch", "INTEGER NOT NULL DEFAULT 0"),
+    ],
     "devices": [
         ("architecture", "TEXT NOT NULL DEFAULT ''"),
         ("latest_version", "TEXT NOT NULL DEFAULT ''"),

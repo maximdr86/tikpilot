@@ -2338,6 +2338,71 @@ def test_empty_form_field_answers_like_a_form_not_like_a_protocol(client):
         assert "<form" in answer.text
 
 
+def test_admin_resets_another_password_and_kicks_that_person_out(client, router):
+    """
+    Сброс пароля админом: пароль меняется, прежние входы завершаются.
+
+    Второе не менее важно первого. Сессия у нас это подписанная cookie,
+    сервер её не хранит и поштучно отозвать не может, поэтому у каждого
+    есть номер поколения. Без него сброшенный пароль ничего не решал бы:
+    чужая открытая вкладка продолжала бы работать.
+    """
+    _make_user(client, "забывчивый", ["settings.view"])
+
+    with _as("забывчивый") as forgetful:
+        assert forgetful.get("/settings").status_code == 200
+
+        target = query_one("SELECT id FROM users WHERE username = ?", ("забывчивый",))
+        page = client.post(f"/settings/users/{target['id']}/password",
+                           data={"password": "новый-пароль-1"})
+        assert page.status_code == 200
+        assert "прежние входы завершены" in page.text
+
+        # Старая вкладка того человека больше не работает
+        assert forgetful.get("/settings", follow_redirects=False).status_code == 303
+
+    # А с новым паролем вход проходит
+    with _anon() as fresh:
+        answer = fresh.post("/login", data={"username": "забывчивый",
+                                            "password": "новый-пароль-1"},
+                            follow_redirects=False)
+        assert answer.status_code == 303, "новый пароль не работает"
+
+    # И в журнале это видно
+    row = query_one("SELECT target, details FROM audit_log WHERE action = ?"
+                    " ORDER BY id DESC LIMIT 1", ("Сброшен пароль администратора",))
+    assert row is not None, "сброс не записан в журнал"
+    assert row["target"] == "забывчивый"
+    assert "входы завершены" in row["details"]
+
+
+def test_password_reset_needs_the_right_and_is_not_for_yourself(client, router):
+    """
+    Сброс доступен только тому, кто и так заводит администраторов.
+
+    И только чужой: свой пароль меняют формой, которая спрашивает текущий.
+    Разница не формальная — перехваченная сессия не должна давать
+    закрепиться в панели, не зная прежнего пароля.
+    """
+    _make_user(client, "посторонний", ["settings.view"])
+    victim = query_one("SELECT id FROM users WHERE username = ?", ("admin",))
+    outsider = query_one("SELECT id FROM users WHERE username = ?", ("посторонний",))
+
+    with _as("посторонний") as guest:
+        assert guest.post(f"/settings/users/{victim['id']}/password",
+                          data={"password": "чужой-пароль"}).status_code == 403
+
+    mine = query_one("SELECT id FROM users WHERE username = ?", ("admin",))
+    page = client.post(f"/settings/users/{mine['id']}/password",
+                       data={"password": "как-нибудь-так"})
+    assert "Смена своего пароля" in page.text
+
+    # Короткий пароль не принимается
+    short = client.post(f"/settings/users/{outsider['id']}/password",
+                        data={"password": "12345"})
+    assert "не короче 6 символов" in short.text
+
+
 def test_settings_messages_are_translated(client):
     """
     Сообщения после действий на странице настроек переводятся.
