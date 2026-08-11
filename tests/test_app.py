@@ -2385,6 +2385,28 @@ def test_old_database_gets_every_column_the_code_reads():
     assert row["session_epoch"] == 0
 
 
+def test_password_button_has_a_working_handler(client, router):
+    """
+    У кнопки «Пароль» есть обработчик, и он не в шаблоне, а в app.js.
+
+    Кнопка была, форма была, а функции не было: onclick звал то, чего
+    в браузере нет, и нажатие не делало ровно ничего, молча. Проверка
+    сверяет разметку страницы с содержимым скрипта.
+    """
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+
+    _make_user(client, "с-паролем", ["settings.view"])
+    page = client.get("/settings").text
+    assert "togglePassword(" in page, "кнопки «Пароль» нет на странице"
+    assert 'id="user-pass-' in page, "формы сброса нет на странице"
+
+    script = Path(BASE_DIR, "static", "app.js").read_text(encoding="utf-8")
+    assert "function togglePassword" in script, "onclick зовёт несуществующую функцию"
+    assert "user-pass-" in script, "функция ищет не тот элемент"
+
+
 def test_admin_resets_another_password_and_kicks_that_person_out(client, router):
     """
     Сброс пароля админом: пароль меняется, прежние входы завершаются.

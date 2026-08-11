@@ -636,6 +636,24 @@ function toggleTheme() {
 
 /* ======================================================= права пользователей */
 
+/**
+ * Показать или спрятать форму сброса пароля.
+ *
+ * Рядом с формой прав, а не вместо неё: это разные разговоры. Права
+ * правят вдумчиво и помногу, пароль сбрасывают в одно движение, когда
+ * человек звонит и говорит, что не может войти.
+ */
+function togglePassword(id) {
+    const form = document.getElementById('user-pass-' + id);
+    if (!form) { return; }
+    const shown = form.style.display !== 'none';
+    form.style.display = shown ? 'none' : 'block';
+    if (!shown) {
+        const field = form.querySelector('input[name="password"]');
+        if (field) { field.focus(); }
+    }
+}
+
 /** Показать или спрятать форму прав. */
 function toggleUser(id) {
     const form = document.getElementById('user-form-' + id);
