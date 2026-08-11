@@ -3657,6 +3657,200 @@ def test_forgetting_the_inventory_clears_it_without_touching_the_device(client, 
     assert "ether3" not in client.get("/scripts").text
 
 
+def test_connection_reset_is_explained_not_just_numbered():
+    """
+    Разрыв соединения объясняется словами, а не кодом ошибки.
+
+    `ConnectionResetError: [Errno 104]` на живом парке означает почти
+    всегда одно: адрес панели не входит в список у `/ip service`.
+    RouterOS принимает соединение и обрывает его на первом байте, поэтому
+    снаружи порт выглядит открытым, а проверка `nc -vz` радостно
+    отчитывается об успехе. Человеку по номеру ошибки не догадаться.
+    """
+    from app.mikrotik import _friendly
+
+    text = _friendly(ConnectionResetError(104, "Connection reset by peer"))
+    assert "Errno" not in text
+    assert "/ip service" in text
+
+    # Соседние случаи не перепутаны
+    assert _friendly(ConnectionRefusedError()) != text
+    assert "Таймаут" in _friendly(__import__("socket").timeout())
+
+
+def test_report_can_be_narrowed_to_a_group_or_to_chosen_devices(client, router):
+    """
+    Отчёт выгружается по группе и по отдельным точкам.
+
+    Отчёт по всему парку годится для разговора с начальством, а для
+    разговора с провайдером нужен другой: только его точки. Раньше
+    выбора не было вовсе, весь парк и точка.
+    """
+    from app.database import execute
+
+    first = _add_device(client, router, "отчёт-точка-1")
+    second = _add_device(client, router, "отчёт-точка-2")
+    group_id = client.post("/api/groups", data={"name": "Отчётная"}).json()["id"]
+    execute("UPDATE devices SET group_id = ? WHERE id = ?", (group_id, first))
+
+    def in_table(page: str, name: str) -> bool:
+        """Есть ли точка в самом документе, а не в форме выбора охвата."""
+        body = page.split("</form>")[-1]
+        return name in body
+
+    # Весь парк: обе точки в документе
+    everything = client.get("/monitoring/report?hours=24").text
+    assert in_table(everything, "отчёт-точка-1")
+    assert in_table(everything, "отчёт-точка-2")
+    assert "весь парк" in everything
+
+    # Группа: только своя
+    by_group = client.get(f"/monitoring/report?hours=24&group_id={group_id}").text
+    assert in_table(by_group, "отчёт-точка-1")
+    assert not in_table(by_group, "отчёт-точка-2")
+    assert "группа Отчётная" in by_group
+
+    # Отдельная точка, и она сильнее выбранной группы
+    picked = client.get(
+        f"/monitoring/report?hours=24&group_id={group_id}&devices={second}").text
+    assert in_table(picked, "отчёт-точка-2")
+    assert not in_table(picked, "отчёт-точка-1")
+
+    # То же самое в CSV, включая имя файла
+    csv_answer = client.get(f"/monitoring/report.csv?hours=24&group_id={group_id}")
+    assert csv_answer.status_code == 200
+    body = csv_answer.content.decode("utf-8-sig")
+    assert "отчёт-точка-1" in body and "отчёт-точка-2" not in body
+    assert f"group{group_id}" in csv_answer.headers["content-disposition"]
+
+
+def test_report_shows_average_downtime_per_site(client, router):
+    """
+    В сводке средний простой на точку, а не сумма по парку.
+
+    Сумма растёт вместе с числом точек, и сравнить по ней два отчёта
+    нельзя: пятьдесят часов на десяти точках и на пятидесяти это разные
+    вещи. Среднее сравнимо и с прошлым месяцем, и с соседней группой.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.database import execute
+
+    first = _add_device(client, router, "простой-1")
+    _add_device(client, router, "простой-2")
+
+    moment = datetime.now(timezone.utc) - timedelta(hours=2)
+    execute(
+        "INSERT INTO status_events (device_id, device_name, device_host, status,"
+        " reason, downtime, short, ts) VALUES (?,?,?,'online','',?,0,?)",
+        (first, "простой-1", "127.0.0.1", 7200,
+         moment.strftime("%Y-%m-%d %H:%M:%S")))
+
+    page = client.get("/monitoring/report?hours=24").text
+    assert "Средний простой" in page
+    assert "Суммарный простой" not in page
+    assert "на одну точку за период" in page
+
+
+def test_report_takes_a_date_range_and_ignores_what_happened_after(client, router):
+    """
+    Отчёт за интервал дат считает только то, что попало в интервал.
+
+    Ради этого всё и делалось: «за месяц» с плавающей правой границей
+    не годится, когда нужен отчёт за прошлый период. Падение, случившееся
+    после конца интервала, в него попадать не должно.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.database import execute, utcnow
+
+    device_id = _add_device(client, router, "точка-с-историей")
+
+    def event(days_ago: float, status: str, downtime: int = 0) -> None:
+        moment = datetime.now(timezone.utc) - timedelta(days=days_ago)
+        execute(
+            "INSERT INTO status_events (device_id, device_name, device_host, status,"
+            " reason, downtime, short, ts) VALUES (?,?,?,?,?,?,0,?)",
+            (device_id, "точка-с-историей", "127.0.0.1", status, "",
+             downtime, moment.strftime("%Y-%m-%d %H:%M:%S")))
+
+    # Час простоя пять дней назад и два часа простоя вчера.
+    # Каждое падение это пара событий: ушло и вернулось
+    event(5 + 1 / 24, "offline")
+    event(5, "online", 3600)
+    event(1 + 2 / 24, "offline")
+    event(1, "online", 7200)
+
+    today = datetime.now().astimezone()
+    since = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+    until = (today - timedelta(days=3)).strftime("%Y-%m-%d")
+
+    page = client.get(f"/monitoring/report?since={since}&until={until}").text
+    assert "интервал дат" in page
+
+    # В интервал попал только первый простой, значит час, а не три
+    from app.routes.pages import _report_window
+    from app import monitor
+
+    hours, edge, _note = _report_window(720, since, until)
+    rows = {r["name"]: r for r in monitor.availability(hours, ("", []), edge)}
+    row = rows["точка-с-историей"]
+    assert 3000 < row["down_seconds"] < 4200, row["down_seconds"]
+    assert row["outages"] == 1
+
+    # А за весь месяц видны оба
+    everything = {r["name"]: r for r in monitor.availability(720, ("", []))}
+    assert everything["точка-с-историей"]["down_seconds"] > 10000
+
+
+def test_report_date_range_survives_human_input(client, router):
+    """
+    Даты задом наперёд и мусор в полях не ломают отчёт.
+
+    Поля видит человек, а человек напишет что угодно, включая пустую
+    строку, дату из будущего и «с 7 по 1».
+    """
+    from app.routes.pages import _report_window
+
+    # Перевёрнутый интервал разворачивается, а не даёт отрицательное окно
+    straight = _report_window(720, "2026-08-01", "2026-08-07")
+    reversed_ = _report_window(720, "2026-08-07", "2026-08-01")
+    assert straight[0] == reversed_[0] > 0
+
+    # Мусор и половина интервала откатываются к обычному периоду
+    assert _report_window(24, "мусор", "2026-08-07")[1] is None
+    assert _report_window(24, "2026-08-07", "")[1] is None
+    assert _report_window(999, "", "")[0] == 720
+
+    # Страница при этом открывается, а не падает
+    assert client.get("/monitoring/report?since=завтра&until=никогда").status_code == 200
+    assert client.get("/monitoring/report?since=2026-08-01").status_code == 200
+
+
+def test_report_selection_cannot_widen_the_visible_fleet(client, router):
+    """
+    Выбор в отчёте сужает область видимости, но не расширяет.
+
+    Иначе достаточно было бы подставить чужой номер группы в адрес,
+    чтобы получить отчёт по точкам, которых человеку видеть не положено.
+    """
+    from app.database import execute
+
+    hidden = _add_device(client, router, "чужая-точка")
+    mine = _add_device(client, router, "своя-точка")
+    other_group = client.post("/api/groups", data={"name": "Чужая"}).json()["id"]
+    execute("UPDATE devices SET group_id = ? WHERE id = ?", (other_group, hidden))
+
+    _make_user(client, "узкий", ["monitoring.view"], scope_all=False, devices=[mine])
+
+    with _as("узкий") as limited:
+        page = limited.get(f"/monitoring/report?hours=24&group_id={other_group}").text
+        assert "чужая-точка" not in page, "область видимости обошли через адрес"
+
+        by_id = limited.get(f"/monitoring/report?hours=24&devices={hidden}").text
+        assert "чужая-точка" not in by_id, "область видимости обошли через список точек"
+
+
 def test_two_traps_in_one_answer_do_not_kill_the_session(router):
     """
     Отказ роутера остаётся отказом, даже если ловушек в ответе две.

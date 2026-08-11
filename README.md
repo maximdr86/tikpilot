@@ -159,6 +159,21 @@ docker compose up -d --build
 The panel opens at `http://your-server:8080`. Login `admin`, password `admin`,
 change it right after the first login.
 
+**Settings live in `.env` next to `docker-compose.yml`, on the host, not inside
+the container.** The image does not contain `.env` at all: the values are passed
+in as environment variables at start. Edit the file and apply:
+
+```bash
+nano .env
+docker compose up -d
+```
+
+No rebuild is needed for that, `--build` is only for code changes. To check what
+actually arrived: `docker compose exec tikpilot env | sort`.
+
+The published port is the left side of `ports`, for example `"6060:8080"`. There
+is no reason to change the inner one.
+
 ### Ubuntu as a service
 
 This is the way to go on a production server. Copy the project folder and run:
@@ -746,6 +761,14 @@ The "Report" button on the monitoring page opens a document ready to be handed
 over: a summary in large figures, a bar chart of fleet availability by day (or
 by hour for a one day window), the sites that need attention, a table of every
 site, and a log of outages with the times they started and ended.
+
+Above the document sits a scope form: a period or a date range, a group and, if
+needed, individual sites by checkbox. Both dates are inclusive and counted from
+local midnight; a date range wins over the period. Ticked sites win over the selected group. The chosen scope is
+printed in the header and carried into the CSV together with its file name, so
+a month later nobody has to guess what the figure covered. The selection can
+only narrow what you are allowed to see: another group id in the address will
+not bring foreign sites into the report. The form itself does not print.
 
 It prints. `Ctrl+P` in the browser produces a PDF with page margins, without
 the panel menu and without the dark theme; tables do not break across pages

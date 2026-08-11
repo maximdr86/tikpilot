@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from ..auth import client_ip, current_user, require
 from ..config import settings
@@ -189,8 +189,106 @@ def _report_color(percent: float) -> str:
     return "var(--err)"
 
 
+#: Дальше месяца отчёт не строят, а окно на годы упрётся в журнал событий
+REPORT_MAX_DAYS = 366
+
+
+def _report_window(hours: int, since: str, until: str) -> tuple[int, Any, str]:
+    """
+    Окно отчёта: либо готовый период, либо интервал дат из формы.
+
+    Возвращает `(hours, until_dt, note)`: длину окна в часах, правую
+    границу (None означает «до сейчас») и подпись периода для шапки.
+
+    Даты приходят из полей `<input type="date">`, то есть в местном
+    времени человека, а внутри всё считается в UTC. Границы берём по
+    местной полуночи: «отчёт с 1 по 7» для человека начинается в его
+    полночь первого и заканчивается в его полночь восьмого, иначе
+    последний день отчёта окажется обрезанным.
+    """
+    def parse(value: str):
+        try:
+            day = datetime.strptime(str(value or "").strip(), "%Y-%m-%d")
+        except ValueError:
+            return None
+        return day.astimezone()
+
+    start, end = parse(since), parse(until)
+    if start and end:
+        if end < start:
+            start, end = end, start
+        # Правая граница это конец указанного дня, а не его начало
+        end = end + timedelta(days=1)
+        end = min(end, datetime.now().astimezone())
+        span = end - start
+        days = max(1, min(REPORT_MAX_DAYS, span.days + (1 if span.seconds else 0)))
+        return int(days * 24), end.astimezone(timezone.utc), "интервал дат"
+
+    hours = hours if hours in (1, 24, 168, 720) else 720
+    return hours, None, {1: "час", 24: "сутки", 168: "неделю", 720: "месяц"}[hours]
+
+
+def _report_scope(user, group_id: int, devices):
+    """
+    Область отчёта: право видеть плюс выбор человека.
+
+    Возвращает `(scope, label, ids)`: кусок WHERE для запросов монитора,
+    подпись для шапки документа и разобранный список отмеченных точек.
+
+    Условия складываются, а не заменяют друг друга: выбор сужает то, что
+    человеку и так видно, и расширить область через параметр в адресе
+    нельзя. Проверять отдельно ничего не нужно, это следует из «И».
+
+    Точки сильнее группы: если отмечены и то и другое, человек явно
+    показал пальцем на конкретные строки.
+    """
+    scope = permissions.scope_sql(user)
+    where, params = scope[0], list(scope[1])
+
+    # Точки приходят двумя способами: галочками в форме (повторяющийся
+    # параметр) и одной строкой через запятую в ссылке на CSV. Разбираем оба
+    raw = devices if isinstance(devices, (list, tuple)) else [devices]
+    ids: list[int] = []
+    for chunk in raw:
+        for part in str(chunk or "").replace(" ", "").split(","):
+            if part.isdigit() and int(part) not in ids:
+                ids.append(int(part))
+    if ids:
+        where += " AND d.id IN (%s)" % ",".join("?" * len(ids))
+        params += ids
+    elif group_id:
+        where += " AND d.group_id = ?"
+        params.append(group_id)
+
+    # Подпись собирается из того, что человеку и правда видно, а не из
+    # того, что он написал в адресе. Иначе по чужому номеру группы можно
+    # было бы прочитать её название, пусть отчёт и оказался бы пустым
+    visible = query(
+        f"SELECT d.id, d.name FROM devices d WHERE d.enabled = 1{where}"
+        " ORDER BY d.name COLLATE NOCASE", tuple(params))
+
+    if not visible:
+        return (where, params), "нет доступных точек", ids
+
+    if ids:
+        listed = ", ".join(str(r["name"]) for r in visible[:3])
+        extra = " и ещё %d" % (len(visible) - 3) if len(visible) > 3 else ""
+        return (where, params), listed + extra, [int(r["id"]) for r in visible]
+
+    if group_id:
+        row = query_one("SELECT name FROM groups WHERE id = ?", (group_id,))
+        # Подпись переводится по шаблону: имя группы подставляется, само
+        # слово «группа» лежит в словаре
+        return (where, params), "группа %s" % (row["name"] if row else group_id), []
+
+    return (where, params), "весь парк", []
+
+
 @router.get("/monitoring/report")
 async def availability_report_page(request: Request, hours: int = 720,
+                                   group_id: int = 0,
+                                   devices: list[str] = Query(default=[]),
+                                   since: str = "", until: str = "",
                                    user=Depends(current_user)):
     """
     Тот же отчёт, но в виде готового к печати документа.
@@ -205,18 +303,18 @@ async def availability_report_page(request: Request, hours: int = 720,
     """
     from .. import charts, monitor
 
-    hours = hours if hours in (1, 24, 168, 720) else 720
-    scope = permissions.scope_sql(user)
+    hours, edge, period_note = _report_window(hours, since, until)
+    scope, subject, chosen = _report_scope(user, group_id, devices)
 
-    rows = monitor.availability(hours, scope)
+    rows = monitor.availability(hours, scope, edge)
     rows.sort(key=lambda r: (r["uptime_percent"], -r["outages"], r["name"].lower()))
     for row in rows:
         row["color"] = _report_color(row["uptime_percent"])
 
-    buckets = monitor.availability_buckets(hours, scope)
-    intervals = monitor.outage_intervals(hours, scope)
+    buckets = monitor.availability_buckets(hours, scope, edge)
+    intervals = monitor.outage_intervals(hours, scope, edge)
 
-    now = datetime.now(timezone.utc)
+    now = edge or datetime.now(timezone.utc)
     since = now - timedelta(hours=hours)
 
     def local(moment: datetime) -> str:
@@ -239,10 +337,16 @@ async def availability_report_page(request: Request, hours: int = 720,
     floor = min(99.0, round(min(percents) - 0.2, 1))
 
     down_total = sum(r["down_seconds"] for r in rows)
+    # Средний простой на точку, а не сумма по парку. Сумма растёт вместе
+    # с числом точек и сравнивать по ней два отчёта нельзя: пятьдесят
+    # часов на десяти точках и на пятидесяти это разные вещи. Среднее
+    # сравнимо и с прошлым месяцем, и с соседней группой
+    down_average = round(down_total / len(rows)) if rows else 0
     average = round(sum(r["uptime_percent"] for r in rows) / len(rows), 2) if rows else 100.0
 
     log_audit(user["username"], "Открыт отчёт по доступности",
-              f"{hours} ч", f"точек: {len(rows)}", client_ip(request))
+              f"{hours} ч · {subject}", f"точек: {len(rows)}", client_ip(request))
+
 
     return render(
         "report.html",
@@ -257,6 +361,7 @@ async def availability_report_page(request: Request, hours: int = 720,
         average=average,
         average_color=_report_color(average),
         down_total=down_total,
+        down_average=down_average,
         outage_count=sum(r["outages"] for r in rows),
         offline_now=sum(1 for r in rows if r["status"] == "offline"),
         perfect=sum(1 for r in rows if r["uptime_percent"] >= 100 and not r["outages"]),
@@ -267,15 +372,33 @@ async def availability_report_page(request: Request, hours: int = 720,
             width=880, height=210),
         chart_floor=floor,
         chart_step="по часам" if hours <= 24 else "по дням",
+        period_note=period_note,
+        today=datetime.now().astimezone().strftime("%Y-%m-%d"),
+        since_param=since,
+        until_param=until,
         since_text=local(since),
         until_text=local(now),
         made_at=local(now),
         author=user["username"],
+        subject=subject,
+        group_id=group_id,
+        chosen=chosen,
+        devices_param=",".join(str(i) for i in chosen),
+        all_groups=query("SELECT id, name FROM groups ORDER BY name COLLATE NOCASE"),
+        all_devices=query(
+            "SELECT d.id, d.name, g.name AS group_name FROM devices d "
+            "LEFT JOIN groups g ON g.id = d.group_id "
+            f"WHERE d.enabled = 1{permissions.scope_sql(user)[0]} "
+            "ORDER BY d.name COLLATE NOCASE",
+            tuple(permissions.scope_sql(user)[1])),
     )
 
 
 @router.get("/monitoring/report.csv")
 async def availability_report(request: Request, hours: int = 720,
+                              group_id: int = 0,
+                              devices: list[str] = Query(default=[]),
+                              since: str = "", until: str = "",
                               user=Depends(current_user)):
     """
     Отчёт по доступности за период в виде CSV.
@@ -295,8 +418,9 @@ async def availability_report(request: Request, hours: int = 720,
 
     from .. import monitor
 
-    hours = hours if hours in (1, 24, 168, 720) else 720
-    rows = monitor.availability(hours, permissions.scope_sql(user))
+    hours, edge, _note = _report_window(hours, since, until)
+    scope, subject, _chosen = _report_scope(user, group_id, devices)
+    rows = monitor.availability(hours, scope, edge)
     rows.sort(key=lambda r: (r["uptime_percent"], r["name"].lower()))
 
     buffer = io.StringIO()
@@ -322,9 +446,13 @@ async def availability_report(request: Request, hours: int = 720,
         ])
 
     log_audit(user["username"], "Выгружен отчёт по доступности",
-              f"{hours} ч", f"точек: {len(rows)}", client_ip(request))
+              f"{hours} ч · {subject}", f"точек: {len(rows)}", client_ip(request))
 
-    name = "tikpilot-availability-%dh-%s.csv" % (hours, utcnow()[:10])
+    # Имя файла латиницей: кириллица в заголовке Content-Disposition
+    # доезжает по-разному, а файл потом лежит у человека в почте
+    part = "group%d" % group_id if group_id else ("selected" if _chosen else "all")
+    when = (since + "_" + until) if (since and until) else "%dh" % hours
+    name = "tikpilot-availability-%s-%s-%s.csv" % (part, when, utcnow()[:10])
     return StreamingResponse(
         iter(["﻿" + buffer.getvalue()]),
         media_type="text/csv; charset=utf-8",
