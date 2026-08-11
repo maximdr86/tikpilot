@@ -581,9 +581,6 @@ CREATE TABLE IF NOT EXISTS backup_schedules (
 # Колонки, добавленные уже после первых версий программы.
 # Проверяются при каждом старте, чтобы существующая база обновлялась сама.
 MIGRATIONS: dict[str, list[tuple[str, str]]] = {
-    "users": [
-        ("session_epoch", "INTEGER NOT NULL DEFAULT 0"),
-    ],
     "devices": [
         ("architecture", "TEXT NOT NULL DEFAULT ''"),
         ("latest_version", "TEXT NOT NULL DEFAULT ''"),
@@ -649,6 +646,10 @@ MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         # программы не должно внезапно отнимать доступ.
         ("permissions", "TEXT NOT NULL DEFAULT 'full'"),
         ("scope_all", "INTEGER NOT NULL DEFAULT 1"),
+        # Поколение сессий: растёт при смене пароля, старые cookie после
+        # этого не подходят. Ноль у всех существующих — это правильно,
+        # ровно такое же значение кладётся в свежие cookie
+        ("session_epoch", "INTEGER NOT NULL DEFAULT 0"),
     ],
 }
 

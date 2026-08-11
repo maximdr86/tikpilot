@@ -2338,6 +2338,53 @@ def test_empty_form_field_answers_like_a_form_not_like_a_protocol(client):
         assert "<form" in answer.text
 
 
+def test_old_database_gets_every_column_the_code_reads():
+    """
+    Обновление на старой базе доводит её до нужной схемы.
+
+    Проверка нужна вот почему. Тесты всегда начинают с чистой базы,
+    а там таблицы создаются по SCHEMA со всеми колонками сразу, поэтому
+    сломанную миграцию они не видят в упор. У живой панели база наоборот
+    старая, и недостающая колонка кладёт её целиком: код читает поле,
+    которого в строке нет.
+
+    Ровно так и вышло с `session_epoch`: в списке миграций оказалось два
+    ключа `users`, второй молча затёр первый, на свежей базе всё работало,
+    а на рабочей панели каждая страница отвечала ошибкой.
+    """
+    import sqlite3
+
+    from app import database
+
+    # База, какой она была до появления прав и поколения сессий
+    old = sqlite3.connect(":memory:")
+    old.row_factory = sqlite3.Row
+    old.executescript(
+        "CREATE TABLE users ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " username TEXT NOT NULL UNIQUE,"
+        " password_hash TEXT NOT NULL,"
+        " is_active INTEGER NOT NULL DEFAULT 1,"
+        " created_at TEXT NOT NULL);"
+        "INSERT INTO users (username, password_hash, created_at)"
+        " VALUES ('старожил', 'x', '2020-01-01 00:00:00');"
+    )
+
+    for name, definition in database.MIGRATIONS["users"]:
+        existing = {r["name"] for r in old.execute("PRAGMA table_info(users)")}
+        if name not in existing:
+            old.execute(f"ALTER TABLE users ADD COLUMN {name} {definition}")
+
+    row = old.execute("SELECT * FROM users").fetchone()
+    for column in ("lang", "permissions", "scope_all", "session_epoch"):
+        assert column in row.keys(), f"после обновления нет колонки {column}"
+
+    # Значения по умолчанию должны быть безопасными: доступ не отнимаем,
+    # поколение сессий совпадает с тем, что кладётся в свежие cookie
+    assert row["permissions"] == "full"
+    assert row["session_epoch"] == 0
+
+
 def test_admin_resets_another_password_and_kicks_that_person_out(client, router):
     """
     Сброс пароля админом: пароль меняется, прежние входы завершаются.
