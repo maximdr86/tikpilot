@@ -304,6 +304,17 @@ you out and the fix would be editing the database on the server.
 Checks live on the server, not in the interface. A hidden button is a
 convenience: a URL can be typed by hand and a request sent with curl.
 
+### Password reset
+
+Every other account in the list has a «Password» button: set a new one without
+asking for the old. You cannot do this to yourself, there is a separate form
+for that and it asks for the current password.
+
+Changing a password, yours or someone else's, ends all of that person's
+existing sessions: the session generation number moves and cookies issued
+earlier stop matching. A password that leaves someone else's tab working
+protects against nothing.
+
 ### Invitation links
 
 Instead of inventing a password for someone and sending it in a chat, issue an

@@ -16,7 +16,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from .config import settings
 from .crypto import verify_password
-from .database import query_one
+from .database import execute_changes, query_one
 
 _serializer = URLSafeTimedSerializer(settings.secret_key, salt="tikpilot-session")
 
@@ -35,9 +35,36 @@ def authenticate(username: str, password: str) -> dict[str, Any] | None:
     return {"id": row["id"], "username": row["username"]}
 
 
+def session_epoch(user_id: int) -> int:
+    """Текущее поколение сессий пользователя."""
+    row = query_one("SELECT session_epoch FROM users WHERE id = ?", (user_id,))
+    return int(row["session_epoch"] or 0) if row else 0
+
+
+def end_sessions(user_id: int) -> None:
+    """
+    Завершить все входы пользователя, кроме будущих.
+
+    Сессия это подписанная cookie: сервер её не хранит и отозвать поштучно
+    не может. Поэтому у каждого есть номер поколения, он лежит внутри
+    cookie и сверяется на каждом запросе. Сдвинули номер — все выданные
+    ранее cookie разом перестали подходить.
+
+    Зовётся при смене пароля. Смена пароля, после которой чужой вход
+    продолжает работать, защищает ровно ни от чего.
+    """
+    execute_changes(
+        "UPDATE users SET session_epoch = COALESCE(session_epoch, 0) + 1 WHERE id = ?",
+        (user_id,))
+
+
 def make_session_token(user: dict[str, Any]) -> str:
     """Сформировать значение сессионной cookie."""
-    return _serializer.dumps({"uid": user["id"], "username": user["username"]})
+    return _serializer.dumps({
+        "uid": user["id"],
+        "username": user["username"],
+        "epoch": session_epoch(user["id"]),
+    })
 
 
 def read_session(request: Request) -> dict[str, Any] | None:
@@ -50,8 +77,15 @@ def read_session(request: Request) -> dict[str, Any] | None:
     except (BadSignature, SignatureExpired):
         return None
     # Убеждаемся, что пользователь всё ещё существует и не заблокирован
-    row = query_one("SELECT id, username, is_active FROM users WHERE id = ?", (data.get("uid"),))
+    row = query_one(
+        "SELECT id, username, is_active, session_epoch FROM users WHERE id = ?",
+        (data.get("uid"),))
     if row is None or not row["is_active"]:
+        return None
+
+    # Поколение сессий. Старые cookie, выписанные до смены пароля,
+    # сюда не проходят: у них внутри прежний номер
+    if int(data.get("epoch", 0)) != int(row["session_epoch"] or 0):
         return None
 
     # Права читаются на каждый запрос намеренно. Класть их в cookie нельзя:
