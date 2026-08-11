@@ -589,7 +589,8 @@ def device_events(device_id: int, limit: int = 20) -> list[Any]:
     )
 
 
-def availability(hours: int = 24, scope: Scope = NO_SCOPE) -> list[dict[str, Any]]:
+def availability(hours: int = 24, scope: Scope = NO_SCOPE,
+                 until: datetime | None = None) -> list[dict[str, Any]]:
     """
     Доступность каждого устройства за последние `hours` часов.
 
@@ -605,7 +606,10 @@ def availability(hours: int = 24, scope: Scope = NO_SCOPE) -> list[dict[str, Any
     * если событий не было вовсе, точка всё окно провела в текущем статусе.
     """
     window = max(1, hours) * 3600
-    now = datetime.now(timezone.utc)
+    # `until` это правая граница окна. По умолчанию сейчас, но отчёт умеет
+    # и за прошлый месяц: там границей будет дата из формы, а не текущий
+    # момент, иначе «с 1 по 7» посчиталось бы по сегодняшний день
+    now = until or datetime.now(timezone.utc)
     since = now - timedelta(seconds=window)
     since_text = since.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -618,17 +622,19 @@ def availability(hours: int = 24, scope: Scope = NO_SCOPE) -> list[dict[str, Any
     )
     # Моргания в расчёт не берём: они для того и помечены, чтобы цифра
     # простоя не складывалась из секундных провалов
+    until_text = now.strftime("%Y-%m-%d %H:%M:%S")
     events = query(
         "SELECT device_id, status, downtime, ts FROM status_events "
-        "WHERE ts >= ? AND short = 0 ORDER BY id",
-        (since_text,),
+        "WHERE ts >= ? AND ts <= ? AND short = 0 ORDER BY id",
+        (since_text, until_text),
     )
     flaps = {
         row["device_id"]: row["c"]
         for row in query(
             "SELECT device_id, COUNT(*) AS c FROM status_events "
-            "WHERE ts >= ? AND short = 1 AND status = 'online' GROUP BY device_id",
-            (since_text,),
+            "WHERE ts >= ? AND ts <= ? AND short = 1 AND status = 'online' "
+            "GROUP BY device_id",
+            (since_text, until_text),
         )
     }
 
@@ -646,13 +652,17 @@ def availability(hours: int = 24, scope: Scope = NO_SCOPE) -> list[dict[str, Any
             if event["status"] != "online":
                 outages += 1
                 continue
-            # Подъём: прибавляем простой, обрезав его по границе окна
+            # Подъём: прибавляем простой, обрезав его по обеим границам окна.
+            # Левая нужна всегда: простой мог начаться раньше. Правая нужна
+            # для отчёта за прошедший период: падение, случившееся после его
+            # конца, к этому периоду отношения не имеет
             downtime = int(event["downtime"] or 0)
             moment = _parse_ts(event["ts"])
             if moment is not None:
                 started = moment - timedelta(seconds=downtime)
-                if started < since:
-                    downtime = max(0, int((moment - since).total_seconds()))
+                left = max(started, since)
+                right = min(moment, now)
+                downtime = max(0, int((right - left).total_seconds()))
             down_seconds += downtime
 
         # Незакрытый простой: точка лежит прямо сейчас
@@ -681,7 +691,8 @@ def availability(hours: int = 24, scope: Scope = NO_SCOPE) -> list[dict[str, Any
     return result
 
 
-def outage_intervals(hours: int = 24, scope: Scope = NO_SCOPE) -> list[dict[str, Any]]:
+def outage_intervals(hours: int = 24, scope: Scope = NO_SCOPE,
+                     until: datetime | None = None) -> list[dict[str, Any]]:
     """
     Промежутки недоступности за окно, по одному на каждое падение.
 
@@ -698,7 +709,7 @@ def outage_intervals(hours: int = 24, scope: Scope = NO_SCOPE) -> list[dict[str,
     попадать в отчёты.
     """
     window = max(1, hours) * 3600
-    now = datetime.now(timezone.utc)
+    now = until or datetime.now(timezone.utc)
     since = now - timedelta(seconds=window)
     since_text = since.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -742,7 +753,9 @@ def outage_intervals(hours: int = 24, scope: Scope = NO_SCOPE) -> list[dict[str,
         if device is None or moment is None or downtime <= 0:
             continue
         started = moment - timedelta(seconds=downtime)
-        add(device, max(started, since), moment, False, started < since)
+        # Обрезаем по обеим границам: простой, дотянувшийся до конца окна,
+        # показываем до конца окна, а не до момента подъёма за его пределами
+        add(device, max(started, since), min(moment, now), False, started < since)
 
     for device in devices.values():
         if device["status"] != "offline":
@@ -754,8 +767,8 @@ def outage_intervals(hours: int = 24, scope: Scope = NO_SCOPE) -> list[dict[str,
     return result
 
 
-def availability_buckets(hours: int = 24,
-                         scope: Scope = NO_SCOPE) -> list[dict[str, Any]]:
+def availability_buckets(hours: int = 24, scope: Scope = NO_SCOPE,
+                         until: datetime | None = None) -> list[dict[str, Any]]:
     """
     Доступность всего парка по отрезкам окна: сутки по часам, остальное по дням.
 
@@ -767,7 +780,7 @@ def availability_buckets(hours: int = 24,
     человек, и «пятое августа» для него начинается в его полночь.
     """
     window = max(1, hours) * 3600
-    now = datetime.now(timezone.utc)
+    now = until or datetime.now(timezone.utc)
     since = now - timedelta(seconds=window)
 
     total = query_one(
@@ -792,7 +805,7 @@ def availability_buckets(hours: int = 24,
     edges.append(edge)
     edges.reverse()
 
-    intervals = outage_intervals(hours, scope)
+    intervals = outage_intervals(hours, scope, until)
     buckets: list[dict[str, Any]] = []
 
     for index, start in enumerate(edges):

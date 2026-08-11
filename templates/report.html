@@ -112,6 +112,33 @@
         }
         .toolbar .go { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+        /* ------------------------------------------------------- выбор охвата */
+        .picker {
+            max-width: 940px; margin: 0 auto 14px; background: #fff;
+            border: 1px solid var(--border); border-radius: 4px; padding: 12px 14px;
+            font-size: 13px;
+        }
+        .picker .line { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .picker .line + .line { margin-top: 8px; }
+        .picker label { display: inline-flex; gap: 6px; align-items: center; }
+        .picker input[type=date] {
+            font: inherit; padding: 4px 6px; border: 1px solid var(--border);
+            border-radius: 3px; background: #fff; color: var(--ink);
+        }
+        .picker select, .picker button {
+            font: inherit; padding: 5px 8px; border: 1px solid var(--border);
+            border-radius: 3px; background: #fff; color: var(--ink);
+        }
+        .picker .go { background: var(--accent); border-color: var(--accent); color: #fff; cursor: pointer; }
+        .picker summary { margin-top: 10px; cursor: pointer; color: var(--accent); }
+        .picker .devices {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+            gap: 4px 14px; margin-top: 8px; max-height: 260px; overflow: auto;
+            border: 1px solid var(--border); border-radius: 3px; padding: 8px 10px;
+        }
+        .picker .devices label { font-size: 13px; }
+        .picker .muted { color: var(--muted); }
+
         /* ------------------------------------------------------------ печать */
         @page { size: A4; margin: 14mm; }
         @media print {
@@ -132,9 +159,64 @@
 
 <div class="toolbar no-print">
     <button class="go" onclick="window.print()">Печать или PDF</button>
-    <a href="/monitoring/report.csv?hours={{ hours }}">Выгрузить в CSV</a>
+    <a href="/monitoring/report.csv?hours={{ hours }}&group_id={{ group_id }}&devices={{ devices_param }}&since={{ since_param }}&until={{ until_param }}">Выгрузить в CSV</a>
     <a href="/monitoring?hours={{ hours }}">Назад в панель</a>
 </div>
+
+{# Форма не печатается: в документе, который несут руководству, органов
+   управления быть не должно. Здесь же и период, чтобы не возвращаться
+   на страницу мониторинга ради смены окна #}
+<form class="picker no-print" method="get" action="/monitoring/report">
+    <div class="line">
+        <label>Период
+            <select name="hours">
+                {% for value, caption in [(1, 'час'), (24, 'сутки'), (168, 'неделя'), (720, 'месяц')] %}
+                    <option value="{{ value }}" {% if hours == value %}selected{% endif %}>{{ caption | t }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Группа
+            <select name="group_id">
+                <option value="0">весь парк</option>
+                {% for g in all_groups %}
+                    <option value="{{ g.id }}" {% if group_id == g.id %}selected{% endif %}>{{ g.name | t }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button class="go" type="submit">Показать</button>
+    </div>
+
+    {# Интервал дат сильнее готового периода: если обе даты заданы, список
+       «час/сутки/неделя/месяц» просто не смотрится. Так проще, чем
+       переключатель режимов, и не даёт задать одновременно два периода #}
+    <div class="line">
+        <label>Или интервал: с
+            <input type="date" name="since" value="{{ since_param }}" max="{{ today }}">
+        </label>
+        <label>по
+            <input type="date" name="until" value="{{ until_param }}" max="{{ today }}">
+        </label>
+        <span class="muted">Обе даты включительно. Заданный интервал сильнее периода</span>
+    </div>
+
+    <div class="line">
+        <span class="muted">Отмеченные точки сильнее выбранной группы</span>
+    </div>
+
+    <details {% if chosen %}open{% endif %}>
+        <summary>Отдельные точки{% if chosen %}: {{ chosen | length }}{% endif %}</summary>
+        <div class="devices">
+            {% for d in all_devices %}
+                <label>
+                    <input type="checkbox" name="devices" value="{{ d.id }}"
+                           {% if d.id in chosen %}checked{% endif %}>
+                    {{ d.name }}
+                    {% if d.group_name %}<span class="muted">{{ d.group_name | t }}</span>{% endif %}
+                </label>
+            {% endfor %}
+        </div>
+    </details>
+</form>
 
 <div class="sheet">
 
@@ -142,8 +224,9 @@
         {% if title %}<div class="org">{{ title }}</div>{% endif %}
         <h1>Отчёт по доступности сети</h1>
         <div class="period">
+            Охват: {{ subject | t }}<br>
             Период: {{ since_text }} до {{ until_text }}
-            <span class="muted">(за {{ {1: 'час', 24: 'сутки', 168: 'неделю', 720: 'месяц'}.get(hours, 'месяц') | t }})</span>
+            <span class="muted">(за {{ period_note | t }})</span>
         </div>
         <div class="made">Составлен {{ made_at }} · {{ author }} · Tikpilot {{ app_version }}</div>
     </div>
@@ -161,9 +244,9 @@
             <div class="note">без сбоев: {{ perfect }}</div>
         </div>
         <div class="tile">
-            <div class="cap">Суммарный простой</div>
-            <div class="num">{{ down_total | duration }}</div>
-            <div class="note">сложены все точки</div>
+            <div class="cap">Средний простой</div>
+            <div class="num">{{ down_average | duration }}</div>
+            <div class="note">на одну точку за период</div>
         </div>
         <div class="tile">
             <div class="cap">Падений</div>
