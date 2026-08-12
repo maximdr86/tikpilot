@@ -16,6 +16,11 @@
                 принято строк: {{ state.received }}
                 {% if state.dropped %} · отброшено: {{ state.dropped }}{% endif %}
                 {% if state.ignored %} · не сохранено по правилу: {{ state.ignored }}{% endif %}
+                {# Число открытых соединений показывает, не копятся ли они:
+                   их должно быть примерно столько же, сколько точек шлёт
+                   журнал по TCP, а не сотни #}
+                {% if state.tcp_clients %} · соединений TCP: {{ state.tcp_clients }}{% endif %}
+                {% if state.refused %} · отклонено соединений: {{ state.refused }}{% endif %}
                 · хранится {{ total }}
                 {% if skipped %} · скрыто правилами в этом окне: {{ skipped }}{% endif %}
             {% elif state.error %}
