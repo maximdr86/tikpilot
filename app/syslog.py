@@ -93,7 +93,21 @@ state: dict[str, Any] = {
     "last_source": "", # и от кого она пришла
     "rejected": {},    # адреса, с которых писать не разрешено, и сколько раз
     "error": "",       # почему приём не поднялся
+    "tcp_clients": 0,  # открытых соединений TCP прямо сейчас
+    "refused": 0,      # соединений отклонено: упёрлись в предел
 }
+
+#: Предел одновременных соединений TCP. Полсотни точек плюс запас на
+#: переподключения; всё сверх этого либо чей-то сканер, либо наши же
+#: зависшие сокеты, и в обоих случаях панель важнее.
+MAX_TCP_CLIENTS = 200
+
+#: Сколько молчащее соединение держим открытым. Точка на плохом канале
+#: пропадает без FIN, и её сокет иначе висит до перезапуска панели.
+#: Пятнадцать минут: RouterOS шлёт хоть что-нибудь заметно чаще.
+IDLE_TIMEOUT = 15 * 60
+
+_clients_guard = threading.Lock()
 
 _PRI = re.compile(r"^<(\d{1,3})>")
 #: Отметка времени BSD-формата: «Aug  7 10:15:00» либо ISO из RFC 5424.
@@ -466,17 +480,32 @@ def _tcp_client(conn: socket.socket, address: str) -> None:
     вариант с длиной в начале (RFC 6587), его тоже понимаем: RouterOS
     умеет оба, а перепутать их значит получить журнал из склеенных строк.
     """
+    # Соединение, которое молчит, надо закрывать самим. Точка на плохом
+    # канале исчезает без FIN, и её сокет висел бы вечно: приёмник ждал
+    # данных, а данных уже не будет никогда. Полсотни точек, каждая
+    # переподключается при каждом обрыве, и через сутки процесс упирается
+    # в лимит открытых файлов. Именно так и выглядела ошибка
+    # «Too many open files»: панель падала не от нагрузки, а от мусора.
+    try:
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    except OSError:
+        pass
+
     conn.settimeout(1.0)
     buffer = b""
+    last_seen = time.monotonic()
     while not _stop.is_set():
         try:
             chunk = conn.recv(8192)
         except socket.timeout:
+            if time.monotonic() - last_seen > IDLE_TIMEOUT:
+                break
             continue
         except OSError:
             break
         if not chunk:
             break
+        last_seen = time.monotonic()
         buffer += chunk
 
         while True:
@@ -496,11 +525,23 @@ def _tcp_client(conn: socket.socket, address: str) -> None:
 
         if len(buffer) > 65536:      # мусор без переводов строки
             buffer = b""
-    conn.close()
+    try:
+        conn.close()
+    finally:
+        with _clients_guard:
+            state["tcp_clients"] = max(0, state["tcp_clients"] - 1)
 
 
 def _tcp_loop(sock: socket.socket) -> None:
-    """Принимать соединения TCP до остановки."""
+    """
+    Принимать соединения TCP до остановки.
+
+    Каждое соединение это поток и открытый файл, поэтому их число
+    ограничено. Порт приёмника виден всем, кому виден сервер, и один
+    сканер, открывающий сотни соединений, не должен ронять панель.
+    Лишние закрываем сразу: точка переподключится, а панель останется
+    на ногах.
+    """
     sock.settimeout(0.5)
     while not _stop.is_set():
         try:
@@ -509,6 +550,19 @@ def _tcp_loop(sock: socket.socket) -> None:
             continue
         except OSError:
             break
+
+        with _clients_guard:
+            too_many = state["tcp_clients"] >= MAX_TCP_CLIENTS
+            if not too_many:
+                state["tcp_clients"] += 1
+        if too_many:
+            state["refused"] += 1
+            try:
+                conn.close()
+            except OSError:
+                pass
+            continue
+
         worker = threading.Thread(
             target=_tcp_client, args=(conn, addr[0]),
             name="syslog-tcp-client", daemon=True)

@@ -6511,6 +6511,47 @@ def test_syslog_parses_what_routers_actually_send():
     assert row["severity_name"] == "warning", "важность не взята из слова"
 
 
+def test_silent_tcp_connection_is_closed_and_counted(client, router):
+    """
+    Молчащее соединение закрывается само, а открытые считаются.
+
+    Точка на плохом канале пропадает без FIN: сокет остаётся открытым,
+    приёмник ждёт данных, которых уже не будет. Полсотни точек, каждая
+    переподключается при каждом обрыве, и через сутки процесс упирается
+    в предел открытых файлов. Именно так панель и легла с «Too many open
+    files», а выглядело это как падение точки.
+    """
+    import socket
+
+    from app import syslog
+    from app.config import settings
+
+    syslog.stop()
+    settings.syslog_enabled = True
+    settings.syslog_udp_port = 15573
+    settings.syslog_tcp_port = 15573
+    # На время проверки молчание считается долгим сразу
+    idle_before = syslog.IDLE_TIMEOUT
+    syslog.IDLE_TIMEOUT = 1
+    syslog.start()
+    try:
+        quiet = socket.create_connection(("127.0.0.1", 15573), timeout=5)
+        deadline = time.time() + 10
+        while time.time() < deadline and syslog.state["tcp_clients"] == 0:
+            time.sleep(0.1)
+        assert syslog.state["tcp_clients"] == 1, "соединение не посчитано"
+
+        # Молчим: приёмник должен закрыть его сам
+        deadline = time.time() + 10
+        while time.time() < deadline and syslog.state["tcp_clients"]:
+            time.sleep(0.2)
+        assert syslog.state["tcp_clients"] == 0, "молчащее соединение висит вечно"
+        quiet.close()
+    finally:
+        syslog.IDLE_TIMEOUT = idle_before
+        syslog.stop()
+
+
 def test_syslog_receives_over_real_sockets(client, router):
     """
     Строки принимаются по UDP и TCP и доезжают до страницы.

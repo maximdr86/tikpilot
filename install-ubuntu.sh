@@ -157,6 +157,11 @@ ExecStart=$APP_DIR/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port $PORT
 Restart=always
 RestartSec=5
 
+# Полсотни постоянных сессий к роутерам, приём журнала, бэкапы и веб.
+# Стандартной тысячи хватает, но запас стоит копейки, а упереться
+# в предел означает «Too many open files» и панель в отказе
+LimitNOFILE=8192
+
 # The service only needs its own directory and the network
 NoNewPrivileges=true
 PrivateTmp=true
