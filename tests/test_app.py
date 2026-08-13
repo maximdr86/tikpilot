@@ -4072,6 +4072,36 @@ def test_screenshot_mode_covers_names_the_panel_did_not_type(client, router):
         demo.forget()
 
 
+def test_screenshot_mode_leaves_the_panel_its_own_name(client, router):
+    """
+    Сама панель в витрине не переименовывается.
+
+    Сервер панели стоит в сети обычным клиентом с именем `tikpilot`.
+    Попав в словарь подмен клиентом, это имя переименовало панель в меню
+    и в подвале: вместо «Tikpilot 1.57.0» там оказалась касса. Названия
+    программ ничего не выдают и должны оставаться собой.
+    """
+    from app import demo
+    from app.database import execute, utcnow
+
+    demo.forget()
+    device_id = _add_device(client, router, "точка-с-панелью")
+    now = utcnow()
+    execute(
+        "INSERT INTO clients (device_id, mac, hostname, ip, first_seen, last_seen)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (device_id, "64:D1:54:00:00:01", "Tikpilot", "10.225.15.9", now, now),
+    )
+
+    client.post("/demo/on", data={"next": "/settings"}, follow_redirects=False)
+    try:
+        page = client.get("/").text
+        assert "Tikpilot" in page, "панель переименовала сама себя"
+    finally:
+        client.post("/demo/off", data={"next": "/settings"}, follow_redirects=False)
+        demo.forget()
+
+
 def test_alias_is_stable_for_names_outside_the_panel():
     """
     Связям WireGuard имя даётся по самой строке, и оно не пляшет.

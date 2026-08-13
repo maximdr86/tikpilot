@@ -109,6 +109,15 @@ KEY_RE = re.compile(r"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{43}=(?![A-Za-z0-9+/=])")
 HOST_RE = re.compile(r"\b[a-z0-9][a-z0-9-]*\.(?:ru|com|net|org|local|sn\.mynetname\.net)\b",
                      re.IGNORECASE)
 
+#: Что подменять нельзя ни при каких совпадениях. Панель называется
+#: «Tikpilot», и сервер панели стоит в сети обычным клиентом с таким же
+#: именем: попав в словарь клиентом, оно переименовало саму панель в меню
+#: и в подвале. Названия программ ничего не выдают, они и должны остаться.
+KEEP = frozenset({
+    "tikpilot", "mikrotik", "routeros", "winbox", "wireguard", "sstp",
+    "webfig", "ubuntu", "docker", "windows", "android",
+})
+
 #: Готовый словарь подмен и по чему он собран. Парк меняется редко,
 #: а страницы дёргаются часто, поэтому словарь собирается один раз
 #: и живёт до тех пор, пока не изменится состав парка.
@@ -217,7 +226,7 @@ def _add(table: dict[str, str], real: Any, fake: str) -> None:
     её значит ломать страницу ради двух букв.
     """
     text = str(real or "").strip()
-    if len(text) < 3 or text in table:
+    if len(text) < 3 or text in table or text.lower() in KEEP:
         return
     table[text] = fake
 
