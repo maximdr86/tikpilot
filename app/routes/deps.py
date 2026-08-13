@@ -297,7 +297,7 @@ def base_context(
     **extra: Any,
 ) -> dict[str, Any]:
     """Контекст, общий для всех страниц (шапка, счётчики, активный раздел)."""
-    from .. import __version__
+    from .. import __version__, demo
     from ..config import settings
 
     lang = resolve_lang(request, user)
@@ -319,6 +319,10 @@ def base_context(
         "lang": lang,
         "languages": i18n.available_languages(),
         "js_i18n": i18n.js_catalog(lang),
+        # Плашка в меню: включённый режим витрины должен быть виден,
+        # иначе панель однажды встретит чужими именами и непонятно почему
+        "demo_on": demo.enabled(request) if request is not None else False,
+        "demo_hours": demo.HOURS,
         "active": "",
     }
     ctx.update(extra)

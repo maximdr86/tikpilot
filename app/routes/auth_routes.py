@@ -17,7 +17,7 @@ from ..auth import (
     set_session_cookie,
 )
 from ..crypto import hash_password
-from .. import i18n, invites, loginguard, operator, permissions
+from .. import demo, i18n, invites, loginguard, operator, permissions
 from ..database import execute, log_audit, query, query_one, utcnow
 from .deps import LANG_COOKIE, render, resolve_lang, templates
 
@@ -553,3 +553,43 @@ async def name_operator(request: Request,
     return render("settings.html", request, user, active="settings",
                   message=message, error=None, diag=_diagnostics(),
                   **_users_context(request))
+
+
+def _back(request: Request, target: str) -> RedirectResponse:
+    """Вернуться на ту же страницу, а не на общую. Свои страницы, чужие нет."""
+    if not target.startswith("/") or target.startswith("//"):
+        target = "/settings"
+    return RedirectResponse(target, status_code=303)
+
+
+@router.post("/demo/on")
+async def demo_on(request: Request, next: str = Form("/settings"),
+                  user=Depends(require("users.manage"))):
+    """
+    Включить режим витрины для этого браузера.
+
+    Именно для браузера, а не для панели: остальные в это время работают
+    с настоящими данными и ничего не замечают. Режим нужен тому, кто
+    снимает экран, и мешать всем ради этого незачем.
+    """
+    response = _back(request, next)
+    response.set_cookie(demo.COOKIE, "1", max_age=demo.HOURS * 3600,
+                        httponly=True, samesite="lax")
+    log_audit(user["username"], "Включён режим витрины", "",
+              f"на {demo.HOURS} ч", ip=client_ip(request))
+    return response
+
+
+@router.post("/demo/off")
+async def demo_off(request: Request, next: str = Form("/settings"),
+                   user=Depends(current_user)):
+    """
+    Выключить режим витрины.
+
+    Право здесь не нужно: выключение возвращает настоящие данные тому,
+    кто их и так видит, а запертый в витрине человек это просто
+    неудобство на ровном месте.
+    """
+    response = _back(request, next)
+    response.delete_cookie(demo.COOKIE)
+    return response

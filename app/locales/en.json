@@ -1603,5 +1603,12 @@
   "Назвать": "Name it",
   "Реестр адресов отдаёт служебные строки вроде <span class=\"mono\">RU-DANCER-20120101</span>. Знакомые панель называет сама, а вот эти не узнала. Впишите имя один раз, и все точки этого провайдера будут подписаны им. Правило хранится в данных панели, обновление его не затирает.": "The address registry hands back service strings like <span class=\"mono\">RU-DANCER-20120101</span>. The panel names the ones it knows; these it did not recognise. Type a name once and every site on that provider gets it. The rule lives in the panel data, an update will not overwrite it.",
   "Строка реестра": "Registry string",
-  "например, Данцер": "for example, Dancer"
+  "например, Данцер": "for example, Dancer",
+  "<span class=\"badge tag-pink\">витрина</span>": "<span class=\"badge tag-pink\">demo</span>",
+  "Включить режим витрины": "Turn on screenshot mode",
+  "Выключить режим витрины": "Turn off screenshot mode",
+  "Режим витрины": "Screenshot mode",
+  "выключить": "turn off",
+  "Для скриншотов и показа панели на экране. Названия точек и групп, адреса, имена устройств за роутером, MAC и учётные записи заменяются вымышленными: адреса берутся из диапазонов, отведённых под примеры, а MAC собираются так, что не принадлежат ни одному производителю. Подмена живёт только в ответе браузеру, база не меняется. Режим включается для вашего браузера и держится %(p0)s ч: остальные в это время видят настоящие данные.": "For screenshots and for showing the panel on a screen. Site and group names, addresses, the names of devices behind the router, MAC addresses and accounts are replaced with made-up ones: addresses come from the ranges reserved for documentation, and the MAC addresses are built so that they belong to no vendor. The substitution lives only in the reply to the browser, the database stays as it is. The mode is turned on for your browser and lasts %(p0)s h: everyone else keeps seeing the real data.",
+  "Это удобство, а не защита. Тот, кто уже вошёл в панель, видит настоящие данные в любой момент.": "This is a convenience, not a protection. Anyone already signed in to the panel can see the real data at any moment."
 }

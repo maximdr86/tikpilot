@@ -18,10 +18,10 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from .. import permissions, wireguard as wg
+from .. import demo, permissions, wireguard as wg
 from ..auth import Forbidden, client_ip, require
 from ..database import execute, log_audit, query, query_one, utcnow
-from .deps import render
+from .deps import render, resolve_lang
 
 router = APIRouter()
 
@@ -265,6 +265,20 @@ async def wireguard_page(request: Request, device_id: int = 0,
                 ) or "",
                 "firewall_ready": _firewall_ready(state, hub),
             })
+
+    if demo.enabled(request):
+        # Имена связей и метки маршрутов живут на роутере, а не в панели:
+        # подменить их по словарю нечем, поэтому каждой строке даётся
+        # устойчивое вымышленное имя прямо здесь
+        lang = resolve_lang(request, user)
+        for link in context["links"]:
+            if link.get("ours"):
+                link["name"] = demo.alias(link["name"], lang)
+        for route in context["routes"]:
+            comment = str(route.get("comment") or "")
+            tail = comment[len(wg.TAG):] if comment.startswith(wg.TAG) else ""
+            if tail and tail != "hub":
+                route["comment"] = wg.TAG + demo.alias(tail, lang)
 
     return render("wireguard.html", request, user, active="wireguard", **context)
 
