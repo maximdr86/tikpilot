@@ -3790,6 +3790,47 @@ def test_operator_from_modem_lands_in_the_device_list(client, router):
     assert "МегаФон" in client.get("/devices?q=мегафон").text, "поиск по оператору не работает"
 
 
+def test_saving_the_card_does_not_freeze_a_detected_operator(client, router):
+    """
+    Сохранение карточки не превращает найденного оператора в ручного.
+
+    Поле в форме заполняется найденным значением, чтобы его было видно.
+    Пока «непустое поле» означало «вписано руками», любое сохранение
+    карточки замораживало оператора: дальше опрос его не обновлял,
+    и в списке навсегда оставалась строка с первой проверки.
+    """
+    from app import operator
+    from app.database import query_one
+
+    device_id = _add_device(client, router, "точка-с-провайдером")
+    operator.save(device_id, "RU-DANCER", operator.WHOIS, "91.78.235.1")
+
+    device = query_one("SELECT * FROM devices WHERE id = ?", (device_id,))
+    # Сохраняем карточку как есть, вместе с подставленным оператором
+    assert client.post(f"/api/devices/{device_id}/update", data={
+        "name": device["name"], "host": device["host"],
+        "username": device["username"], "operator": "RU-DANCER",
+    }).status_code == 200
+
+    row = query_one("SELECT operator_source FROM devices WHERE id = ?", (device_id,))
+    assert row["operator_source"] == "whois", "найденное стало ручным само по себе"
+
+    # И следующая проверка спокойно его обновляет
+    operator.save(device_id, "RU-MTU-20060821", operator.WHOIS, "91.78.235.40")
+    assert query_one("SELECT operator FROM devices WHERE id = ?",
+                     (device_id,))["operator"] == "RU-MTU-20060821"
+
+    # Стёртое поле возвращает точку к автоопределению
+    assert client.post(f"/api/devices/{device_id}/update", data={
+        "name": device["name"], "host": device["host"],
+        "username": device["username"], "operator": "",
+    }).status_code == 200
+    cleared = query_one("SELECT operator, operator_source FROM devices WHERE id = ?",
+                        (device_id,))
+    assert cleared["operator"] == ""
+    assert cleared["operator_source"] == ""
+
+
 def test_manual_operator_is_not_overwritten(client, router):
     """
     Вписанное руками сильнее найденного.
