@@ -16,10 +16,11 @@ from ..auth import (
     require,
     set_session_cookie,
 )
+from ..config import settings
 from ..crypto import hash_password
 from .. import demo, i18n, invites, loginguard, operator, permissions
 from ..database import execute, log_audit, query, query_one, utcnow
-from .deps import LANG_COOKIE, render, resolve_lang, templates
+from .deps import LANG_COOKIE, form_bool, render, resolve_lang, templates
 
 router = APIRouter()
 
@@ -38,6 +39,7 @@ async def login_page(request: Request, next: str = "/"):
             "lang": resolve_lang(request),
             "languages": i18n.available_languages(),
             "js_i18n": i18n.js_catalog(resolve_lang(request)),
+            "remember_days": settings.session_remember_age // 86400,
         },
     )
 
@@ -52,6 +54,7 @@ async def login_submit(
     request: Request,
     username: str = Form(""),
     password: str = Form(""),
+    remember: str = Form(""),
     next: str = Form("/"),
 ):
     """
@@ -74,6 +77,7 @@ async def login_submit(
                 "lang": resolve_lang(request),
                 "languages": i18n.available_languages(),
                 "js_i18n": i18n.js_catalog(resolve_lang(request)),
+                "remember_days": settings.session_remember_age // 86400,
             },
             status_code=429,
         )
@@ -92,14 +96,17 @@ async def login_submit(
                 "lang": resolve_lang(request),
                 "languages": i18n.available_languages(),
                 "js_i18n": i18n.js_catalog(resolve_lang(request)),
+                "remember_days": settings.session_remember_age // 86400,
             },
             status_code=401,
         )
     loginguard.register_success(address)
     target = next if next.startswith("/") else "/"
     response = RedirectResponse(target, status_code=303)
-    set_session_cookie(response, make_session_token(user))
-    log_audit(user["username"], "Вход в систему", ip=address)
+    long = form_bool(remember) == 1
+    set_session_cookie(response, make_session_token(user, long), long)
+    log_audit(user["username"], "Вход в систему",
+              "запомнить" if long else "", ip=address)
     return response
 
 

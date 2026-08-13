@@ -202,6 +202,10 @@ class Settings:
 
         # --- Сессии и хранение истории ---------------------------------------
         self.session_max_age: int = _int_env("SESSION_MAX_AGE", 12 * 3600)
+        # «Запомнить меня» на странице входа. Отдельная величина: обычная
+        # сессия короткая нарочно, а на своём рабочем месте вход по три
+        # раза в день это не безопасность, а повод записать пароль на бумажку
+        self.session_remember_age: int = _int_env("SESSION_REMEMBER_AGE", 30 * 24 * 3600)
         self.session_cookie: str = "tikpilot_session"
         self.job_retention_days: int = _int_env("JOB_RETENTION_DAYS", 90)
 

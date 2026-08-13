@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException, Request, status
@@ -58,12 +59,19 @@ def end_sessions(user_id: int) -> None:
         (user_id,))
 
 
-def make_session_token(user: dict[str, Any]) -> str:
-    """Сформировать значение сессионной cookie."""
+def make_session_token(user: dict[str, Any], remember: bool = False) -> str:
+    """
+    Сформировать значение сессионной cookie.
+
+    Признак «запомнить» лежит внутри подписанного значения, а не отдельной
+    cookie: иначе его хватило бы стереть в браузере, чтобы получить сессию
+    другой длины, а подписанное значение подделать нельзя.
+    """
     return _serializer.dumps({
         "uid": user["id"],
         "username": user["username"],
         "epoch": session_epoch(user["id"]),
+        "remember": bool(remember),
     })
 
 
@@ -73,8 +81,16 @@ def read_session(request: Request) -> dict[str, Any] | None:
     if not raw:
         return None
     try:
-        data = _serializer.loads(raw, max_age=settings.session_max_age)
+        # Читаем по длинной мерке, а решаем по той, что записана в самой
+        # cookie: обычная сессия живёт часы, отмеченная «запомнить» - недели
+        data, issued = _serializer.loads(
+            raw, max_age=settings.session_remember_age, return_timestamp=True)
     except (BadSignature, SignatureExpired):
+        return None
+
+    limit = (settings.session_remember_age if data.get("remember")
+             else settings.session_max_age)
+    if (datetime.now(timezone.utc) - issued).total_seconds() > limit:
         return None
     # Убеждаемся, что пользователь всё ещё существует и не заблокирован
     row = query_one(
@@ -95,12 +111,13 @@ def read_session(request: Request) -> dict[str, Any] | None:
     return {"id": row["id"], "username": row["username"], **load(row["id"])}
 
 
-def set_session_cookie(response, token: str) -> None:
+def set_session_cookie(response, token: str, remember: bool = False) -> None:
     """Проставить сессионную cookie на ответ."""
     response.set_cookie(
         settings.session_cookie,
         token,
-        max_age=settings.session_max_age,
+        max_age=(settings.session_remember_age if remember
+                 else settings.session_max_age),
         httponly=True,
         samesite="lax",
         secure=settings.cookie_secure,
