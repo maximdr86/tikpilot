@@ -65,7 +65,10 @@
            плитке показаны так же: строкой под значением #}
         {% if device.operator %}
         <div class="small muted" style="margin-top:6px">
-            {{ device.operator | t }}
+            {% set color = device.operator | operator_color %}
+            {% if color %}
+                <span class="badge tag-{{ color }}">{{ device.operator | t }}</span>
+            {% else %}{{ device.operator | t }}{% endif %}
             {% if device.operator_detail %} · {{ device.operator_detail }}{% endif %}
         </div>
         {% endif %}

@@ -38,8 +38,8 @@ import re
 import urllib.request
 from typing import Any
 
-from .config import settings
-from .database import execute_changes, query_one, utcnow
+from .config import BASE_DIR, settings
+from .database import execute_changes, query, query_one, utcnow
 
 log = logging.getLogger("tikpilot.operator")
 
@@ -76,24 +76,117 @@ NETWORKS = {
     "43701": "Beeline KG",
 }
 
-#: Как называются в реестре крупные операторы. Netname у них говорящий,
-#: но с суффиксами вроде «-NET» и «-RU», поэтому ищем вхождение.
-REGISTRY_NAMES = (
-    ("MTS", "МТС"),
-    ("MEGAFON", "МегаФон"),
-    ("MF-", "МегаФон"),
-    ("BEELINE", "Билайн"),
-    ("VIMPELCOM", "Билайн"),
-    ("TELE2", "Tele2"),
-    ("T2-", "Tele2"),
-    ("YOTA", "Yota"),
-    ("SCARTEL", "Yota"),
-    ("ROSTELECOM", "Ростелеком"),
-    ("RTCOMM", "Ростелеком"),
-    ("TTK", "ТрансТелеКом"),
-    ("ER-TELECOM", "Дом.ru"),
-    ("MOTIV", "МОТИВ"),
-)
+#: Соответствие «кусок строки реестра -> имя и цвет» лежит рядом файлом.
+#: В коде его держать нельзя: операторы переименовываются, покупают друг
+#: друга и заводят новые сети, а править ради этого исходник и выпускать
+#: версию неразумно. Файл читается при старте и правится руками.
+OPERATORS_PATH = BASE_DIR / "app" / "operators.json"
+
+#: Свои соответствия. Регионального провайдера в общий список не впишешь,
+#: а обновление панели затрёт правку в `operators.json`. Поэтому имена,
+#: заданные на месте, лежат отдельно в данных и проверяются первыми.
+LOCAL_PATH = settings.data_dir / "operators.local.json"
+
+#: Цвета меток, которые понимает оформление.
+COLORS = ("slate", "blue", "green", "amber", "red", "violet", "cyan", "pink")
+
+_registry: list[tuple[str, str, str]] | None = None
+
+
+def _read(path: Any) -> list[tuple[str, str, str]]:
+    """Прочитать один файл соответствий. Нет файла - нет и соответствий."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError):
+        log.warning("Не удалось прочитать %s, имена операторов останутся как в реестре", path)
+        return []
+    rows = []
+    for row in data.get("operators", []) if isinstance(data, dict) else []:
+        try:
+            rows.append((str(row[0]).upper(), str(row[1]),
+                         str(row[2]) if len(row) > 2 else ""))
+        except (TypeError, IndexError, KeyError):
+            continue
+    return rows
+
+
+def load_registry() -> list[tuple[str, str, str]]:
+    """
+    Соответствия «строка реестра -> имя»: сначала свои, потом общие.
+
+    Порядок важен: побеждает первое совпавшее правило, и правило,
+    заданное на месте, должно перебивать поставляемое с панелью.
+    """
+    global _registry
+
+    if _registry is None:
+        _registry = _read(LOCAL_PATH) + _read(OPERATORS_PATH)
+    return _registry
+
+
+def forget_registry() -> None:
+    """Забыть прочитанные соответствия. Нужно тестам и странице настроек."""
+    global _registry
+    _registry = None
+
+
+def save_local(needle: str, name: str, color: str = "slate") -> None:
+    """
+    Запомнить своё имя для строки реестра.
+
+    Пустое имя удаляет правило: так исправляется опечатка, а строка
+    возвращается к виду из реестра.
+    """
+    needle = str(needle or "").strip().upper()
+    name = str(name or "").strip()[:60]
+    if not needle:
+        return
+    if color not in COLORS:
+        color = "slate"
+
+    rows = [row for row in _read(LOCAL_PATH) if row[0] != needle]
+    if name:
+        rows.insert(0, (needle, name, color))
+    LOCAL_PATH.write_text(
+        json.dumps({
+            "_note": "Свои имена операторов. Файл создан панелью,"
+                     " обновление его не трогает.",
+            "operators": [list(row) for row in rows],
+        }, ensure_ascii=False, indent=2),
+        encoding="utf-8")
+    forget_registry()
+
+
+def unknown_names() -> list[dict[str, Any]]:
+    """
+    Строки реестра, для которых имени пока нет, и сколько точек за ними.
+
+    Это и есть список работы на странице настроек: назвал один раз,
+    и все точки этого провайдера подписаны по-человечески.
+    """
+    found = []
+    for row in query("SELECT operator AS name, COUNT(*) AS devices FROM devices"
+                     " WHERE operator <> '' AND operator_source IN ('whois', 'lte')"
+                     " GROUP BY operator ORDER BY COUNT(*) DESC, operator"):
+        if not color_of(str(row["name"])):
+            found.append({"name": str(row["name"]), "devices": int(row["devices"])})
+    return found
+
+
+def color_of(name: str) -> str:
+    """
+    Цвет метки оператора. Пусто, если оператор незнакомый.
+
+    Цвет, а не логотип: логотипы операторов это чужие товарные знаки,
+    и класть их в репозиторий под MIT нельзя. Цветная метка узнаётся
+    в списке ничуть не хуже, а прав ни на что не требует.
+    """
+    for _needle, title, color in load_registry():
+        if title == name:
+            return color
+    return ""
 
 
 def name_by_code(code: Any) -> str:
@@ -164,9 +257,15 @@ def is_public(address: Any) -> bool:
 
 
 def registry_name(text: str) -> str:
-    """Узнаваемое имя оператора из строки реестра, иначе строка как есть."""
+    """
+    Узнаваемое имя оператора из строки реестра, иначе строка как есть.
+
+    «Как есть» это осознанный выбор: `RU-XYZ-NET` читать неприятно, но
+    выдуманное имя хуже непонятного. Незнакомую строку видно, и её можно
+    добавить в `operators.json` одной строкой.
+    """
     upper = str(text or "").upper()
-    for needle, name in REGISTRY_NAMES:
+    for needle, name, _color in load_registry():
         if needle in upper:
             return name
     return str(text or "").strip()[:60]
@@ -185,27 +284,39 @@ def _network_key(address: str) -> str:
 
 def _from_rdap(data: dict) -> str:
     """
-    Вытащить имя владельца из ответа RDAP.
+    Вытащить владельца из ответа RDAP, как он там записан.
+
+    Возвращается именно строка реестра, без перевода в человеческое имя:
+    её сохраняют рядом с именем, чтобы уточнённое соответствие можно
+    было применить потом, не опрашивая парк заново.
 
     Сначала имя самой сети (`name`): у операторов оно говорящее,
     вроде `MTS-NET` или `MEGAFON-RU`. Если его нет, идём в список
     организаций и берём имя оттуда: там оно записано человеческим
     языком, но длиннее и с юридической формой.
     """
-    if data.get("name"):
-        return registry_name(str(data["name"]))
+    netname = str(data.get("name") or "")
+    if netname and color_of(registry_name(netname)):
+        return netname
 
+    # Таблица соответствий русская, и за границей она пуста. Зато сам
+    # реестр знает владельца по имени: `DTAG-DIAL18` ничего не говорит,
+    # а «Deutsche Telekom AG» рядом в той же записи говорит всё.
+    # Поэтому незнакомый netname уступает имени организации.
     for entity in data.get("entities") or ():
         vcard = entity.get("vcardArray") or []
         if len(vcard) < 2:
             continue
         for field in vcard[1]:
             if len(field) >= 4 and field[0] == "fn" and field[3]:
-                return registry_name(str(field[3]))
+                org = str(field[3]).strip()
+                # Реестры прячут частных лиц за заглушками, и подписывать
+                # ими точку незачем: netname хотя бы что-то значит
+                if org and not org.lower().startswith(("private", "not disclosed",
+                                                       "redacted", "unknown")):
+                    return org[:120]
 
-    if data.get("handle"):
-        return registry_name(str(data["handle"]))
-    return ""
+    return netname or str(data.get("handle") or "")[:120]
 
 
 def lookup_ip(address: str, timeout: float = 6.0) -> str:
@@ -256,7 +367,8 @@ def forget_cache() -> None:
     _cache.clear()
 
 
-def save(device_id: int, name: str, source: str, detail: str = "") -> None:
+def save(device_id: int, name: str, source: str, detail: str = "",
+         raw: str = "") -> None:
     """
     Записать оператора, не затирая поставленное руками.
 
@@ -274,8 +386,8 @@ def save(device_id: int, name: str, source: str, detail: str = "") -> None:
 
     execute_changes(
         "UPDATE devices SET operator = ?, operator_source = ?, operator_detail = ?,"
-        " operator_at = ? WHERE id = ?",
-        (name[:60], source, detail[:120], utcnow(), device_id),
+        " operator_raw = ?, operator_at = ? WHERE id = ?",
+        (name[:60], source, detail[:120], raw[:120], utcnow(), device_id),
     )
 
 
@@ -399,6 +511,32 @@ def remember_miss(device_id: int, note: str) -> None:
     )
 
 
+def rename_known() -> int:
+    """
+    Привести уже сохранённых операторов к человеческим именам.
+
+    Соответствия пополняются, а в базе лежат строки, найденные раньше:
+    `RU-MTU-20060821` так и останется, пока точку не опросят снова, а это
+    сутки. Проход при старте применяет свежий список сразу ко всему парку.
+
+    Вписанное руками не трогаем: это не строка реестра, а решение
+    человека, и приводить его к «правильному» виду не наше дело.
+    """
+    changed = 0
+    for row in query("SELECT id, operator, operator_raw FROM devices"
+                     " WHERE operator <> '' AND operator_source IN ('whois', 'lte')"):
+        # Строка реестра важнее уже показанного имени: соответствие могли
+        # уточнить (не «Дансер», а «Данцер»), и от готового имени обратно
+        # к строке не вернуться. Записи, снятые старой версией, её ещё
+        # не имеют, для них остаётся то, что видно
+        pretty = registry_name(str(row["operator_raw"] or row["operator"]))
+        if pretty and pretty != row["operator"]:
+            execute_changes("UPDATE devices SET operator = ? WHERE id = ?",
+                            (pretty, row["id"]))
+            changed += 1
+    return changed
+
+
 def collect(mt: Any, device: dict[str, Any]) -> tuple[str, str]:
     """
     Определить оператора точки в уже открытой сессии.
@@ -427,9 +565,10 @@ def collect(mt: Any, device: dict[str, Any]) -> tuple[str, str]:
         return "", (f"публичный адрес {address}, осталось разрешить запрос "
                     "в реестр: OPERATOR_LOOKUP=1 в .env и перезапуск")
 
-    name = lookup_ip(address)
-    if name:
-        save(device["id"], name, WHOIS, address)
+    raw = lookup_ip(address)
+    if raw:
+        name = registry_name(raw)
+        save(device["id"], name, WHOIS, address, raw)
         return name, address
 
     return "", f"реестр не ответил про {address}"

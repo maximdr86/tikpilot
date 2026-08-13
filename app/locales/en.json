@@ -397,6 +397,14 @@
     [
       "^модем есть, но оператора не сказал · (.+)$",
       "the modem is there but did not name the operator · \\1"
+    ],
+    [
+      "^Оператор (.+?) теперь называется (.+)$",
+      "Operator \\1 is now called \\2"
+    ],
+    [
+      "^Имя для (.+?) убрано$",
+      "The name for \\1 has been removed"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
@@ -1590,5 +1598,10 @@
   "часть сообщения, темы или имени точки": "part of a message, topic or site name",
   "чт": "Thu",
   "шлюз": "gateway",
-  "•••••••• <span class=\"small muted\">(хранится зашифрованным)</span>": "•••••••• <span class=\"small muted\">(stored encrypted)</span>"
+  "•••••••• <span class=\"small muted\">(хранится зашифрованным)</span>": "•••••••• <span class=\"small muted\">(stored encrypted)</span>",
+  "Имена операторов <span class=\"badge tag-slate\">%(p0)s</span>": "Operator names <span class=\"badge tag-slate\">%(p0)s</span>",
+  "Назвать": "Name it",
+  "Реестр адресов отдаёт служебные строки вроде <span class=\"mono\">RU-DANCER-20120101</span>. Знакомые панель называет сама, а вот эти не узнала. Впишите имя один раз, и все точки этого провайдера будут подписаны им. Правило хранится в данных панели, обновление его не затирает.": "The address registry hands back service strings like <span class=\"mono\">RU-DANCER-20120101</span>. The panel names the ones it knows; these it did not recognise. Type a name once and every site on that provider gets it. The rule lives in the panel data, an update will not overwrite it.",
+  "Строка реестра": "Registry string",
+  "например, Данцер": "for example, Dancer"
 }
