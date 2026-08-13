@@ -29,7 +29,15 @@
            говорит, откуда сведения: с модема, из реестра или руками #}
         <td class="nowrap">
             {% if d.operator %}
-                {{ d.operator | t }}
+                {# Цветная метка, а не логотип: логотипы операторов это чужие
+                   товарные знаки, и в репозитории под MIT им не место.
+                   Цвет узнаётся в списке ничуть не хуже #}
+                {% set color = d.operator | operator_color %}
+                {% if color %}
+                    <span class="badge tag-{{ color }}">{{ d.operator | t }}</span>
+                {% else %}
+                    {{ d.operator | t }}
+                {% endif %}
                 {% if d.operator_detail %}
                     <div class="small muted">{{ d.operator_detail }}</div>
                 {% endif %}

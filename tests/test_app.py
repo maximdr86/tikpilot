@@ -3962,12 +3962,12 @@ def test_registry_answer_is_cached_per_network(monkeypatch):
 
     monkeypatch.setattr(operator.urllib.request, "urlopen", fake_open)
 
-    assert operator.lookup_ip("91.79.217.182") == "МТС"
-    assert operator.lookup_ip("91.79.217.9") == "МТС", "сосед по сети спрошен заново"
+    assert operator.lookup_ip("91.79.217.182") == "MTS-NET"
+    assert operator.lookup_ip("91.79.217.9") == "MTS-NET", "сосед по сети спрошен заново"
     assert len(calls) == 1, calls
 
     # Другая сеть спрашивается отдельно
-    assert operator.lookup_ip("46.39.7.92") == "МТС"
+    assert operator.lookup_ip("46.39.7.92") == "MTS-NET"
     assert len(calls) == 2
     operator.forget_cache()
 
@@ -3997,6 +3997,170 @@ def test_operator_reason_tells_what_to_switch_on(client, router):
     assert "91.79.217.182" in note
     assert "OPERATOR_LOOKUP=1" in note
     assert "перезапуск" in note
+
+
+def test_registry_names_are_translated_to_human_ones():
+    """
+    Строка реестра превращается в имя оператора, незнакомая остаётся как есть.
+
+    Реестр отдаёт `RU-MTU-20060821` и `T2RU-SUBSCRIBER-POOL-NET`.
+    Показывать это в таблице бессмысленно, а выдумывать имя там,
+    где соответствия нет, ещё хуже: непонятная строка честнее неверной.
+    """
+    from app import operator
+
+    operator.forget_registry()
+    assert operator.registry_name("RU-MTU-20060821") == "МТС"
+    assert operator.registry_name("T2RU-SUBSCRIBER-POOL-NET") == "Tele2"
+    assert operator.registry_name("MF-CENTER-NET") == "МегаФон"
+    assert operator.registry_name("SCARTEL-NET") == "МегаФон (Yota)"
+    assert operator.registry_name("er-telecom-holding") == "Дом.ru"
+
+    # Незнакомое не переименовываем
+    assert operator.registry_name("RU-KAKOY-TO-NET") == "RU-KAKOY-TO-NET"
+    assert operator.registry_name("") == ""
+
+    # Цвет метки нужен шаблону: у знакомого он есть, у незнакомого нет
+    assert operator.color_of("МТС") == "red"
+    assert operator.color_of("RU-KAKOY-TO-NET") == ""
+
+
+def test_known_operators_are_renamed_at_start(client, router):
+    """
+    Список соответствий пополняется, а в базе лежат старые строки.
+
+    Опрос оператора идёт раз в сутки, и без прохода при старте новое
+    имя ждало бы следующей проверки. Вписанное руками не трогаем.
+    """
+    from app import operator
+    from app.database import execute_changes, query_one
+
+    auto = _add_device(client, router, "точка-с-реестром")
+    manual = _add_device(client, router, "точка-с-ручным-оператором")
+    execute_changes("UPDATE devices SET operator = ?, operator_source = 'whois'"
+                    " WHERE id = ?", ("RU-MTU-20060821", auto))
+    execute_changes("UPDATE devices SET operator = ?, operator_source = 'manual'"
+                    " WHERE id = ?", ("RU-MTU-20060821", manual))
+
+    assert operator.rename_known() == 1
+    assert query_one("SELECT operator FROM devices WHERE id = ?", (auto,))["operator"] == "МТС"
+    assert query_one("SELECT operator FROM devices WHERE id = ?",
+                     (manual,))["operator"] == "RU-MTU-20060821"
+
+    # Повторный проход менять уже нечему
+    assert operator.rename_known() == 0
+
+    # Имя уточнили: строка реестра сохранена рядом, поэтому исправление
+    # доходит до точек. Без неё «Дансер» так и остался бы «Дансером»
+    execute_changes("UPDATE devices SET operator_raw = ? WHERE id = ?",
+                    ("RU-MTU-20060821", auto))
+    operator.save_local("RU-MTU", "МТС Россия", "red")
+    try:
+        assert operator.rename_known() == 1
+        assert query_one("SELECT operator FROM devices WHERE id = ?",
+                         (auto,))["operator"] == "МТС Россия"
+    finally:
+        operator.save_local("RU-MTU", "")
+    operator.rename_known()
+
+    # И в списке устройств имя стоит цветной меткой
+    page = client.get("/devices").text
+    assert "tag-red" in page and "МТС" in page
+
+
+def test_foreign_registry_answers_give_the_company_name():
+    """
+    За границей имя владельца берётся из реестра, а не из таблицы.
+
+    Таблица соответствий русская, и `DTAG-DIAL18` в ней не найдётся.
+    Зато в том же ответе RDAP есть «Deutsche Telekom AG», и это ровно
+    то, что нужно показать. Знакомое имя при этом сильнее: `RU-MTU`
+    должен остаться МТС, а не «MTU-INTEL LLC».
+    """
+    from app import operator
+
+    operator.forget_registry()
+    german = {
+        "name": "DTAG-DIAL18",
+        "entities": [{"vcardArray": ["vcard", [
+            ["version", {}, "text", "4.0"],
+            ["fn", {}, "text", "Deutsche Telekom AG"],
+        ]]}],
+    }
+    assert operator._from_rdap(german) == "Deutsche Telekom AG"
+    assert operator.registry_name("Deutsche Telekom AG") == "Deutsche Telekom AG"
+
+    # Знакомый netname сильнее юридического имени: «МТС» понятнее,
+    # чем «MTU-INTEL LLC»
+    russian = dict(german, name="RU-MTU-20060821")
+    assert operator.registry_name(operator._from_rdap(russian)) == "МТС"
+
+    # Заглушку вместо имени не показываем: netname полезнее
+    hidden = dict(german, entities=[{"vcardArray": ["vcard", [
+        ["fn", {}, "text", "Private Person"],
+    ]]}])
+    assert operator._from_rdap(hidden) == "DTAG-DIAL18"
+
+    # Нет ни имени сети, ни организации - остаётся идентификатор записи
+    assert operator._from_rdap({"handle": "185.165.200.0 - 185.165.200.255"}) \
+        == "185.165.200.0 - 185.165.200.255"
+
+
+def test_unknown_operator_can_be_named_from_settings(client, router):
+    """
+    Незнакомую строку реестра можно назвать прямо в настройках.
+
+    Список соответствий в репозитории всех региональных провайдеров
+    не покроет, а править его руками бессмысленно: обновление панели
+    файл перепишет. Имя, заданное на месте, лежит в данных и переживает
+    обновление, а применяется сразу ко всем точкам провайдера.
+    """
+    from app import operator
+    from app.database import execute_changes, query_one
+
+    first = _add_device(client, router, "точка-у-местного-провайдера")
+    second = _add_device(client, router, "вторая-точка-там-же")
+    for device_id in (first, second):
+        execute_changes("UPDATE devices SET operator = ?, operator_source = 'whois'"
+                        " WHERE id = ?", ("RU-XYZ-20120101", device_id))
+    operator.forget_registry()
+
+    # Панель сама показывает такую строку в списке работы
+    assert any(row["name"] == "RU-XYZ-20120101" and row["devices"] == 2
+               for row in operator.unknown_names())
+    assert "RU-XYZ-20120101" in client.get("/settings").text
+
+    page = client.post("/settings/operators", data={
+        "needle": "RU-XYZ", "name": "Местный", "color": "cyan"})
+    assert page.status_code == 200
+
+    assert query_one("SELECT operator FROM devices WHERE id = ?",
+                     (first,))["operator"] == "Местный"
+    assert query_one("SELECT operator FROM devices WHERE id = ?",
+                     (second,))["operator"] == "Местный"
+    assert operator.color_of("Местный") == "cyan"
+    assert operator.unknown_names() == []
+
+    # Правило пережило перезапуск: оно в файле, а не в памяти
+    operator.forget_registry()
+    assert operator.registry_name("RU-XYZ-20991231") == "Местный"
+
+    # Пустое имя убирает правило, а выдуманный цвет не проходит
+    operator.save_local("RU-XYZ", "")
+    assert operator.registry_name("RU-XYZ-20120101") == "RU-XYZ-20120101"
+    operator.save_local("RU-XYZ", "Местный", "ярко-зелёный")
+    assert operator.color_of("Местный") == "slate"
+    operator.save_local("RU-XYZ", "")
+
+
+def test_naming_an_operator_needs_the_right(client, router):
+    """Назвать оператора может тот, кому доверены устройства."""
+    _add_device(client, router, "точка")
+    _make_user(client, "смотритель-операторов", ["devices.view", "settings.view"])
+    with _as("смотритель-операторов") as watcher:
+        page = watcher.post("/settings/operators", data={
+            "needle": "RU-XYZ", "name": "Местный", "color": "cyan"})
+    assert page.status_code == 403
 
 
 def test_grey_addresses_are_not_sent_to_the_registry():

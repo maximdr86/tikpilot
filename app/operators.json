@@ -1,0 +1,69 @@
+{
+  "_note": [
+    "Как из строки реестра получается человеческое имя оператора.",
+    "",
+    "Реестр отдаёт netname и handle: RU-MTU-20060821, T2RU-SUBSCRIBER-POOL-NET,",
+    "MF-CENTER-NET. Читать это в таблице невозможно, поэтому здесь лежит",
+    "соответствие: кусок строки (в верхнем регистре) -> имя и цвет метки.",
+    "",
+    "Правила проверяются сверху вниз, побеждает первое совпавшее, поэтому",
+    "более длинные и точные куски должны идти раньше. Не нашли совпадения -",
+    "показываем строку реестра как есть: выдуманное имя хуже непонятного.",
+    "",
+    "Файл можно править руками, перезапуск панели не нужен: он перечитывается",
+    "при старте, а добавленное имя применяется к уже найденным операторам."
+  ],
+
+  "operators": [
+    ["MTS", "МТС", "red"],
+    ["RU-MTU", "МТС", "red"],
+    ["MTU-INTEL", "МТС", "red"],
+    ["MOBILE TELESYSTEMS", "МТС", "red"],
+    ["MOBILNIE TELESISTEMY", "МТС", "red"],
+
+    ["MEGAFON", "МегаФон", "green"],
+    ["MF-", "МегаФон", "green"],
+    ["NETBYNET", "МегаФон", "green"],
+    ["YOTA", "МегаФон (Yota)", "green"],
+    ["SCARTEL", "МегаФон (Yota)", "green"],
+
+    ["BEELINE", "Билайн", "amber"],
+    ["VIMPELCOM", "Билайн", "amber"],
+    ["VEON", "Билайн", "amber"],
+    ["GOLDEN-TELECOM", "Билайн", "amber"],
+    ["SOVINTEL", "Билайн", "amber"],
+
+    ["TELE2", "Tele2", "blue"],
+    ["T2RU", "Tele2", "blue"],
+    ["T2-", "Tele2", "blue"],
+    ["ST-PETERSBURG-TELECOM", "Tele2", "blue"],
+
+    ["ROSTELECOM", "Ростелеком", "violet"],
+    ["RTCOMM", "Ростелеком", "violet"],
+    ["RT-", "Ростелеком", "violet"],
+    ["SIBIRTELECOM", "Ростелеком", "violet"],
+    ["URALSVYAZINFORM", "Ростелеком", "violet"],
+
+    ["WEBSTREAM", "Ростелеком", "violet"],
+
+    ["ER-TELECOM", "Дом.ru", "cyan"],
+    ["DOMRU", "Дом.ru", "cyan"],
+    ["TTK", "ТрансТелеКом", "cyan"],
+    ["TRANSTELECOM", "ТрансТелеКом", "cyan"],
+    ["MOTIV", "МОТИВ", "amber"],
+    ["RU-YCC", "МОТИВ", "amber"],
+    ["EKATERINBURG-2000", "МОТИВ", "amber"],
+    ["APN-RKN", "Роскомнадзор (белые списки)", "pink"],
+    ["TELEPORT_SFO", "Газпром КС (спутник)", "violet"],
+    ["GAZPROM-SPACE", "Газпром КС (спутник)", "violet"],
+
+    ["AVANTEL", "Авантел", "slate"],
+    ["METRO-SET", "Метросеть", "slate"],
+    ["DANCER", "Данцер", "slate"],
+    ["OBIT", "ОБИТ", "slate"],
+    ["SIBSET", "Сибсеть", "slate"],
+    ["ORIONTELECOM", "Орион телеком", "slate"],
+    ["KHANTY-MANSIYSK", "Хантымансийскокртелеком", "slate"],
+    ["UGRA", "Югрател", "slate"]
+  ]
+}

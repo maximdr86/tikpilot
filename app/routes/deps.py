@@ -245,6 +245,14 @@ templates.env.filters["sort_version"] = sort_version
 templates.env.filters["uptime_seconds"] = uptime_seconds
 templates.env.filters["status_rank"] = status_rank
 templates.env.filters["dt"] = dt_local
+def operator_color(name: str) -> str:
+    """Цвет метки оператора для шаблона. Пусто у незнакомых."""
+    from .. import operator
+
+    return operator.color_of(str(name or ""))
+
+
+templates.env.filters["operator_color"] = operator_color
 templates.env.filters["dt_short"] = dt_short
 templates.env.filters["log_time"] = log_time
 templates.env.filters["size"] = human_size

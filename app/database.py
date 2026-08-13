@@ -365,6 +365,7 @@ CREATE TABLE IF NOT EXISTS devices (
     operator      TEXT NOT NULL DEFAULT '',
     operator_source TEXT NOT NULL DEFAULT '',   -- lte | whois | manual
     operator_detail TEXT NOT NULL DEFAULT '',   -- технология и сигнал либо адрес
+    operator_raw  TEXT NOT NULL DEFAULT '',    -- что ответил реестр, до перевода в имя
     operator_at   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_devices_group  ON devices(group_id);
@@ -617,6 +618,7 @@ MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         ("operator", "TEXT NOT NULL DEFAULT ''"),
         ("operator_source", "TEXT NOT NULL DEFAULT ''"),
         ("operator_detail", "TEXT NOT NULL DEFAULT ''"),
+        ("operator_raw", "TEXT NOT NULL DEFAULT ''"),
         ("operator_at", "TEXT"),
     ],
     "syslog": [

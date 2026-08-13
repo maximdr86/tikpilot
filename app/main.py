@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, monitor, snippets, syslog, worker
+from . import __version__, monitor, operator, snippets, syslog, worker
 from .auth import Forbidden, RedirectException, read_session, redirect_exception_handler
 from .config import BASE_DIR, settings
 from . import activity
@@ -68,6 +68,11 @@ async def lifespan(_app: FastAPI):
     filled = snippets.backfill_markers()
     if filled:
         log.info("Библиотека: уточнены имена у записей: %s", filled)
+    # Список соответствий для операторов пополняется чаще, чем опрашивается
+    # парк: применяем его сразу ко всему, что уже найдено
+    renamed = operator.rename_known()
+    if renamed:
+        log.info("Операторы: приведены к человеческим именам: %s", renamed)
     # Буфер живой консоли подключаем до фоновых потоков: иначе первые
     # строки, самые интересные при разборе проблем со стартом, пропадут
     activity.install()

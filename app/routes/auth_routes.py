@@ -17,7 +17,7 @@ from ..auth import (
     set_session_cookie,
 )
 from ..crypto import hash_password
-from .. import i18n, invites, loginguard, permissions
+from .. import i18n, invites, loginguard, operator, permissions
 from ..database import execute, log_audit, query, query_one, utcnow
 from .deps import LANG_COOKIE, render, resolve_lang, templates
 
@@ -230,6 +230,8 @@ def _users_context(request: Request | None = None) -> dict[str, object]:
             str(request.base_url).rstrip("/") if request is not None else ""),
         "invite_hours": invites.DEFAULT_HOURS,
         "fresh_invite": "",
+        "unknown_operators": operator.unknown_names(),
+        "operator_colors": operator.COLORS,
     }
 
 
@@ -522,3 +524,32 @@ async def delete_user(request: Request, user_id: int,
 
     return render("settings.html", request, user, active="settings",
                   message=message, error=error, diag=_diagnostics(), **_users_context(request))
+
+
+@router.post("/settings/operators")
+async def name_operator(request: Request,
+                        needle: str = Form(""),
+                        name: str = Form(""),
+                        color: str = Form("slate"),
+                        user=Depends(require("devices.edit"))):
+    """
+    Назвать оператора по-человечески.
+
+    Реестр отдаёт `RU-DANCER-20120101`, и в таблице это ничего не
+    говорит. Правило запоминается в данных, поэтому обновление панели
+    его не затрёт, и сразу применяется ко всем точкам этого провайдера.
+    """
+    operator.save_local(needle, name, color)
+    touched = operator.rename_known()
+    if name.strip():
+        log_audit(user["username"], "Назван оператор", needle.strip(),
+                  f"{name.strip()}, точек: {touched}", ip=client_ip(request))
+        message = f"Оператор {needle.strip()} теперь называется {name.strip()}"
+    else:
+        log_audit(user["username"], "Убрано имя оператора", needle.strip(),
+                  "", ip=client_ip(request))
+        message = f"Имя для {needle.strip()} убрано"
+
+    return render("settings.html", request, user, active="settings",
+                  message=message, error=None, diag=_diagnostics(),
+                  **_users_context(request))

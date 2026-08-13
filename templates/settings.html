@@ -331,6 +331,49 @@
     </div>
 </div>
 
+{% if unknown_operators and can("devices.edit") %}
+<div class="panel" data-fold="operators">
+    <h2>Имена операторов
+        <span class="badge tag-slate">{{ unknown_operators | length }}</span>
+    </h2>
+    <div class="panel-body">
+        <div class="hint">
+            Реестр адресов отдаёт служебные строки вроде <span class="mono">RU-DANCER-20120101</span>.
+            Знакомые панель называет сама, а вот эти не узнала. Впишите имя один раз,
+            и все точки этого провайдера будут подписаны им.
+            Правило хранится в данных панели, обновление его не затирает.
+        </div>
+        <table class="table">
+            <thead>
+                <tr><th>Строка реестра</th><th>Точек</th><th>Имя</th><th>Цвет</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for row in unknown_operators %}
+                <tr>
+                    <form method="post" action="/settings/operators">
+                        <td class="mono">{{ row.name }}</td>
+                        <td>{{ row.devices }}</td>
+                        <td>
+                            <input type="hidden" name="needle" value="{{ row.name }}">
+                            <input type="text" name="name" placeholder="например, Данцер" required>
+                        </td>
+                        <td>
+                            <select name="color">
+                                {% for c in operator_colors %}
+                                <option value="{{ c }}">{{ c }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td><button class="btn" type="submit">Назвать</button></td>
+                    </form>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <div class="panel">
     <h2>О программе</h2>
     <div class="panel-body">
