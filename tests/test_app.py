@@ -3782,6 +3782,9 @@ def test_operator_from_modem_lands_in_the_device_list(client, router):
 
     page = client.get("/devices").text
     assert "МегаФон" in page
+    # И в карточке точки, рядом со статусом: когда точка лежит, вопрос
+    # «чей канал» задают сразу, и ответ должен быть на том же экране
+    assert "МегаФон" in client.get(f"/devices/{device_id}").text
     # Поиск по оператору, и заодно без оглядки на регистр: искать
     # «мегафон» с маленькой буквы человек будет чаще, чем с большой
     assert "МегаФон" in client.get("/devices?q=мегафон").text, "поиск по оператору не работает"
