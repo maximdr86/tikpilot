@@ -2133,7 +2133,9 @@ def test_english_pages_contain_no_russian(client, router):
     # а не по одному столбцу за раз, иначе проверка падает или не падает
     # в зависимости от того, какие тесты успели отработать раньше.
     data_columns = {
-        "devices": ("name", "comment", "last_error"),
+        # Оператор это тоже данные: имя приходит от модема или вписано
+        # человеком, и на английской странице оно остаётся как есть
+        "devices": ("name", "comment", "last_error", "operator", "operator_detail"),
         "groups": ("name", "comment"),
         "clients": ("label", "hostname", "comment"),
         "audit_log": ("target", "details"),
@@ -3722,6 +3724,255 @@ def test_report_can_be_narrowed_to_a_group_or_to_chosen_devices(client, router):
     body = csv_answer.content.decode("utf-8-sig")
     assert "отчёт-точка-1" in body and "отчёт-точка-2" not in body
     assert f"group{group_id}" in csv_answer.headers["content-disposition"]
+
+
+def test_operator_is_read_from_the_modem(client, router):
+    """
+    Оператор берётся у модема, и имя определяется по коду сети.
+
+    Имя из прошивки писать нельзя: у одного и того же оператора там
+    и «MTS RUS», и «MTS-RUS», и «250 01». Код `25001` это всегда МТС,
+    поэтому имя берём по коду, а строку модема оставляем запасной.
+    """
+    from app import operator
+
+    assert operator.name_by_code("25001") == "МТС"
+    assert operator.name_by_code("250 02") == "МегаФон"
+    assert operator.name_by_code("25011") == "Yota"
+    assert operator.name_by_code("мусор") == ""
+
+    found = operator.from_lte([{
+        "status": "registered", "current-operator": "25001",
+        "access-technology": "LTE", "rsrp": "-97dBm",
+    }])
+    assert found["name"] == "МТС"
+    assert found["technology"] == "LTE"
+
+    # Незарегистрированный модем оператора не называет
+    assert operator.from_lte([{"status": "searching", "current-operator": "25001"}]) == {}
+
+    # Неизвестный код не выдумываем, а честно оставляем пустым, если
+    # модем не сообщил имя сам
+    assert operator.from_lte([{"status": "registered", "current-operator": "99999"}]) == {}
+    guess = operator.from_lte([{"status": "registered", "current-operator": "99999",
+                                "current-operator-name": "Local GSM"}])
+    assert guess["name"] == "Local GSM"
+
+
+def test_operator_from_modem_lands_in_the_device_list(client, router):
+    """Найденный оператор виден в списке устройств и ищется по нему."""
+    from app import operator
+    from app.database import query_one
+
+    device_id = _add_device(client, router, "точка-с-модемом")
+    router.lte_monitor = [{
+        "status": "registered", "current-operator": "25002",
+        "access-technology": "LTE-A", "rsrp": "-101dBm",
+    }]
+
+    with MikroTik(_device(router), "s3cret") as mt:
+        name, _note = operator.collect(mt, {"id": device_id})
+        assert name == "МегаФон"
+
+    row = query_one("SELECT operator, operator_source, operator_detail FROM devices"
+                    " WHERE id = ?", (device_id,))
+    assert row["operator"] == "МегаФон"
+    assert row["operator_source"] == "lte"
+    assert "LTE-A" in row["operator_detail"]
+
+    page = client.get("/devices").text
+    assert "МегаФон" in page
+    # Поиск по оператору, и заодно без оглядки на регистр: искать
+    # «мегафон» с маленькой буквы человек будет чаще, чем с большой
+    assert "МегаФон" in client.get("/devices?q=мегафон").text, "поиск по оператору не работает"
+
+
+def test_manual_operator_is_not_overwritten(client, router):
+    """
+    Вписанное руками сильнее найденного.
+
+    Человек, подписавший точку «Мегафон, договор 512», знает больше
+    модема, и следующий опрос не должен стирать эту строку.
+    """
+    from app import operator
+    from app.database import query_one
+
+    device_id = _add_device(client, router, "точка-с-договором")
+    device = query_one("SELECT * FROM devices WHERE id = ?", (device_id,))
+
+    answer = client.post(f"/api/devices/{device_id}/update", data={
+        "name": device["name"], "host": device["host"],
+        "username": device["username"], "operator": "МегаФон, договор 512",
+    })
+    assert answer.status_code == 200, answer.text
+    assert query_one("SELECT operator_source FROM devices WHERE id = ?",
+                     (device_id,))["operator_source"] == "manual"
+
+    operator.save(device_id, "Билайн", operator.LTE)
+    row = query_one("SELECT operator FROM devices WHERE id = ?", (device_id,))
+    assert row["operator"] == "МегаФон, договор 512", "ручную подпись затёрли"
+
+
+def test_missing_operator_explains_itself(client, router):
+    """
+    Когда оператора узнать неоткуда, панель говорит почему.
+
+    Пустая колонка без объяснения выглядит как сломанная возможность:
+    именно так она и выглядела на парке, где модема нет ни на одной
+    точке, а внешний адрес спрятан за NAT провайдера.
+    """
+    from app import operator
+
+    device_id = _add_device(client, router, "точка-без-модема")
+    router.lte_monitor = None          # модема нет
+    router.cloud = [{"ddns-enabled": "false"}]   # внешний адрес неизвестен
+
+    with MikroTik(_device(router), "s3cret") as mt:
+        name, note = operator.collect(mt, {"id": device_id})
+
+    assert name == ""
+    assert "нет модема" in note
+
+    operator.remember_miss(device_id, note)
+    page = client.get("/devices").text
+    assert "не определён" in page, "причина не показана"
+
+    # А если внешний адрес известен, причина другая и полезнее
+    router.cloud = [{"ddns-enabled": "true", "public-address": "46.39.2.66"}]
+    with MikroTik(_device(router), "s3cret") as mt:
+        _name, note = operator.collect(mt, {"id": device_id})
+    assert "46.39.2.66" in note
+    assert "OPERATOR_LOOKUP" in note, "не сказано, что поиск выключен"
+
+
+def test_registry_answer_is_cached_per_network(monkeypatch):
+    """
+    Реестр спрашивается один раз на сеть, а не на точку.
+
+    Полсотни точек одного оператора сидят в соседних адресах. Спрашивать
+    про каждую отдельно значит молотить чужой сервис полусотней запросов
+    ради одного и того же ответа.
+    """
+    from app import operator
+
+    operator.forget_cache()
+    calls = []
+
+    def fake_open(request, timeout=0):
+        calls.append(request.full_url)
+
+        class Answer:
+            def read(self):
+                return b'{"name": "MTS-NET"}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+        return Answer()
+
+    monkeypatch.setattr(operator.urllib.request, "urlopen", fake_open)
+
+    assert operator.lookup_ip("91.79.217.182") == "МТС"
+    assert operator.lookup_ip("91.79.217.9") == "МТС", "сосед по сети спрошен заново"
+    assert len(calls) == 1, calls
+
+    # Другая сеть спрашивается отдельно
+    assert operator.lookup_ip("46.39.7.92") == "МТС"
+    assert len(calls) == 2
+    operator.forget_cache()
+
+
+def test_operator_reason_tells_what_to_switch_on(client, router):
+    """
+    Когда адрес известен, а поиск выключен, причина говорит что делать.
+
+    Формулировка «поиск в реестре выключен (OPERATOR_LOOKUP)» отвечала
+    на вопрос «почему», но не на вопрос «и что теперь».
+    """
+    from app import operator
+    from app.config import settings
+
+    device_id = _add_device(client, router, "точка-с-белым-адресом")
+    router.lte_monitor = None
+    router.cloud = [{"ddns-enabled": "true", "public-address": "91.79.217.182"}]
+    monkey = settings.operator_lookup
+    settings.operator_lookup = False
+    try:
+        with MikroTik(_device(router), "s3cret") as mt:
+            name, note = operator.collect(mt, {"id": device_id})
+    finally:
+        settings.operator_lookup = monkey
+
+    assert name == ""
+    assert "91.79.217.182" in note
+    assert "OPERATOR_LOOKUP=1" in note
+    assert "перезапуск" in note
+
+
+def test_grey_addresses_are_not_sent_to_the_registry():
+    """
+    В реестр уходят только публичные адреса.
+
+    Спрашивать про серый адрес бессмысленно и вредно: ответом будет
+    владелец чужого NAT, а сам запрос это поход в интернет.
+    """
+    from app import operator
+
+    assert operator.is_public("46.39.2.66")
+    assert not operator.is_public("192.168.101.1")
+    assert not operator.is_public("10.225.15.9/24")
+    assert not operator.is_public("100.71.4.8"), "адрес CGNAT принят за публичный"
+    assert not operator.is_public("не адрес")
+
+    # Без публичного адреса запрос не уходит вовсе
+    assert operator.lookup_ip("192.168.1.1") == ""
+
+
+def test_device_card_shows_who_is_behind_the_site(client, router):
+    """
+    В карточке точки видно, кто за ней стоит.
+
+    Вопрос «что там на объекте» задают чаще, чем открывают раздел
+    «Клиенты» и фильтруют его по точке. Право при этом то же самое:
+    список за точкой это те же данные.
+    """
+    from app.database import execute, utcnow
+
+    device_id = _add_device(client, router, "точка-с-клиентами")
+    now = utcnow()
+    execute(
+        "INSERT INTO clients (device_id, mac, hostname, ip, port, link, vendor,"
+        " dynamic, source, first_seen, last_seen)"
+        " VALUES (?,?,?,?,?,'wired',?,1,'dhcp',?,?)",
+        (device_id, "10:60:4b:8d:d9:92", "URSUS10-PC", "192.168.101.252",
+         "ether2", "Hewlett Packard", now, now))
+
+    # Много клиентов: список не обрезается, а прокручивается
+    for index in range(30):
+        execute(
+            "INSERT INTO clients (device_id, mac, hostname, ip, port, link,"
+            " vendor, dynamic, source, first_seen, last_seen)"
+            " VALUES (?,?,?,'','','wired','',1,'arp',?,?)",
+            (device_id, "aa:bb:cc:00:00:%02x" % index, "клиент-%d" % index, now, now))
+
+    page = client.get(f"/devices/{device_id}").text
+    assert "URSUS10-PC" in page
+    assert "192.168.101.252" in page
+    assert "ether2" in page
+    assert "/clients?device_id=%d" % device_id in page, "нет ссылки на полный список"
+    assert 'class="panel fill"' in page, "панель клиентов не подстраивается по высоте"
+    assert "scroll-list" in page, "список не прокручивается"
+    assert "клиент-29" in page, "список обрезан вместо прокрутки"
+
+    # Без права на раздел «Клиенты» списка нет
+    _make_user(client, "без-клиентов", ["devices.view"], scope_all=True)
+    with _as("без-клиентов") as limited:
+        card = limited.get(f"/devices/{device_id}")
+        assert card.status_code == 200
+        assert "URSUS10-PC" not in card.text, "клиенты показаны без права на раздел"
 
 
 def test_report_shows_average_downtime_per_site(client, router):

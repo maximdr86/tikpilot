@@ -60,6 +60,11 @@ class FakeRouter:
         # и «подарок» от заглушки ломал бы их счёт. Кому нужен готовый
         # скрипт на устройстве, тот кладёт его сам.
         self.scripts: list[dict[str, Any]] = []
+        # Ответ модема. None означает «модема нет»: команды такой нет,
+        # и RouterOS отвечает отказом
+        self.lte_monitor: list[dict[str, Any]] | None = None
+        # Ответ /ip/cloud: у выключенной службы поля public-address нет
+        self.cloud: list[dict[str, Any]] = [{"ddns-enabled": "false"}]
         # Настройка отправки журнала: получатели и правила
         self.log_actions: list[dict[str, str]] = []
         self.log_rules: list[dict[str, str]] = []
@@ -624,6 +629,19 @@ class FakeRouter:
 
         if cmd == "/interface/ethernet/print":
             return list(self.ethernet)
+
+        if cmd == "/interface/lte/print":
+            return [] if self.lte_monitor is None else [{"name": "lte1"}]
+
+        if cmd == "/ip/cloud/print":
+            return list(self.cloud)
+
+        if cmd == "/interface/lte/monitor":
+            # Коробка без модема отвечает отказом, а не пустым списком:
+            # так же ведёт себя настоящая
+            if self.lte_monitor is None:
+                raise _Trap("no such item")
+            return list(self.lte_monitor)
 
         if cmd == "/interface/ethernet/monitor":
             if "numbers" not in attrs:

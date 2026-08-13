@@ -93,6 +93,11 @@
     </div>
 </div>
 
+{# Две панели рядом: слева как устроено подключение к самой точке,
+   справа кто за ней стоит. Вопрос «что там на объекте» задают чаще,
+   чем открывают раздел «Клиенты» и фильтруют его по точке #}
+<div class="grid cols-2 pair">
+
 <div class="panel">
     <h2>Параметры подключения</h2>
     <div class="table-wrap">
@@ -141,6 +146,71 @@
             </tbody>
         </table>
     </div>
+</div>
+
+{# Класс fill: панель не даёт высоту сетке, а занимает ту, что задала
+   левая. Иначе сто сорок клиентов растянут строку сетки, левая панель
+   растянется под них, и прокрутке взяться неоткуда #}
+<div class="panel fill">
+    <h2>Клиенты
+        {% if clients_total > clients | length %}
+            <span class="h2-extra muted">показаны {{ clients | length }} из {{ clients_total }}</span>
+        {% elif clients %}
+            <span class="h2-extra muted">всего {{ clients | length }}</span>
+        {% endif %}
+        {% if clients %}
+            <span class="h2-extra"><a href="/clients?device_id={{ device.id }}">поиск и подписи</a></span>
+        {% endif %}
+    </h2>
+    {% if clients %}
+    {# Список прокручивается внутри панели, а не обрезается: на точке
+       с гостевым Wi-Fi клиентов десятки, и «показаны 12 из 34» это
+       не ответ. Высота ограничена, чтобы соседняя панель не уезжала
+       на два экрана вниз #}
+    <div class="table-wrap scroll-list">
+        <table>
+            <tbody>
+            {% for c in clients %}
+                <tr>
+                    <td>
+                        {# Порядок тот же, что и в разделе «Клиенты»: своя
+                           подпись важнее комментария с роутера, а тот важнее
+                           имени, которое устройство сообщает о себе само #}
+                        {% set title = c.label or c.comment or c.hostname %}
+                        <strong>{{ title or ('без имени' | t) }}</strong>
+                        {% if not c.dynamic %}<span class="badge" title="Адрес закреплён за этим MAC">закреплён</span>{% endif %}
+                        {% if c.vendor %}<div class="small muted">{{ c.vendor | t }}</div>{% endif %}
+                        <div class="mono small muted">{{ c.mac }}</div>
+                    </td>
+                    <td class="mono nowrap">{{ c.ip or '—' }}</td>
+                    <td class="nowrap small">
+                        {% if c.link == 'wireless' %}
+                            <span class="badge air">по воздуху</span>
+                            {% if c.signal %}<div class="small muted">{{ c.signal }} дБм</div>{% endif %}
+                        {% else %}
+                            <span class="badge">по кабелю</span>
+                        {% endif %}
+                    </td>
+                    <td class="mono nowrap small">{{ c.port or '—' }}</td>
+                    <td class="nowrap small muted">
+                        {{ c.last_seen | since }}
+                        <div class="small">{{ c.first_seen | dt_short }}<span class="muted"> впервые</span></div>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="panel-body">
+        <div class="hint">
+            Клиентов пока не собирали. Список читается при полном опросе:
+            подождите цикл или запустите действие «Собрать клиентов».
+        </div>
+    </div>
+    {% endif %}
+</div>
+
 </div>
 
 <!-- ------------------------------------------------------------- графики -->

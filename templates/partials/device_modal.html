@@ -61,6 +61,19 @@
                 </div>
 
                 <div class="field">
+                    <label for="d-operator">Оператор</label>
+                    <input type="text" id="d-operator" name="operator"
+                           placeholder="определится сам по модему">
+                    <div class="hint">
+                        Панель узнаёт оператора у LTE-модема, а при включённой
+                        настройке <span class="mono">OPERATOR_LOOKUP</span> и по
+                        публичному адресу точки. Заполненное здесь сильнее:
+                        следующий опрос его не затрёт. Сюда же удобно писать
+                        номер договора.
+                    </div>
+                </div>
+
+                <div class="field">
                     <label for="d-latency">Цели пинга для этой точки</label>
                     <input type="text" id="d-latency" name="latency_targets"
                            placeholder="оставьте пустым, возьмутся общие настройки">

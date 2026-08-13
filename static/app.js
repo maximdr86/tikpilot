@@ -407,7 +407,8 @@ async function editDevice(id) {
         form.reset();
         form.dataset.deviceId = id;
         $('#device-modal-title').textContent = T('Редактирование: ') + data.name;
-        ['name', 'host', 'api_port', 'ftp_port', 'username', 'comment', 'latency_targets'].forEach((key) => {
+        ['name', 'host', 'api_port', 'ftp_port', 'username', 'comment',
+         'latency_targets', 'operator'].forEach((key) => {
             const el = form.querySelector(`[name=${key}]`);
             if (el) { el.value = data[key] == null ? '' : data[key]; }
         });
