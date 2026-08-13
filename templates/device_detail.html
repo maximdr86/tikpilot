@@ -59,6 +59,16 @@
             {% elif device.status == 'offline' %}<span class="badge offline"><span class="led"></span>оффлайн</span>
             {% else %}<span class="badge unknown"><span class="led"></span>неизвестно</span>{% endif %}
         </div>
+        {# Оператор рядом со статусом: когда точка лежит, следующий вопрос
+           всегда «чей канал», и ответ должен быть в том же месте, а не
+           в списке устройств через две страницы. Датчики в соседней
+           плитке показаны так же: строкой под значением #}
+        {% if device.operator %}
+        <div class="small muted" style="margin-top:6px">
+            {{ device.operator | t }}
+            {% if device.operator_detail %} · {{ device.operator_detail }}{% endif %}
+        </div>
+        {% endif %}
     </div>
     <div class="stat">
         <div class="label">RouterOS</div>
