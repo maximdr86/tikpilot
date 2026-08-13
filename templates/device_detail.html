@@ -148,10 +148,7 @@
     </div>
 </div>
 
-{# Класс fill: панель не даёт высоту сетке, а занимает ту, что задала
-   левая. Иначе сто сорок клиентов растянут строку сетки, левая панель
-   растянется под них, и прокрутке взяться неоткуда #}
-<div class="panel fill">
+<div class="panel">
     <h2>Клиенты
         {% if clients_total > clients | length %}
             <span class="h2-extra muted">показаны {{ clients | length }} из {{ clients_total }}</span>
