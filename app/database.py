@@ -51,6 +51,13 @@ def get_conn() -> sqlite3.Connection:
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=30000")
+        # Своя функция приведения к нижнему регистру. Встроенная в SQLite
+        # знает только латиницу, поэтому поиск «магазин» не находил
+        # «Магазин», и это било по каждому русскому имени в парке.
+        conn.create_function(
+            "lower_ru", 1,
+            lambda value: value.lower() if isinstance(value, str) else value,
+            deterministic=True)
         _local.conn = conn
     return conn
 
@@ -353,6 +360,12 @@ CREATE TABLE IF NOT EXISTS devices (
     inventory_at  TEXT,                     -- когда собирали порты и сервисы
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL
+,
+    -- Оператор связи площадки: кто даёт этой точке канал
+    operator      TEXT NOT NULL DEFAULT '',
+    operator_source TEXT NOT NULL DEFAULT '',   -- lte | whois | manual
+    operator_detail TEXT NOT NULL DEFAULT '',   -- технология и сигнал либо адрес
+    operator_at   TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_devices_group  ON devices(group_id);
 CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
@@ -599,6 +612,12 @@ MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         ("temperature", "TEXT NOT NULL DEFAULT ''"),
         ("voltage", "TEXT NOT NULL DEFAULT ''"),
         ("inventory_at", "TEXT"),
+        # Оператор связи площадки: имя, откуда узнали (lte|whois|manual),
+        # подробности (технология и сигнал либо адрес) и когда узнали
+        ("operator", "TEXT NOT NULL DEFAULT ''"),
+        ("operator_source", "TEXT NOT NULL DEFAULT ''"),
+        ("operator_detail", "TEXT NOT NULL DEFAULT ''"),
+        ("operator_at", "TEXT"),
     ],
     "syslog": [
         # Исходная строка целиком: страховка на случай, если разбор ошибся

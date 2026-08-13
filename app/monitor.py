@@ -401,6 +401,41 @@ def _check_latency(device: dict[str, Any], mt: MikroTik) -> None:
             )
 
 
+#: Как часто перепроверять оператора. Он меняется раз в жизни (сменили
+#: симку, переехали на другого провайдера), поэтому спрашивать каждый
+#: полный опрос незачем, тем более что часть ответов идёт из интернета.
+OPERATOR_REFRESH_HOURS = 24
+
+
+def _collect_operator(device: dict[str, Any]) -> None:
+    """
+    Узнать, чей канал у точки: спросить модем, при нужде реестр адресов.
+
+    Раз в сутки: оператор меняется примерно никогда, а поход в реестр
+    стоит времени и требует интернета.
+    """
+    from . import operator
+
+    last = _parse_ts(device.get("operator_at"))
+    if last is not None:
+        age = (datetime.now(timezone.utc) - last).total_seconds()
+        if age < OPERATOR_REFRESH_HOURS * 3600:
+            return
+
+    try:
+        with pool.borrow(device) as mt:
+            name, note = operator.collect(mt, device)
+    except DeviceError as exc:
+        log.debug("Оператор не определён для %s: %s", device.get("host"), exc)
+        return
+
+    if not name:
+        # Причину помним: пустая колонка без объяснения выглядит как
+        # сломанная возможность. Заодно не спрашиваем снова каждый час
+        operator.remember_miss(device["id"], note)
+        log.debug("Оператор не определён для %s: %s", device.get("host"), note)
+
+
 def _full_poll(device: dict[str, Any]) -> tuple[bool, str]:
     """Полный опрос с обновлением версии, uptime и прочего — в той же сессии."""
     if settings.monitor_probe_method == "tcp":
@@ -421,6 +456,7 @@ def _full_poll(device: dict[str, Any]) -> tuple[bool, str]:
             _collect_clients(device)
         if settings.inventory_enabled:
             _collect_inventory(device)
+        _collect_operator(device)
         if settings.latency_enabled:
             try:
                 with pool.borrow(device) as mt:

@@ -102,6 +102,8 @@
   "<span class=\"badge\">по кабелю</span>": "<span class=\"badge\">wired</span>",
   "<span class=\"badge\">своя подпись</span>": "<span class=\"badge\">custom</span>",
   "<span class=\"badge\">это вы</span>": "<span class=\"badge\">this is you</span>",
+  "<span class=\"h2-extra muted\">всего %(p0)s</span>": "<span class=\"h2-extra muted\">%(p0)s in total</span>",
+  "<span class=\"h2-extra muted\">показаны %(p0)s из %(p1)s</span>": "<span class=\"h2-extra muted\">showing %(p0)s of %(p1)s</span>",
   "<span class=\"led\"></span>оффлайн</span>": "<span class=\"led\"></span>offline</span>",
   "<span class=\"muted small\">(до начала периода)</span>": "<span class=\"muted small\">(started before the period)</span>",
   "<span class=\"muted small\">везде стоит</span>": "<span class=\"muted small\">everywhere</span>",
@@ -371,6 +373,22 @@
     [
       "^группа (.+)$",
       "group \\1"
+    ],
+    [
+      "^публичный адрес (.+?), поиск в реестре выключен \\(OPERATOR_LOOKUP\\)$",
+      "public address \\1, registry lookup is off (OPERATOR_LOOKUP)"
+    ],
+    [
+      "^реестр не ответил про (.+)$",
+      "the registry did not answer about \\1"
+    ],
+    [
+      "^Оператор не определён: (.+)$",
+      "Operator not detected: \\1"
+    ],
+    [
+      "^публичный адрес (.+?), осталось разрешить запрос в реестр: OPERATOR_LOOKUP=1 в \\.env и перезапуск$",
+      "public address \\1, all that is left is to allow the registry query: OPERATOR_LOOKUP=1 in .env and a restart"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
@@ -685,7 +703,9 @@
   "Каталог программы": "Program directory",
   "Кедр 73": "Site 73",
   "КиБ": "KiB",
+  "Клиентов пока не собирали. Список читается при полном опросе: подождите цикл или запустите действие «Собрать клиентов».": "Clients have not been collected yet. The list is read during a full poll: wait for a cycle or run the \"Collect clients\" action.",
   "Клиентов пока нет. Они появятся после полного опроса или по кнопке «Собрать сейчас»": "No clients yet. They appear after a full poll, or right away with \"Collect now\"",
+  "Клиенты": "Clients",
   "Клиенты <span class=\"muted\">(%(p0)s на связи)</span>": "Clients <span class=\"muted\">(%(p0)s online)</span>",
   "Клиенты · Tikpilot": "Clients · Tikpilot",
   "Клиенты</a>": "Clients</a>",
@@ -855,6 +875,7 @@
   "Операция необратима.": "This operation cannot be undone.",
   "Опрашиваю точки, это займёт время": "Polling the sites, this takes a while",
   "Опрашиваю точку": "Polling the site",
+  "Определить оператора": "Detect the operator",
   "Останавливаться на первой ошибке": "Stop at the first error",
   "Остановлено: команда не выполнилась.": "Stopped: the command failed.",
   "Отвечающих целей с потерями нет": "No responding target has any loss",
@@ -900,6 +921,7 @@
   "Панель проверит связь и снимет страховку. Точка может отвечать, а сеть за ней уже нет: для правил файрвола лучше проверить руками.": "The panel checks the link and disarms the rollback. A site can answer while the network behind it no longer does: for firewall rules, check by hand.",
   "Панель проверяет только одно: не закрыли ли вы себе доступ. Сеть за роутером она не видит, поэтому для правил forward, NAT, DHCP и портов моста берите второй вариант и посмотрите сами. Но помните: если забыть, точка перезагрузится.": "The panel checks one thing only: whether you locked yourself out. It cannot see the network behind the router, so for forward rules, NAT, DHCP and bridge ports pick the second option and look yourself. Just remember: forget, and the site reboots.",
   "Панель создаёт получателя с именем tikpilot. Другие настройки логирования не трогаются: на точке может стоять отправка ещё куда-то.": "The panel creates a receiver named tikpilot. Other logging settings are left alone: the site may be sending its log somewhere else as well.",
+  "Панель узнаёт оператора у LTE-модема, а при включённой настройке <span class=\"mono\">OPERATOR_LOOKUP</span> и по публичному адресу точки. Заполненное здесь сильнее: следующий опрос его не затрёт. Сюда же удобно писать номер договора.": "The panel asks the LTE modem for the operator and, with <span class=\"mono\">OPERATOR_LOOKUP</span> enabled, looks up the public address of the site. What you type here wins: the next poll will not overwrite it. A contract number fits here nicely too.",
   "Панель, если сможет подключиться заново": "The panel, if it can connect again",
   "Параметры": "Parameters",
   "Параметры подключения": "Connection settings",
@@ -1170,6 +1192,7 @@
   "Список политик RouterOS через запятую.": "Comma-separated list of RouterOS policies.",
   "Список соберётся заново при следующем опросе, на сеть это не влияет.": "The list is rebuilt at the next poll, and the network is not touched.",
   "Способ проверки": "Probe method",
+  "Спросить у точки, чей канал: модем, публичный адрес, реестр": "Ask the site whose link it is: modem, public address, registry",
   "Сравнение конфигураций · Tikpilot": "Configuration comparison · Tikpilot",
   "Среди выбранных устройств есть недоступные": "Some of the selected devices are not available to you",
   "Средний простой": "Average downtime",
@@ -1368,6 +1391,7 @@
   "в сети": "online",
   "везде стоит": "everywhere",
   "весь парк": "the whole fleet",
+  "весь список</a></span>": "the full list</a></span>",
   "включая подписанные": "including labelled ones",
   "включено": "enabled",
   "вс": "Sun",
@@ -1419,6 +1443,7 @@
   "имя устройства или файла": "device or file name",
   "имя, адрес, комментарий, identity": "name, address, comment, identity",
   "имя, адрес, комментарий, identity, модель": "name, address, comment, identity, model",
+  "имя, адрес, комментарий, identity, модель, оператор": "name, address, comment, identity, model, operator",
   "имя, подпись, комментарий, MAC, адрес или вендор": "name, label, comment, MAC, address or vendor",
   "интервал дат": "the selected date range",
   "интерфейс %(p0)s": "interface %(p0)s",
@@ -1444,6 +1469,8 @@
   "например: узел на ул. Ленина, 5": "for example: node at 5 Main Street",
   "не короче 6 символов": "at least 6 characters",
   "не менять (как настроено на устройстве)": "do not change (keep the device setting)",
+  "не определён": "not detected",
+  "не определён</span>": "not detected</span>",
   "не отвечает": "unreachable for",
   "не отвечает %(p0)s×</span>": "no answer %(p0)s×</span>",
   "не показывать": "hide",
@@ -1456,11 +1483,13 @@
   "неизвестное устройство": "unknown device",
   "необязательно": "optional",
   "нет доступных точек": "no sites available",
+  "нет модема, публичный адрес точки не виден (NAT провайдера)": "no modem, and the public address of the site is hidden behind carrier NAT",
   "нет ответа": "no answer",
   "нет прав": "no rights",
   "ни разу не открывали": "never opened",
   "новее канала </span>": "newer than the channel </span>",
   "обновлён": "updated",
+  "определится сам по модему": "detected from the modem",
   "определится само": "detected automatically",
   "определятся сами": "detected automatically",
   "оставьте пустым, возьмутся общие настройки": "leave empty to use the shared settings",
@@ -1485,6 +1514,7 @@
   "подтверждения не было, устройство откатилось само": "no confirmation came, the device rolled itself back",
   "подтверждено разом": "confirmed in bulk",
   "подъезд 1": "entrance 1",
+  "поиск и подписи</a></span>": "search and labels</a></span>",
   "поиск по имени точки": "search by site name",
   "показаны последние %(p0)s из %(p1)s": "showing the latest %(p0)s of %(p1)s",
   "пользователь, действие, объект": "user, action, object",

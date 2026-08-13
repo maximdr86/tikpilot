@@ -339,6 +339,29 @@ def act_remove_script(mt: MikroTik, device: dict[str, Any], params: dict[str, An
 
 
 @register(
+    name="detect_operator",
+    label="Определить оператора",
+    description="Спросить у точки, чей канал: модем, публичный адрес, реестр",
+    icon="radio",
+)
+def act_detect_operator(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]) -> str:
+    """
+    Определить оператора прямо сейчас, не дожидаясь суточной проверки.
+
+    Отдельное действие нужно ровно потому, что колонка «Оператор» может
+    оказаться пустой по трём разным причинам: нет модема, адрес за NAT,
+    выключен поиск в реестре. Пустая клетка об этом молчит, а результат
+    задачи говорит прямо.
+    """
+    from . import operator
+
+    name, note = operator.collect(mt, device)
+    if name:
+        return f"{name}{' · ' + note if note else ''}"
+    return f"Оператор не определён: {note}"
+
+
+@register(
     name="command",
     label="Команда по API",
     description="Вызов API по имени и параметрам: точный ответ таблицей",

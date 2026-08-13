@@ -28,7 +28,7 @@
 <div class="filters">
     <div class="field grow">
         <label for="f-q">Поиск</label>
-        <input type="search" id="f-q" value="{{ f_q }}" placeholder="имя, адрес, комментарий, identity, модель"
+        <input type="search" id="f-q" value="{{ f_q }}" placeholder="имя, адрес, комментарий, identity, модель, оператор"
                oninput="scheduleReload()">
     </div>
     <div class="field">
@@ -79,6 +79,7 @@
             <th>IP / Hostname</th>
             <th>Группа</th>
             <th class="nowrap">Модель</th>
+            <th class="nowrap">Оператор</th>
             <th class="nowrap">RouterOS</th>
             <th class="nowrap">Uptime</th>
             <th>Статус</th>

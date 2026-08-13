@@ -52,10 +52,14 @@ def _fetch_devices(q: str = "", group_id: str = "", status: str = "",
     if q:
         # Модель тоже ищется: «покажи все hAP ac lite» это обычный вопрос
         # перед обновлением прошивки или закупкой замены
-        sql.append("AND (d.name LIKE ? OR d.host LIKE ? OR d.comment LIKE ? "
-                   "OR d.identity LIKE ? OR d.board_name LIKE ?)")
-        like = f"%{q}%"
-        params += [like] * 5
+        # lower_ru, а не LIKE напрямую: встроенное сравнение SQLite
+        # приводит к нижнему регистру только латиницу, и поиск «магазин»
+        # не находил «Магазин»
+        sql.append("AND (lower_ru(d.name) LIKE ? OR lower_ru(d.host) LIKE ? "
+                   "OR lower_ru(d.comment) LIKE ? OR lower_ru(d.identity) LIKE ? "
+                   "OR lower_ru(d.board_name) LIKE ? OR lower_ru(d.operator) LIKE ?)")
+        like = f"%{q.lower()}%"
+        params += [like] * 6
     if group_id == "none":
         sql.append("AND d.group_id IS NULL")
     elif group_id:
@@ -138,6 +142,28 @@ async def devices_rows(
         user,
         devices=_fetch_devices(q, group_id, status, user),
     )
+
+
+#: Потолок на число клиентов в карточке. Не для красоты: на точке
+#: с гостевым Wi-Fi их бывают сотни, и страница на пять тысяч строк
+#: не помогает никому. Список прокручивается, поэтому потолок высокий
+#: и упирается в него редко.
+DEVICE_CLIENTS_LIMIT = 500
+
+
+def _device_clients(device_id: int, user) -> list[dict[str, Any]]:
+    """
+    Клиенты этой точки: сначала те, кого видели недавно.
+
+    Право на раздел «Клиенты» проверяется отдельно: список за точкой
+    это те же данные, и показывать их тому, кому раздел закрыт, нельзя.
+    """
+    if not permissions.has(user, "clients.view"):
+        return []
+    return [dict(r) for r in query(
+        "SELECT * FROM clients WHERE device_id = ? "
+        "ORDER BY last_seen DESC, id DESC LIMIT ?",
+        (device_id, DEVICE_CLIENTS_LIMIT))]
 
 
 def _device_charts(device_id: int, hours: int, lang: str = "ru") -> dict[str, str]:
@@ -226,6 +252,10 @@ async def device_detail(request: Request, device_id: int, hours: int = 24, user=
         items=items,
         backups=backups,
         timeline=monitor.device_timeline(device_id, 40),
+        clients=_device_clients(device_id, user),
+        clients_total=query_one(
+            "SELECT COUNT(*) AS c FROM clients WHERE device_id = ?",
+            (device_id,))["c"],
         charts=_device_charts(device_id, hours if hours in (1, 6, 24, 168) else 24,
                               resolve_lang(request, user)),
         hours=hours if hours in (1, 6, 24, 168) else 24,
@@ -369,6 +399,9 @@ def _device_form_values(form: dict[str, Any]) -> dict[str, Any]:
         "group_id": int(form["group_id"]) if (form.get("group_id") or "").strip() else None,
         "comment": (form.get("comment") or "").strip(),
         "latency_targets": (form.get("latency_targets") or "").strip(),
+        # Оператор, вписанный руками. Пустое поле не трогает найденное
+        # автоматически: человек не обязан заполнять его на каждой правке
+        "operator": (form.get("operator") or "").strip(),
         "enabled": form_bool(form.get("enabled") or "1"),
     }
 
@@ -422,6 +455,10 @@ async def update_device(request: Request, device_id: int,
         "UPDATE devices SET name=?, host=?, api_port=?, ftp_port=?, use_ssl=?, username=?, "
         "group_id=?, comment=?, latency_targets=?, enabled=?, updated_at=?"
     )
+    # Оператор правится отдельно: пустое поле означает «не трогать»,
+    # а не «стереть найденное модемом»
+    if values["operator"]:
+        sql += ", operator=?, operator_source='manual', operator_detail='', operator_at=?"
     params: list[Any] = [
         values["name"],
         values["host"],
@@ -435,6 +472,8 @@ async def update_device(request: Request, device_id: int,
         values["enabled"],
         utcnow(),
     ]
+    if values["operator"]:
+        params += [values["operator"], utcnow()]
     if password:
         sql += ", password_enc=?"
         params.append(encrypt(password))

@@ -454,6 +454,30 @@ through the interface does not tell the router which one to hand the packet to.
 
 ---
 
+## Site operator
+
+When a site goes down the first question is not "what is wrong with the router"
+but "whose link is it". The device list has an "Operator" column, and search
+covers it too.
+
+The panel finds it on its own, in this order:
+
+* **from the modem.** `/interface/lte/monitor` reports the network code, and the
+  name comes from the code: `25001` is always MTS, while the string baked into
+  the firmware differs from model to model. The technology and signal level are
+  shown under the name;
+* **from the address registry.** Where there is no modem, the panel asks RDAP
+  about the public address of the site. This is the only place in the whole
+  panel that reaches out to the internet, so it is off by default:
+  `OPERATOR_LOOKUP=1`. Private and CGNAT addresses are never looked up: behind
+  a carrier NAT the registry knows the owner of the NAT, not of the link;
+* **by hand.** The "Operator" field on the device card. What you type there wins
+  and is never overwritten by a poll; a contract number fits nicely there too.
+
+Rechecked once a day: an operator changes approximately never.
+
+---
+
 ## Monitoring
 
 It works right after startup. Turn it off with `MONITOR_ENABLED=0`.

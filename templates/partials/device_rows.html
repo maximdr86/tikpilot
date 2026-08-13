@@ -24,6 +24,22 @@
                 {% if d.architecture %}<div class="small muted mono">{{ d.architecture }}</div>{% endif %}
             {% else %}<span class="muted small">—</span>{% endif %}
         </td>
+        {# Оператор: чей канал у точки. Первый вопрос при падении не
+           «что с роутером», а «чей провайдер лежит». Подпись под именем
+           говорит, откуда сведения: с модема, из реестра или руками #}
+        <td class="nowrap">
+            {% if d.operator %}
+                {{ d.operator | t }}
+                {% if d.operator_detail %}
+                    <div class="small muted">{{ d.operator_detail }}</div>
+                {% endif %}
+            {% elif d.operator_detail %}
+                {# Причина вместо молчаливого прочерка: пустая клетка
+                   выглядит как сломанная возможность, а тут видно,
+                   что именно мешает узнать оператора #}
+                <span class="muted small" title="{{ d.operator_detail }}">не определён</span>
+            {% else %}<span class="muted small">—</span>{% endif %}
+        </td>
         <td class="mono nowrap" data-sort="{{ d.ros_version | sort_version }}">
             {{ d.ros_version or '—' }}
             {# Метка появляется, только если доступная версия действительно НОВЕЕ.
