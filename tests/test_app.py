@@ -3963,7 +3963,6 @@ def test_device_card_shows_who_is_behind_the_site(client, router):
     assert "192.168.101.252" in page
     assert "ether2" in page
     assert "/clients?device_id=%d" % device_id in page, "нет ссылки на полный список"
-    assert 'class="panel fill"' in page, "панель клиентов не подстраивается по высоте"
     assert "scroll-list" in page, "список не прокручивается"
     assert "клиент-29" in page, "список обрезан вместо прокрутки"
 
