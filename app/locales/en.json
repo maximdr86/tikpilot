@@ -389,6 +389,14 @@
     [
       "^публичный адрес (.+?), осталось разрешить запрос в реестр: OPERATOR_LOOKUP=1 в \\.env и перезапуск$",
       "public address \\1, all that is left is to allow the registry query: OPERATOR_LOOKUP=1 in .env and a restart"
+    ],
+    [
+      "^модем не опрошен: (.+)$",
+      "the modem was not queried: \\1"
+    ],
+    [
+      "^модем есть, но оператора не сказал · (.+)$",
+      "the modem is there but did not name the operator · \\1"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
