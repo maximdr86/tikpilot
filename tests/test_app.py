@@ -3816,6 +3816,49 @@ def test_manual_operator_is_not_overwritten(client, router):
     assert row["operator"] == "МегаФон, договор 512", "ручную подпись затёрли"
 
 
+def test_modem_that_stays_silent_is_not_called_missing(client, router):
+    """
+    Модем, который есть и молчит, не выдаётся за отсутствующий.
+
+    На точке с живым модемом панель писала «нет модема»: команда
+    возвращала отказ, а он глотался молча. Человек после такого ищет
+    неисправность не там, где она есть.
+    """
+    from app import operator
+
+    class Refuses:
+        """Модем в списке есть, а опрос его отбивается."""
+
+        def cmd(self, command, **kwargs):
+            if command == "/interface/lte/print":
+                return [{"name": "lte1"}]
+            raise RuntimeError("no such command prefix")
+
+    found, note = operator.from_modem(Refuses())
+    assert found == {}
+    assert "модем есть" in note
+    assert "no such command prefix" in note, "ответ роутера потерян"
+
+    class Searching:
+        """Модем есть, но в сети ещё не зарегистрировался."""
+
+        def cmd(self, command, **kwargs):
+            if command == "/interface/lte/print":
+                return [{"name": "lte1"}]
+            return [{"status": "searching"}]
+
+    found, note = operator.from_modem(Searching())
+    assert found == {}
+    assert "searching" in note
+
+    # А когда модема нет вовсе, пояснения быть не должно: это не поломка
+    class NoModem:
+        def cmd(self, command, **kwargs):
+            return []
+
+    assert operator.from_modem(NoModem()) == ({}, "")
+
+
 def test_missing_operator_explains_itself(client, router):
     """
     Когда оператора узнать неоткуда, панель говорит почему.

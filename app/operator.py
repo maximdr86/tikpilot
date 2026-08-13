@@ -281,33 +281,75 @@ def save(device_id: int, name: str, source: str, detail: str = "") -> None:
 
 def _safe(mt: Any, command: str, **kwargs: Any) -> list[dict[str, Any]]:
     """Спросить таблицу, пережив её отсутствие."""
+    rows, _error = _probe(mt, command, **kwargs)
+    return rows
+
+
+def _probe(mt: Any, command: str, **kwargs: Any) -> tuple[list[dict[str, Any]], str]:
+    """
+    То же самое, но с текстом ошибки.
+
+    Молчаливое «не получилось» стоило разбирательства: на точке с живым
+    модемом панель писала «модема нет», хотя на самом деле команда
+    вернула отказ. Причину надо показывать, а не глотать.
+    """
     try:
-        return list(mt.cmd(command, **kwargs))
-    except Exception:  # noqa: BLE001 — нет модема, нет и таблицы
-        return []
+        return list(mt.cmd(command, **kwargs)), ""
+    except Exception as exc:  # noqa: BLE001 — нет таблицы, нет прав, что угодно
+        return [], str(exc)[:120]
 
 
-def from_modem(mt: Any) -> dict[str, str]:
+def from_modem(mt: Any) -> tuple[dict[str, str], str]:
     """
     Спросить модем, если он есть.
+
+    Возвращает `(сведения, пояснение)`. Пояснение пустое, когда модема
+    действительно нет, и содержит ответ роутера, когда модем есть,
+    а спросить его не вышло: без этого «нет модема» врёт.
 
     Интерфейсы перечисляем и спрашиваем по имени, а не по номеру:
     номер зависит от порядка в списке, а `numbers=0` на коробке без
     модема означает «первый попавшийся интерфейс», то есть промах.
     """
-    for row in _safe(mt, "/interface/lte/print"):
+    rows, error = _probe(mt, "/interface/lte/print")
+    if error:
+        return {}, f"модем не опрошен: {error}"
+    if not rows:
+        return {}, ""
+
+    notes: list[str] = []
+    for row in rows:
         name = str(row.get("name") or row.get("default-name") or "").strip()
         if not name:
             continue
-        found = from_lte(_safe(mt, "/interface/lte/monitor",
-                               **{"numbers": name, "once": ""}))
-        if found.get("name"):
-            return found
-        # Часть прошивок отдаёт оператора прямо в списке интерфейсов
+
+        # Часть прошивок отдаёт оператора прямо в списке интерфейсов,
+        # и тогда отдельный опрос не нужен вовсе
         found = from_lte([row])
         if found.get("name"):
-            return found
-    return {}
+            return found, ""
+
+        answer, fail = _probe(mt, "/interface/lte/monitor",
+                              **{"numbers": name, "once": ""})
+        if fail:
+            notes.append(f"{name}: {fail}")
+            continue
+        found = from_lte(answer)
+        if found.get("name"):
+            return found, ""
+
+        # Модем есть и ответил, но оператора не назвал: чаще всего он
+        # не зарегистрирован в сети, и это стоит сказать прямо
+        status = ""
+        for item in answer:
+            status = str(item.get("status")
+                         or item.get("registration-status") or "").strip()
+            if status:
+                break
+        notes.append(f"{name}: {status or 'оператор не назван'}")
+
+    return {}, ("модем есть, но оператора не сказал · " + " · ".join(notes)
+                if notes else "")
 
 
 def public_address(mt: Any) -> str:
@@ -366,7 +408,7 @@ def collect(mt: Any, device: dict[str, Any]) -> tuple[str, str]:
     пустая колонка без объяснения выглядит как сломанная возможность,
     и именно так она и выглядела.
     """
-    modem = from_modem(mt)
+    modem, modem_note = from_modem(mt)
     if modem.get("name"):
         detail = " · ".join(part for part in (modem.get("technology"),
                                               modem.get("signal")) if part)
@@ -375,6 +417,10 @@ def collect(mt: Any, device: dict[str, Any]) -> tuple[str, str]:
 
     address = public_address(mt)
     if not address:
+        # Пояснение от модема важнее общего: если он есть и молчит,
+        # «нет модема» это неправда, и человек будет искать не там
+        if modem_note:
+            return "", modem_note
         return "", "нет модема, публичный адрес точки не виден (NAT провайдера)"
 
     if not settings.operator_lookup:
