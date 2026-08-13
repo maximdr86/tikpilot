@@ -2575,6 +2575,49 @@ def _as(username: str):
         client.close()
 
 
+def test_remember_me_outlives_the_usual_session(client):
+    """
+    Отмеченный вход переживает обычный срок сессии, неотмеченный нет.
+
+    Короткая сессия защищает чужой компьютер, но на своём рабочем месте
+    вход по три раза в день заканчивается паролем на бумажке. Проверяем
+    обе стороны: галочка держит, отсутствие галочки не держит.
+    """
+    from app.config import settings
+
+    _make_user(client, "усидчивый", ["devices.view"])
+    was = settings.session_max_age
+    try:
+        with _anon() as long_client:
+            long_client.post("/login", follow_redirects=False, data={
+                "username": "усидчивый", "password": "s3cret1", "remember": "1"})
+            assert long_client.cookies.get(settings.session_cookie), "сессия не выдана"
+
+            # Обычный срок вышел, а отмеченная сессия должна работать
+            settings.session_max_age = 0
+            assert long_client.get("/devices").status_code == 200
+
+        with _anon() as short_client:
+            short_client.post("/login", follow_redirects=False, data={
+                "username": "усидчивый", "password": "s3cret1"})
+            assert short_client.get("/devices", follow_redirects=False)\
+                .status_code == 303, "неотмеченный вход пережил свой срок"
+    finally:
+        settings.session_max_age = was
+
+    # Признак лежит внутри подписанного значения, а не отдельной cookie:
+    # подделать его в браузере нельзя
+    assert "remember" not in " ".join(client.cookies.keys())
+
+
+def test_remember_me_is_offered_on_the_login_page(client):
+    """Галочка есть на самой форме входа, а не только в коде."""
+    with _anon() as anon:
+        body = anon.get("/login").text
+    assert 'name="remember"' in body
+    assert "Запомнить меня" in body
+
+
 def test_new_user_starts_with_no_rights(client):
     """
     Новая учётная запись создаётся без прав.

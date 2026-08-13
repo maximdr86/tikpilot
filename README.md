@@ -882,6 +882,7 @@ tar czf tikpilot-$(date +%F).tar.gz data/ .env
 | `METRICS_RETENTION_DAYS` | `14` | how long to keep the graphs |
 | `UI_REFRESH_INTERVAL` | `15` | how often the page refreshes itself, seconds |
 | `SESSION_MAX_AGE` | `43200` | session lifetime, seconds |
+| `SESSION_REMEMBER_AGE` | `2592000` | session lifetime with "Remember me" ticked, seconds |
 | `JOB_RETENTION_DAYS` | `90` | how long to keep the job history |
 | `ADMIN_NETWORKS` | empty | networks allowed to reach the panel (the status page stays public) |
 | `TRUSTED_PROXIES` | `127.0.0.1,::1` | proxies whose `X-Forwarded-For` may be trusted |

@@ -1610,5 +1610,7 @@
   "Режим витрины": "Screenshot mode",
   "выключить": "turn off",
   "Для скриншотов и показа панели на экране. Названия точек и групп, адреса, имена устройств за роутером, MAC и учётные записи заменяются вымышленными: адреса берутся из диапазонов, отведённых под примеры, а MAC собираются так, что не принадлежат ни одному производителю. Подмена живёт только в ответе браузеру, база не меняется. Режим включается для вашего браузера и держится %(p0)s ч: остальные в это время видят настоящие данные.": "For screenshots and for showing the panel on a screen. Site and group names, addresses, the names of devices behind the router, MAC addresses and accounts are replaced with made-up ones: addresses come from the ranges reserved for documentation, and the MAC addresses are built so that they belong to no vendor. The substitution lives only in the reply to the browser, the database stays as it is. The mode is turned on for your browser and lasts %(p0)s h: everyone else keeps seeing the real data.",
-  "Это удобство, а не защита. Тот, кто уже вошёл в панель, видит настоящие данные в любой момент.": "This is a convenience, not a protection. Anyone already signed in to the panel can see the real data at any moment."
+  "Это удобство, а не защита. Тот, кто уже вошёл в панель, видит настоящие данные в любой момент.": "This is a convenience, not a protection. Anyone already signed in to the panel can see the real data at any moment.",
+  "Запомнить меня": "Remember me",
+  "Вход останется на %(p0)s дней. На чужом компьютере лучше не отмечать.": "The session will last %(p0)s days. Better left unticked on a computer that is not yours."
 }

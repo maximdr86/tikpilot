@@ -32,6 +32,12 @@
                 <input type="password" id="password" name="password" autocomplete="current-password" required>
             </div>
 
+            <label class="check">
+                <input type="checkbox" name="remember" value="1">
+                Запомнить меня
+            </label>
+            <div class="hint">Вход останется на {{ remember_days }} дней. На чужом компьютере лучше не отмечать.</div>
+
             <input type="hidden" name="next" value="{{ next }}">
             <button class="btn primary" type="submit" style="width:100%">Войти</button>
 
