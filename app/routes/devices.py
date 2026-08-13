@@ -455,10 +455,22 @@ async def update_device(request: Request, device_id: int,
         "UPDATE devices SET name=?, host=?, api_port=?, ftp_port=?, use_ssl=?, username=?, "
         "group_id=?, comment=?, latency_targets=?, enabled=?, updated_at=?"
     )
-    # Оператор правится отдельно: пустое поле означает «не трогать»,
-    # а не «стереть найденное модемом»
-    if values["operator"]:
+
+    # Оператор считается вписанным руками только если его действительно
+    # поменяли. Поле в форме заполняется найденным значением, чтобы его
+    # было видно, и без этой проверки любое сохранение карточки молча
+    # превращало найденное в ручное: дальше опрос его уже не обновлял,
+    # и в списке навсегда оставался оператор с первой проверки.
+    current = query_one("SELECT operator FROM devices WHERE id = ?", (device_id,))
+    was = str((current["operator"] if current else "") or "")
+    typed = values["operator"]
+    operator_params: list[Any] = []
+    if typed and typed != was:
         sql += ", operator=?, operator_source='manual', operator_detail='', operator_at=?"
+        operator_params = [typed, utcnow()]
+    elif not typed and was:
+        # Стёрли поле — вернули точку к автоопределению
+        sql += ", operator='', operator_source='', operator_detail='', operator_at=NULL"
     params: list[Any] = [
         values["name"],
         values["host"],
@@ -472,8 +484,7 @@ async def update_device(request: Request, device_id: int,
         values["enabled"],
         utcnow(),
     ]
-    if values["operator"]:
-        params += [values["operator"], utcnow()]
+    params += operator_params
     if password:
         sql += ", password_enc=?"
         params.append(encrypt(password))
