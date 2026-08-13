@@ -374,6 +374,38 @@
 </div>
 {% endif %}
 
+{% if can("users.manage") %}
+<div class="panel">
+    <h2>Режим витрины</h2>
+    <div class="panel-body">
+        <div class="hint">
+            Для скриншотов и показа панели на экране. Названия точек и групп,
+            адреса, имена устройств за роутером, MAC и учётные записи заменяются
+            вымышленными: адреса берутся из диапазонов, отведённых под примеры,
+            а MAC собираются так, что не принадлежат ни одному производителю.
+            Подмена живёт только в ответе браузеру, база не меняется.
+            Режим включается для вашего браузера и держится {{ demo_hours }} ч:
+            остальные в это время видят настоящие данные.
+        </div>
+        <div class="hint">
+            Это удобство, а не защита. Тот, кто уже вошёл в панель,
+            видит настоящие данные в любой момент.
+        </div>
+        {% if demo_on %}
+        <form method="post" action="/demo/off">
+            <input type="hidden" name="next" value="/settings">
+            <button class="btn" type="submit">Выключить режим витрины</button>
+        </form>
+        {% else %}
+        <form method="post" action="/demo/on">
+            <input type="hidden" name="next" value="/settings">
+            <button class="btn" type="submit">Включить режим витрины</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <div class="panel">
     <h2>О программе</h2>
     <div class="panel-body">

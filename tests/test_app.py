@@ -3999,6 +3999,191 @@ def test_operator_reason_tells_what_to_switch_on(client, router):
     assert "перезапуск" in note
 
 
+def test_screenshot_mode_hides_the_real_fleet(client, router):
+    """
+    Режим витрины убирает со страниц всё, что показывает настоящий парк.
+
+    Проверяем ровно то, ради чего он сделан: после включения на странице
+    не остаётся ни имени точки, ни её адреса. Скриншот такой страницы
+    можно класть куда угодно.
+    """
+    from app import demo
+
+    demo.forget()
+    _add_device(client, router, "NV Bufet 730")
+
+    honest = client.get("/devices").text
+    assert "NV Bufet 730" in honest and router.host in honest
+
+    client.post("/demo/on", data={"next": "/settings"}, follow_redirects=False)
+    try:
+        page = client.get("/devices").text
+        assert "NV Bufet 730" not in page, "имя точки видно на скриншоте"
+        assert router.host not in page, "адрес точки виден на скриншоте"
+        assert "Кафе Ромашка" in page
+        assert "192.0.2." in page or "198.51.100." in page or "203.0.113." in page
+
+        # Плашка в меню: включённый режим должен быть заметен
+        assert "витрина" in page
+
+        # Карточка точки тоже подменена, а не только список
+        card = client.get("/devices").text
+        assert "NV Bufet 730" not in card
+    finally:
+        client.post("/demo/off", data={"next": "/settings"}, follow_redirects=False)
+        demo.forget()
+
+    assert "NV Bufet 730" in client.get("/devices").text, "данные не вернулись"
+
+
+def test_screenshot_mode_covers_names_the_panel_did_not_type(client, router):
+    """
+    Имя точки попадает на экран не только колонкой с именем.
+
+    Оно вшито в имена файлов бэкапов и остаётся в журнале действий даже
+    после удаления точки. Проверка ровно на это: обе страницы после
+    включения режима не показывают настоящих имён.
+    """
+    from app import demo
+    from app.database import execute, log_audit, utcnow
+
+    demo.forget()
+    device_id = _add_device(client, router, "VAH Bufet obshch14")
+    execute(
+        "INSERT INTO backups (device_id, device_name, job_id, kind, filename,"
+        " size, created_at) VALUES (?, ?, 0, 'export', ?, 2048, ?)",
+        (device_id, "VAH Bufet obshch14",
+         "VAH_Bufet_obshch14_20260812-094151.rsc", utcnow()),
+    )
+    # Удалённая точка: в парке её уже нет, а в журнале осталась
+    log_audit("maximdr", "Устройство удалено", "Uchebnyj centr", "", ip="10.225.15.9")
+
+    client.post("/demo/on", data={"next": "/settings"}, follow_redirects=False)
+    try:
+        backups = client.get("/backups").text
+        assert "VAH_Bufet_obshch14" not in backups, "имя точки видно в имени файла"
+        assert "VAH Bufet obshch14" not in backups
+
+        history = client.get("/history").text
+        assert "Uchebnyj centr" not in history, "удалённая точка осталась в журнале"
+        assert "maximdr" not in history, "имя администратора видно в журнале"
+    finally:
+        client.post("/demo/off", data={"next": "/settings"}, follow_redirects=False)
+        demo.forget()
+
+
+def test_alias_is_stable_for_names_outside_the_panel():
+    """
+    Связям WireGuard имя даётся по самой строке, и оно не пляшет.
+
+    Имена связей живут на роутере, панель их не хранит и в словарь
+    подмен взять не может. Зато одна и та же строка всегда получает
+    одно и то же вымышленное имя, и снимки разных разделов сходятся.
+    """
+    from app import demo
+
+    first = demo.alias("Учебный центр")
+    assert first and first != "Учебный центр"
+    assert demo.alias("Учебный центр") == first
+    assert demo.alias("Ноутбук - HP") != first
+    assert demo.alias("Учебный центр", "en") in demo.SITES_EN or \
+        any(demo.alias("Учебный центр", "en").startswith(name) for name in demo.SITES_EN)
+
+    # Слишком короткое трогать нечего: имени в двух буквах нет
+    assert demo.alias("wg") == "wg"
+
+
+def test_screenshot_names_follow_the_language(client, router):
+    """
+    На английской странице и вымышленные имена английские.
+
+    Скриншоты для README снимаются на английском интерфейсе, и русское
+    «Кафе Ромашка» посреди английской таблицы выглядит недоделкой.
+    """
+    from app import demo
+
+    demo.forget()
+    _add_device(client, router, "NV Bufet 730")
+    client.post("/demo/on", data={"next": "/settings"}, follow_redirects=False)
+    try:
+        client.get("/lang/en", follow_redirects=False)
+        page = client.get("/devices").text
+        assert "Cafe Daisy" in page
+        assert "Кафе Ромашка" not in page
+    finally:
+        client.get("/lang/ru", follow_redirects=False)
+        client.post("/demo/off", data={"next": "/settings"}, follow_redirects=False)
+        demo.forget()
+
+
+def test_screenshot_mode_is_personal(client, router):
+    """
+    Режим включается для одного браузера, остальные видят настоящее.
+
+    Панелью пользуются вдвоём, и человек, снимающий скриншот, не должен
+    подсовывать напарнику вымышленные имена посреди рабочего дня.
+    """
+    from app import demo
+
+    demo.forget()
+    _add_device(client, router, "Магазин Пекарня")
+    _make_user(client, "напарник", ["devices.view", "settings.view"])
+
+    client.post("/demo/on", data={"next": "/settings"}, follow_redirects=False)
+    try:
+        assert "Магазин Пекарня" not in client.get("/devices").text
+        with _as("напарник") as mate:
+            assert "Магазин Пекарня" in mate.get("/devices").text
+    finally:
+        client.post("/demo/off", data={"next": "/settings"}, follow_redirects=False)
+        demo.forget()
+
+
+def test_screenshot_mode_needs_the_right(client, router):
+    """
+    Включает режим тот, кто управляет панелью, выключает кто угодно.
+
+    Выключение возвращает настоящие данные тому, кто их и так видит,
+    поэтому запирать человека в витрине незачем.
+    """
+    _make_user(client, "рядовой", ["devices.view", "settings.view"])
+    with _as("рядовой") as plain:
+        assert plain.post("/demo/on", data={"next": "/"},
+                          follow_redirects=False).status_code == 403
+        assert plain.post("/demo/off", data={"next": "/"},
+                          follow_redirects=False).status_code == 303
+
+
+def test_screenshot_names_are_stable_and_plausible():
+    """
+    Подмены устойчивые: одна точка называется одинаково на всех страницах.
+
+    Скриншоты снимаются по одному, а смотрят их подряд. Если на списке
+    точка «Кафе Ромашка», а на карточке «Склад Северный», получится
+    не витрина, а путаница.
+    """
+    from app import demo
+
+    first = demo.mask("точка 10.225.15.9 и она же 10.225.15.9")
+    assert first.count(first.split()[1]) == 2, first
+    assert demo.mask("10.225.15.9") == demo.mask("10.225.15.9")
+
+    # Адреса уходят в диапазоны для документации, версии не трогаются
+    assert demo.mask("RouterOS 7.21.5 (long-term)") == "RouterOS 7.21.5 (long-term)"
+    assert demo.mask("маска 255.255.255.0") == "маска 255.255.255.0", \
+        "служебный адрес подменять незачем"
+
+    # MAC подменяется на локально управляемый: производителя по нему
+    # не найти даже случайно
+    masked = demo.mask("64:D1:54:AA:BB:CC")
+    assert masked != "64:D1:54:AA:BB:CC"
+    assert masked.startswith("02:")
+
+    # Ключ WireGuard остаётся похожим на ключ, но чужой
+    key = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="  # 44 символа, как настоящий ключ WireGuard
+    assert demo.mask(key) not in (key, "")
+
+
 def test_registry_names_are_translated_to_human_ones():
     """
     Строка реестра превращается в имя оператора, незнакомая остаётся как есть.

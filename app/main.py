@@ -13,14 +13,15 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, monitor, operator, snippets, syslog, worker
+from . import __version__, demo, monitor, operator, snippets, syslog, worker
 from .auth import Forbidden, RedirectException, read_session, redirect_exception_handler
 from .config import BASE_DIR, settings
 from . import activity
 from .database import init_db
+from .routes.deps import LANG_COOKIE
 from .routes import (
     auth_routes, backups, clients, devices, groups, jobs, pages, public,
     snippets as snippet_routes, syslog as syslog_routes,
@@ -125,6 +126,41 @@ async def restrict_to_admin_networks(request: Request, call_next):
             )
 
     return await call_next(request)
+
+
+@app.middleware("http")
+async def screenshot_mode(request: Request, call_next):
+    """
+    Подменить настоящие данные вымышленными, если включён режим витрины.
+
+    Подмена делается на выходе, над готовым ответом. Так она не может
+    испортить базу и не может что-то пропустить: страница, кусок таблицы,
+    ответ живой ленты - всё уходит в браузер через одно место.
+
+    Трогаем только страницы и JSON. Выгрузки, бэкапы и картинки идут
+    мимо: человек качает их себе, а не показывает на экране.
+    """
+    response = await call_next(request)
+    if not demo.enabled(request) or request.url.path.startswith("/static"):
+        return response
+
+    kind = response.headers.get("content-type", "")
+    if not kind.startswith(("text/html", "application/json", "text/plain")):
+        return response
+
+    body = b"".join([chunk async for chunk in response.body_iterator])
+    try:
+        # Язык страницы важен и для подмен: русское «Кафе Ромашка»
+        # посреди английской таблицы выглядит случайностью
+        lang = request.cookies.get(LANG_COOKIE, "") or "ru"
+        masked = demo.mask(body.decode("utf-8"), lang).encode("utf-8")
+    except UnicodeDecodeError:
+        masked = body
+
+    headers = dict(response.headers)
+    headers.pop("content-length", None)
+    return Response(content=masked, status_code=response.status_code,
+                    headers=headers, media_type=kind)
 
 
 # Порядок подключения роутеров значения не имеет — пути не пересекаются

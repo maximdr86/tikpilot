@@ -79,6 +79,16 @@
             {% endfor %}
         </div>
 
+        {% if demo_on %}
+        {# Режим витрины виден всегда, пока включён: иначе легко забыть
+           и потом долго гадать, почему точка называется не так #}
+        <form method="post" action="/demo/off" class="demo-note">
+            <input type="hidden" name="next" value="{{ request.url.path }}">
+            <span class="badge tag-pink">витрина</span>
+            <button class="linklike" type="submit">выключить</button>
+        </form>
+        {% endif %}
+
         <div class="nav-foot">Tikpilot {{ app_version }}</div>
     </aside>
 
