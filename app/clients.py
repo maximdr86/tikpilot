@@ -35,7 +35,17 @@
 * **шлюз провайдера.** Модем или маршрутизатор на стороне оператора виден
   в ARP на WAN-интерфейсе, но клиентом площадки не является. Отличаем его
   по адресу шлюза в маршруте по умолчанию, а не по имени интерфейса: имя
-  бывает любым, а маршрут говорит правду.
+  бывает любым, а маршрут говорит правду;
+* **чужая сеть за аплинком.** Точка доступа, включённая в общую сеть, учит
+  каждый MAC, чей кадр прошёл через её аплинк, и вдобавок заводит записи
+  ARP на соседей по этой же сети: на такой железке в списке оказывался
+  весь широковещательный домен, полторы сотни чужих устройств.
+
+  Аплинк вычисляется по шлюзу: адрес из маршрута по умолчанию -> MAC
+  из ARP -> порт, на котором этот MAC выучен мостом. И если аплинк
+  найден, клиентом площадки считается только тот, кто это доказал:
+  получил адрес у самого роутера, подключился по воздуху или выучен
+  мостом на порту, отличном от аплинка. Всё остальное пришло снаружи.
 
 Разбор отделён от чтения: `merge()` принимает готовые списки и ничего не
 знает ни про сеть, ни про базу, поэтому проверяется тестами на выдуманных
@@ -158,6 +168,42 @@ def default_gateways(routes: Iterable[dict[str, Any]]) -> set[str]:
     return found
 
 
+def uplink_ports(arp: Iterable[dict[str, Any]] = (),
+                 hosts: Iterable[dict[str, Any]] = (),
+                 routes: Iterable[dict[str, Any]] = ()) -> set[str]:
+    """
+    Порты моста, за которыми находится вышестоящая сеть.
+
+    Ход рассуждения тот же, каким пользуется человек: шлюз по умолчанию
+    стоит не на площадке, значит порт, на котором мост выучил его MAC,
+    смотрит наружу. Всё, что мост услышал с этого порта, пришло из чужой
+    сети, а не с площадки.
+
+    Пусто, если шлюза нет или его MAC мосту неизвестен: тогда отсеивать
+    нечего и лучше показать лишнее, чем спрятать нужное.
+    """
+    gateways = default_gateways(routes)
+    if not gateways:
+        return set()
+
+    upstream_macs = {
+        normalize_mac(entry.get("mac-address"))
+        for entry in arp
+        if str(entry.get("address") or "").strip() in gateways
+    }
+    upstream_macs.discard("")
+    if not upstream_macs:
+        return set()
+
+    ports = set()
+    for host in hosts:
+        if normalize_mac(host.get("mac-address")) in upstream_macs:
+            port = host_port(host)
+            if port:
+                ports.add(port)
+    return ports
+
+
 def merge(leases: Iterable[dict[str, Any]] = (), arp: Iterable[dict[str, Any]] = (),
           hosts: Iterable[dict[str, Any]] = (), wireless: Iterable[dict[str, Any]] = (),
           routes: Iterable[dict[str, Any]] = ()) -> list[dict[str, Any]]:
@@ -176,6 +222,13 @@ def merge(leases: Iterable[dict[str, Any]] = (), arp: Iterable[dict[str, Any]] =
     * вид подключения беспроводной, если MAC нашёлся в таблице
       регистрации, и проводной во всех остальных случаях.
     """
+    # Списки читаются дважды: сначала для поиска аплинка, потом по делу.
+    # Генератор второго прохода не переживёт
+    arp = list(arp)
+    hosts = list(hosts)
+    routes = list(routes)
+    uplink = uplink_ports(arp, hosts, routes)
+
     found: dict[str, dict[str, Any]] = {}
 
     def slot(mac: str) -> dict[str, Any]:
@@ -234,6 +287,8 @@ def merge(leases: Iterable[dict[str, Any]] = (), arp: Iterable[dict[str, Any]] =
         port = host_port(host)
         if port:
             row["port"] = port
+            if port in uplink:
+                row["upstream"] = True
         if host.get("vid"):
             row["vlan"] = str(host.get("vid"))
         row["source"] = row["source"] or "bridge"
@@ -262,7 +317,31 @@ def merge(leases: Iterable[dict[str, Any]] = (), arp: Iterable[dict[str, Any]] =
         if not row["port"] and row["link"] == WIRELESS:
             row["port"] = row["interface"]
 
-    return sorted(found.values(), key=lambda r: r["mac"])
+    result = []
+    for row in found.values():
+        row.pop("upstream", None)
+        if uplink and not _is_local(row, uplink):
+            continue
+        result.append(row)
+
+    return sorted(result, key=lambda r: r["mac"])
+
+
+def _is_local(row: dict[str, Any], uplink: set[str]) -> bool:
+    """
+    Клиент ли это площадки, когда известно, где у роутера аплинк.
+
+    Доказательств ровно три: адрес выдал сам роутер, клиент подключён
+    по воздуху, или мост выучил его на порту, который наружу не смотрит.
+    Записи ARP доказательством не считаются: точка доступа заводит их
+    на соседей по чужой сети точно так же, как на своих.
+    """
+    if row.get("source") == "dhcp":
+        return True
+    if row.get("link") == WIRELESS:
+        return True
+    port = str(row.get("port") or "")
+    return bool(port) and port not in uplink
 
 
 def collect(mt: Any) -> list[dict[str, Any]]:
