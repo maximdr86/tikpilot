@@ -8177,6 +8177,65 @@ def test_clients_merge_three_tables_by_mac():
     assert merge([{"mac-address": "чепуха"}], [], []) == []
 
 
+def test_access_point_does_not_report_the_whole_network(client, router):
+    """
+    Точка доступа в общей сети не выдаёт чужой парк за своих клиентов.
+
+    На точке нет ни DHCP, ни своего адреса: единственный источник это
+    таблица моста, а в неё попадает каждый MAC, чей кадр прошёл через
+    аплинк. На живой площадке так набралось 105 «клиентов» без имён и
+    адресов, то есть весь широковещательный домен соседней сети.
+
+    Аплинк вычисляется по шлюзу: адрес из маршрута по умолчанию, MAC
+    из ARP, порт, на котором мост выучил этот MAC.
+    """
+    from app.clients import merge, uplink_ports
+
+    gateway_mac = "00:0C:42:AA:BB:CC"
+    routes = [{"dst-address": "0.0.0.0/0", "gateway": "10.225.15.1"}]
+    arp = [{"mac-address": gateway_mac, "address": "10.225.15.1",
+            "interface": "bridge"}]
+    hosts = [
+        {"mac-address": gateway_mac, "on-interface": "ether1"},
+        # Чужие устройства из соседней сети: слышны только мостом и только
+        # с аплинка
+        {"mac-address": "AA:BB:CC:00:00:01", "on-interface": "ether1"},
+        {"mac-address": "AA:BB:CC:00:00:02", "on-interface": "ether1"},
+        # Свои: ноутбук в порту точки и телефон по воздуху
+        {"mac-address": "BC:24:11:F0:70:DB", "on-interface": "ether3"},
+        {"mac-address": "C0:56:E3:11:22:33", "on-interface": "wlan1"},
+    ]
+    wireless = [{"mac-address": "C0:56:E3:11:22:33", "interface": "wlan1",
+                 "ssid": "otiz2g", "signal-strength": "-64"}]
+
+    assert uplink_ports(arp, hosts, routes) == {"ether1"}
+
+    rows = merge(arp=arp, hosts=hosts, wireless=wireless, routes=routes)
+    macs = {row["mac"] for row in rows}
+    assert macs == {"bc:24:11:f0:70:db", "c0:56:e3:11:22:33"}, rows
+
+    # Запись ARP не спасает: точка доступа заводит их на соседей
+    # по чужой сети точно так же, как на своих
+    known = merge(
+        arp=arp + [{"mac-address": "AA:BB:CC:00:00:01", "address": "10.225.15.7",
+                    "interface": "bridge"}],
+        hosts=hosts, routes=routes,
+    )
+    assert "aa:bb:cc:00:00:01" not in {row["mac"] for row in known}
+
+    # А аренда от самого роутера спасает: адрес выдал он, значит клиент его
+    served = merge(
+        leases=[{"mac-address": "AA:BB:CC:00:00:02", "address": "10.225.15.8",
+                 "host-name": "касса"}],
+        arp=arp, hosts=hosts, routes=routes,
+    )
+    assert "aa:bb:cc:00:00:02" in {row["mac"] for row in served}
+
+    # Без шлюза отсеивать нечего: лучше показать лишнее, чем спрятать нужное
+    assert uplink_ports(arp, hosts, []) == set()
+    assert len(merge(arp=arp, hosts=hosts)) == 5, "без маршрутов остаются все, включая шлюз"
+
+
 def test_router_comment_becomes_the_name():
     """
     Комментарий с роутера показывается как имя клиента.
