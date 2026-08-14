@@ -23,23 +23,31 @@ The interface comes in English and Russian, switchable from the menu.
 | | |
 |---|---|
 | ![Devices](docs/screenshots/devices.png) | ![Monitoring](docs/screenshots/monitoring.png) |
-| **Devices.** Filters, search, sorting, RouterOS version and uptime for each site | **Monitoring.** Fleet map, uptime over 24 h, latency and loss |
+| **Devices.** Filters, search, sorting, RouterOS version, uptime and mobile operator for each site | **Monitoring.** Fleet map, uptime over 24 h, latency and loss |
 | ![Scripts](docs/screenshots/scripts.png) | ![Device log](docs/screenshots/logs.png) |
 | **Scripts.** A library of commands and what actually sits on the routers | **Device log.** Syslog from the whole fleet, with filters and hiding rules |
-| ![Terminal](docs/screenshots/terminal.png) | ![Jobs](docs/screenshots/jobs.png) |
-| **Terminal.** The real RouterOS command line over SSH | **Jobs.** History with per-device success and failure counts |
+| ![Bulk action](docs/screenshots/actions.png) | ![Jobs](docs/screenshots/jobs.png) |
+| **One action for the whole fleet.** Reboot, upgrade, a script, a backup, an API call | **Jobs.** History with per-device success and failure counts |
+| ![Device card](docs/screenshots/device.png) | ![WireGuard](docs/screenshots/wireguard.png) |
+| **Device card.** Status, clients behind the router, latency and loss | **WireGuard.** Router-to-router links through a hub, with handshakes and traffic |
 
 <details>
-<summary>More screenshots: clients, backups, groups, audit log</summary>
+<summary>More screenshots: clients, backups, groups, audit log, rights, ports and services</summary>
 
 ![Clients](docs/screenshots/clients.png)
 ![Backups](docs/screenshots/backups.png)
 ![Groups](docs/screenshots/groups.png)
-![History](docs/screenshots/history.png)
+![Audit log](docs/screenshots/history.png)
+![Rights](docs/screenshots/permissions.png)
+![Settings](docs/screenshots/settings.png)
+![Ports and services](docs/screenshots/device-ports.png)
+![WireGuard links](docs/screenshots/wireguard-links.png)
 
 </details>
 
-*Site names and addresses on the screenshots are blurred.*
+*The screenshots are taken from a live fleet with screenshot mode on: site names,
+addresses, client names and accounts are replaced with made-up ones by the panel
+itself. Addresses come from the ranges reserved for documentation.*
 
 ---
 

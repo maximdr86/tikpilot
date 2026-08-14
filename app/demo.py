@@ -118,6 +118,12 @@ KEEP = frozenset({
     "webfig", "ubuntu", "docker", "windows", "android",
 })
 
+#: Слова, из которых состоит сам интерфейс. Подменять их нельзя: точка
+#: может называться словом, которое встречается в подписи кнопки, и тогда
+#: подмена переписывает не данные, а текст панели. Так «supported by both
+#: sides» однажды превратилось в «scamera-door 34orted by both sides».
+_vocabulary: frozenset[str] | None = None
+
 #: Готовый словарь подмен и по чему он собран. Парк меняется редко,
 #: а страницы дёргаются часто, поэтому словарь собирается один раз
 #: и живёт до тех пор, пока не изменится состав парка.
@@ -135,9 +141,10 @@ def enabled(request: Any) -> bool:
 
 def forget() -> None:
     """Забыть словарь подмен. Нужно тестам и после правки парка."""
-    global _built_for
+    global _built_for, _vocabulary
     _tables.clear()
     _built_for = ()
+    _vocabulary = None
 
 
 def _pick(items: tuple[str, ...], index: int) -> str:
@@ -218,15 +225,44 @@ def _fingerprint() -> tuple:
     return (row["d"], row["g"], row["u"], row["c"], row["t"])
 
 
+def vocabulary() -> frozenset[str]:
+    """
+    Слова, из которых собран сам интерфейс, в нижнем регистре.
+
+    Берутся из каталогов перевода: там лежит всё, что панель пишет
+    на страницах, на обоих языках. Ничего заводить руками не нужно,
+    и список не устареет вместе с текстами.
+    """
+    global _vocabulary
+
+    if _vocabulary is None:
+        from . import i18n
+
+        words: set[str] = set()
+        for lang, catalog in i18n.load_catalogs().items():
+            for msgid, text in catalog.items():
+                if not isinstance(text, str):
+                    continue
+                for chunk in re.split(r"[^0-9A-Za-zА-Яа-яЁё]+", f"{msgid} {text}"):
+                    if len(chunk) >= 3:
+                        words.add(chunk.lower())
+        _vocabulary = frozenset(words)
+    return _vocabulary
+
+
 def _add(table: dict[str, str], real: Any, fake: str) -> None:
     """
-    Записать подмену, пропустив пустое и слишком короткое.
+    Записать подмену, пропустив пустое, короткое и слишком обычное.
 
     Короткая строка встречается в разметке где угодно, и подменять
-    её значит ломать страницу ради двух букв.
+    её значит ломать страницу ради двух букв. Отдельное слово, которое
+    и так есть в интерфейсе, не подменяется по той же причине: имя точки
+    из одного словарного слова спрячется хуже, чем сломается страница.
     """
     text = str(real or "").strip()
-    if len(text) < 3 or text in table or text.lower() in KEEP:
+    if len(text) < 4 or text in table or text.lower() in KEEP:
+        return
+    if " " not in text and text.lower() in vocabulary():
         return
     table[text] = fake
 
@@ -337,7 +373,7 @@ def mask(text: str, lang: str = "ru") -> str:
         # Длинные строки первыми: иначе «Магазин» подменится внутри
         # «Магазин Пекарня» и от длинного имени останется хвост
         pattern = re.compile("|".join(
-            re.escape(key) for key in sorted(table, key=len, reverse=True)))
+            _bounded(key) for key in sorted(table, key=len, reverse=True)))
         text = pattern.sub(lambda m: table.get(m.group(0), m.group(0)), text)
 
     text = MAC_RE.sub(lambda m: _mac(m.group(0)), text)
@@ -345,6 +381,26 @@ def mask(text: str, lang: str = "ru") -> str:
     text = KEY_RE.sub(lambda m: _fake_key(m.group(0)), text)
     text = HOST_RE.sub(lambda m: f"site-{_index(m.group(0), 99) + 1:02d}.example.net", text)
     return text
+
+
+#: Символы, которые считаются частью слова: подмена не должна срабатывать
+#: внутри другого слова. Подчёркивание и дефис в этот список не входят
+#: намеренно: имя точки продолжается в имени файла бэкапа ровно через них,
+#: и `VAH_Bufet_obshch14_20260812.rsc` иначе осталось бы как есть.
+WORDISH = r"0-9A-Za-zА-Яа-яЁё"
+
+
+def _bounded(key: str) -> str:
+    """
+    Правило поиска строки как отдельного слова, а не куска чужого.
+
+    Без этого короткое имя точки находится внутри обычного текста:
+    ровно так «supp» из «supported» стало вымышленной кассой.
+    """
+    body = re.escape(key)
+    head = f"(?<![{WORDISH}])" if re.match(f"[{WORDISH}]", key) else ""
+    tail = f"(?![{WORDISH}])" if re.search(f"[{WORDISH}]$", key) else ""
+    return head + body + tail
 
 
 def _index(source: str, limit: int) -> int:

@@ -4145,6 +4145,34 @@ def test_screenshot_mode_leaves_the_panel_its_own_name(client, router):
         demo.forget()
 
 
+def test_screenshot_mode_does_not_rewrite_the_interface(client, router):
+    """
+    Подмена работает по данным и не лезет внутрь слов интерфейса.
+
+    На живом парке нашлась точка, чьё имя оказалось куском обычного
+    слова, и подпись «supported by both sides» превратилась в
+    «scamera-door 34orted by both sides». Правила теперь два: строка
+    ищется как отдельное слово, а отдельное слово, которое и так есть
+    в интерфейсе, в словарь подмен не попадает вовсе.
+    """
+    from app import demo
+
+    demo.forget()
+    _add_device(client, router, "supp")
+    _add_device(client, router, "Устройства")
+
+    # Имя точки в словаре есть, но внутри чужого слова не срабатывает
+    assert "supp" in demo.build()
+    line = "A second layer of encryption, supported by both sides."
+    assert demo.mask(line) == line
+    assert demo.mask("точка supp упала") != "точка supp упала"
+
+    # Слово, из которого собран сам интерфейс, не подменяется совсем:
+    # сломанная страница хуже, чем незакрытое имя из одного слова
+    assert "Устройства" not in demo.build()
+    demo.forget()
+
+
 def test_alias_is_stable_for_names_outside_the_panel():
     """
     Связям WireGuard имя даётся по самой строке, и оно не пляшет.
