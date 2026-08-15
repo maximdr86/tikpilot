@@ -331,6 +331,60 @@
     </div>
 </div>
 
+{% if can("users.manage") %}
+<div class="panel" data-fold="prefs">
+    <h2>Параметры работы</h2>
+    <div class="panel-body">
+        <div class="hint">
+            То, что раньше правилось в <span class="mono">.env</span> с перезапуском.
+            Действует сразу после сохранения. Ключи, адреса и доверенные сети
+            остались в файле намеренно: они нужны раньше, чем панель поднимется,
+            а границы доступа не должны меняться изнутри панели.
+        </div>
+        <form method="post" action="/settings/prefs">
+            {% for group in pref_groups %}
+            <div class="pref-group">
+                <div class="perm-title">{{ group.name | t }}</div>
+                {% for item in group.fields %}
+                <div class="field">
+                    {% if item.kind == "bool" %}
+                    <label class="check">
+                        <input type="checkbox" name="{{ item.key }}"
+                               {% if item.checked %}checked{% endif %}>
+                        <span>{{ item.label | t }}</span>
+                    </label>
+                    {% else %}
+                    <label for="p-{{ item.key }}">{{ item.label | t }}</label>
+                    {% if item.kind == "int" %}
+                    <input type="number" id="p-{{ item.key }}" name="{{ item.key }}"
+                           value="{{ item.value }}" min="{{ item.low }}" max="{{ item.high }}">
+                    {% else %}
+                    <input type="text" id="p-{{ item.key }}" name="{{ item.key }}"
+                           value="{{ item.value }}">
+                    {% endif %}
+                    {% endif %}
+                    <div class="hint">
+                        {{ item.hint | t }}
+                        <span class="mono">{{ item.key }}</span>
+                        {% if not item.from_env %}
+                        · <span class="badge tag-amber">задано в панели</span>
+                        в файле: <span class="mono">{{ item.default }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+            <button class="btn primary" type="submit">Сохранить параметры</button>
+        </form>
+
+        <form method="post" action="/settings/prefs/reset" style="margin-top:10px">
+            <button class="btn" type="submit">Вернуть значения из .env</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
 {% if unknown_operators and can("devices.edit") %}
 <div class="panel" data-fold="operators">
     <h2>Имена операторов

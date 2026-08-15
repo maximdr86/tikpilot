@@ -4042,6 +4042,91 @@ def test_operator_reason_tells_what_to_switch_on(client, router):
     assert "перезапуск" in note
 
 
+def test_panel_settings_are_editable_and_apply_at_once(client, router):
+    """
+    Ходовые настройки правятся в панели и действуют сразу.
+
+    Раньше ради интервала опроса приходилось идти на сервер, править
+    `.env` и перезапускать службу. Проверяем весь путь: форма, значение
+    в объекте настроек, запись в базе и след в журнале действий.
+    """
+    from app import prefs
+    from app.config import settings
+    from app.database import query_one
+
+    was = settings.monitor_interval
+    try:
+        page = client.post("/settings/prefs", data={
+            "MONITOR_INTERVAL": "45",
+            "SYSLOG_RETENTION_DAYS": "7",
+            "LATENCY_ENABLED": "",          # снятая галочка
+            "LATENCY_TARGETS": "8.8.8.8, 1.1.1.1",
+        })
+        assert page.status_code == 200
+
+        assert settings.monitor_interval == 45, "значение не применилось на ходу"
+        assert settings.syslog_retention_days == 7
+        assert settings.latency_enabled is False
+        assert settings.latency_targets == ["8.8.8.8", "1.1.1.1"]
+
+        row = query_one("SELECT value FROM panel_settings WHERE key = 'MONITOR_INTERVAL'")
+        assert row and row["value"] == "45"
+        assert query_one("SELECT id FROM audit_log WHERE action = 'Изменена настройка'")
+
+        # Монитор показывает в настройках те интервалы, по которым работает
+        from app import monitor
+        assert monitor.state["interval"] == 45
+
+        # Негодное значение не роняет панель и не портит настройку
+        client.post("/settings/prefs", data={"MONITOR_INTERVAL": "чепуха"})
+        assert settings.monitor_interval == was
+
+        # За границы диапазона не пускаем: секундный опрос парка это
+        # не настройка, а способ его положить
+        client.post("/settings/prefs", data={"MONITOR_INTERVAL": "1"})
+        assert settings.monitor_interval == 10
+    finally:
+        client.post("/settings/prefs/reset")
+        prefs.apply()
+
+    assert settings.monitor_interval == was, "сброс не вернул значение из .env"
+    assert query_one("SELECT key FROM panel_settings") is None
+
+
+def test_panel_settings_do_not_shadow_the_env_file(client, router):
+    """
+    Значение, совпавшее с файлом, в панели не хранится.
+
+    Иначе однажды человек поправит `.env`, перезапустит панель и не поймёт,
+    почему ничего не изменилось: сверху молча ляжет забытая запись из базы.
+    """
+    from app import prefs
+    from app.config import settings
+    from app.database import query_one
+
+    prefs.save({"SYSLOG_RETENTION_DAYS": str(settings.syslog_retention_days)},
+               "проверяющий")
+    assert query_one("SELECT key FROM panel_settings"
+                     " WHERE key = 'SYSLOG_RETENTION_DAYS'") is None
+
+    # А отличающееся хранится и переживает перезапуск: apply() читает базу
+    prefs.save({"SYSLOG_RETENTION_DAYS": "7"}, "проверяющий")
+    settings.syslog_retention_days = 999
+    prefs.apply()
+    assert settings.syslog_retention_days == 7
+    prefs.reset("проверяющий")
+
+
+def test_panel_settings_need_the_right(client, router):
+    """Параметры работы меняет тот, кто управляет панелью."""
+    _make_user(client, "любопытный", ["devices.view", "settings.view"])
+    with _as("любопытный") as guest:
+        assert guest.post("/settings/prefs", data={"MONITOR_INTERVAL": "45"},
+                          follow_redirects=False).status_code == 403
+        assert guest.post("/settings/prefs/reset",
+                          follow_redirects=False).status_code == 403
+
+
 def test_screenshot_mode_hides_the_real_fleet(client, router):
     """
     Режим витрины убирает со страниц всё, что показывает настоящий парк.

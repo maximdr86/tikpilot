@@ -18,7 +18,7 @@ from ..auth import (
 )
 from ..config import settings
 from ..crypto import hash_password
-from .. import demo, i18n, invites, loginguard, operator, permissions
+from .. import demo, i18n, invites, loginguard, operator, permissions, prefs
 from ..database import execute, log_audit, query, query_one, utcnow
 from .deps import LANG_COOKIE, form_bool, render, resolve_lang, templates
 
@@ -237,6 +237,7 @@ def _users_context(request: Request | None = None) -> dict[str, object]:
             str(request.base_url).rstrip("/") if request is not None else ""),
         "invite_hours": invites.DEFAULT_HOURS,
         "fresh_invite": "",
+        "pref_groups": prefs.form(),
         "unknown_operators": operator.unknown_names(),
         "operator_colors": operator.COLORS,
     }
@@ -600,3 +601,37 @@ async def demo_off(request: Request, next: str = Form("/settings"),
     response = _back(request, next)
     response.delete_cookie(demo.COOKIE)
     return response
+
+
+@router.post("/settings/prefs")
+async def save_prefs(request: Request, user=Depends(require("users.manage"))):
+    """
+    Сохранить ходовые настройки, заданные в панели.
+
+    Применяются сразу: и монитор, и ночная уборка читают значения каждый
+    раз, а не запоминают их при старте. Перезапуск нужен только тому,
+    что живёт в `.env`.
+    """
+    form = await request.form()
+    values = {}
+    for field in prefs.FIELDS:
+        if field.kind == "bool":
+            values[field.key] = "1" if form.get(field.key) else "0"
+        elif field.key in form:
+            values[field.key] = form.get(field.key)
+
+    touched = prefs.save(values, user["username"])
+    message = ("Настройки сохранены и уже действуют: %s" % ", ".join(touched)
+               if touched else "Менять было нечего")
+    return render("settings.html", request, user, active="settings",
+                  message=message, error=None, diag=_diagnostics(),
+                  **_users_context(request))
+
+
+@router.post("/settings/prefs/reset")
+async def reset_prefs(request: Request, user=Depends(require("users.manage"))):
+    """Вернуться к тому, что написано в `.env`."""
+    removed = prefs.reset(user["username"])
+    return render("settings.html", request, user, active="settings",
+                  message="Настройки снова берутся из .env, снято: %s" % removed,
+                  error=None, diag=_diagnostics(), **_users_context(request))

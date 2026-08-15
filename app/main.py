@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, demo, monitor, operator, snippets, syslog, worker
+from . import __version__, demo, monitor, operator, prefs, snippets, syslog, worker
 from .auth import Forbidden, RedirectException, read_session, redirect_exception_handler
 from .config import BASE_DIR, settings
 from . import activity
@@ -66,6 +66,12 @@ async def lifespan(_app: FastAPI):
     syslog.install_builtin_rules()
     # Маркеры записей библиотеки: у старых записей имя одно, а создают они
     # и скрипт, и расписание. Проход разовый по сути, но дешёвый
+    # Сохранённые в панели настройки накладываются до запуска монитора:
+    # иначе первый цикл пройдёт по интервалам из .env
+    tuned = prefs.apply()
+    if tuned:
+        log.info("Настройки из панели применены: %s", tuned)
+
     filled = snippets.backfill_markers()
     if filled:
         log.info("Библиотека: уточнены имена у записей: %s", filled)
