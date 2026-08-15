@@ -250,6 +250,16 @@ CREATE TABLE IF NOT EXISTS device_neighbors (
 );
 CREATE INDEX IF NOT EXISTS idx_neighbors_device ON device_neighbors(device_id);
 
+-- Ходовые настройки, изменённые из панели. Здесь только то, что
+-- отличается от `.env`: совпавшее с файлом не хранится, чтобы правка
+-- файла не переставала действовать молча.
+CREATE TABLE IF NOT EXISTS panel_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT NOT NULL DEFAULT ''
+);
+
 -- Приглашения администраторов: одноразовая ссылка со сроком.
 -- Использованные и просроченные остаются в таблице: «кто кого позвал»
 -- это часть истории, а не мусор.

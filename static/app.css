@@ -1029,3 +1029,7 @@ table.dt td { padding: 0 6px; vertical-align: top; border: 0; }
     color:var(--muted); text-decoration:underline;
 }
 .demo-note .linklike:hover { color:var(--fg); }
+
+/* Разделы формы «Параметры работы» */
+.pref-group { margin-bottom: 18px; }
+.pref-group .field { max-width: 520px; }

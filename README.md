@@ -866,6 +866,10 @@ tar czf tikpilot-$(date +%F).tar.gz data/ .env
 
 ## Settings (the `.env` file)
 
+> Settings marked **panel** can also be changed in Settings → Working parameters,
+> without editing this file or restarting. A value set there wins over the file.
+
+
 | Variable | Default | What it sets |
 |---|---|---|
 | `DEFAULT_LANG` | `en` | interface language: `en` or `ru` |

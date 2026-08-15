@@ -405,6 +405,18 @@
     [
       "^Имя для (.+?) убрано$",
       "The name for \\1 has been removed"
+    ],
+    [
+      "^Настройки сохранены и уже действуют: (.+)$",
+      "Settings saved and already in effect: \\1"
+    ],
+    [
+      "^Настройки снова берутся из \\.env, снято: (\\d+)$",
+      "Settings are taken from .env again, cleared: \\1"
+    ],
+    [
+      "^Менять было нечего$",
+      "There was nothing to change"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
@@ -1612,5 +1624,39 @@
   "Для скриншотов и показа панели на экране. Названия точек и групп, адреса, имена устройств за роутером, MAC и учётные записи заменяются вымышленными: адреса берутся из диапазонов, отведённых под примеры, а MAC собираются так, что не принадлежат ни одному производителю. Подмена живёт только в ответе браузеру, база не меняется. Режим включается для вашего браузера и держится %(p0)s ч: остальные в это время видят настоящие данные.": "For screenshots and for showing the panel on a screen. Site and group names, addresses, the names of devices behind the router, MAC addresses and accounts are replaced with made-up ones: addresses come from the ranges reserved for documentation, and the MAC addresses are built so that they belong to no vendor. The substitution lives only in the reply to the browser, the database stays as it is. The mode is turned on for your browser and lasts %(p0)s h: everyone else keeps seeing the real data.",
   "Это удобство, а не защита. Тот, кто уже вошёл в панель, видит настоящие данные в любой момент.": "This is a convenience, not a protection. Anyone already signed in to the panel can see the real data at any moment.",
   "Запомнить меня": "Remember me",
-  "Вход останется на %(p0)s дней. На чужом компьютере лучше не отмечать.": "The session will last %(p0)s days. Better left unticked on a computer that is not yours."
+  "Вход останется на %(p0)s дней. На чужом компьютере лучше не отмечать.": "The session will last %(p0)s days. Better left unticked on a computer that is not yours.",
+  "· <span class=\"badge tag-amber\">задано в панели</span> в файле: <span class=\"mono\">%(p0)s</span>": "· <span class=\"badge tag-amber\">set in the panel</span> in the file: <span class=\"mono\">%(p0)s</span>",
+  "Вернуть значения из .env": "Go back to the values from .env",
+  "Параметры работы": "Working parameters",
+  "Сохранить параметры": "Save parameters",
+  "То, что раньше правилось в <span class=\"mono\">.env</span> с перезапуском. Действует сразу после сохранения. Ключи, адреса и доверенные сети остались в файле намеренно: они нужны раньше, чем панель поднимется, а границы доступа не должны меняться изнутри панели.": "What used to be edited in <span class=\"mono\">.env</span> with a restart. Takes effect as soon as it is saved. Keys, addresses and trusted networks stay in the file on purpose: they are needed before the panel comes up, and the limits of access should not be movable from inside the panel.",
+  "Задержка и потери": "Latency and loss",
+  "Операторы": "Operators",
+  "Интерфейс": "Interface",
+  "Сроки хранения": "Retention",
+  "Проверка доступности, секунд": "Availability check, seconds",
+  "Полный опрос, секунд": "Full poll, seconds",
+  "Промахов подряд до статуса «офлайн»": "Misses in a row before \"offline\"",
+  "Не считать падением короче, секунд": "Ignore outages shorter than, seconds",
+  "Мерить задержку и потери": "Measure latency and loss",
+  "Как часто мерить, секунд": "How often to measure, seconds",
+  "Спрашивать оператора в реестре адресов": "Ask the address registry for the operator",
+  "Обновление страниц, секунд": "Page refresh, seconds",
+  "Логи с устройств, дней": "Device logs, days",
+  "Задержка и потери, дней": "Latency and loss, days",
+  "Пропавшие клиенты, дней": "Vanished clients, days",
+  "Задачи, дней": "Jobs, days",
+  "Как часто панель стучится к каждой точке. Реже значит меньше нагрузки на слабый канал, чаще значит быстрее видно падение.": "How often the panel knocks on each site. Less often means less load on a weak link, more often means an outage shows up sooner.",
+  "Как часто, кроме проверки связи, забираются версия, аптайм, клиенты и остальной паспорт точки.": "How often, on top of the reachability check, the version, uptime, clients and the rest of the site details are collected.",
+  "Защита от дребезга: одна потерянная проба на плохом канале не должна превращаться в падение площадки.": "Flap protection: one lost probe on a bad link should not turn into an outage for the site.",
+  "Такие провалы не попадут в отчёты и в историю. 0 значит записывать все.": "Dips shorter than this stay out of the reports and the history. 0 means record all of them.",
+  "Пинг запускается на самой точке, панель только забирает итог.": "The ping runs on the site itself, the panel only collects the result.",
+  "Каждое измерение это команда на роутере, поэтому чаще нескольких минут смысла нет.": "Every measurement is a command on the router, so more often than a few minutes makes little sense.",
+  "Через запятую. Шлюз точки добавляется сам, если это не выключено отдельно в `.env`.": "Comma separated. The site gateway is added on its own unless that is switched off separately in `.env`.",
+  "Единственное место, где панель ходит в интернет: запрос RDAP о публичном адресе точки. Модем опрашивается в любом случае.": "The only place where the panel reaches the internet: an RDAP query about the public address of the site. The modem is polled either way.",
+  "Как часто открытая страница подтягивает свежие данные. На дашборде и в списке устройств это заметнее всего.": "How often an open page pulls fresh data. Most noticeable on the dashboard and in the device list.",
+  "Старше этого срока строки удаляются при ночной уборке.": "Lines older than this are removed by the nightly cleanup.",
+  "На парке в полсотни точек это самая объёмная таблица в базе.": "On a fleet of fifty sites this is the largest table in the database.",
+  "Клиент, которого столько не видели, забывается. Подписанные руками не трогаются никогда.": "A client not seen for this long is forgotten. The ones labelled by hand are never touched.",
+  "История массовых действий вместе с результатами по устройствам.": "The history of bulk actions together with the per-device results."
 }
