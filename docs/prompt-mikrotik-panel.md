@@ -9,6 +9,8 @@
 Список возможностей придумает кто угодно, а грабли собираются месяцами
 эксплуатации на живом парке.
 
+English version: [prompt-mikrotik-panel.en.md](prompt-mikrotik-panel.en.md)
+
 ---
 
 ## 1. Основной промт
