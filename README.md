@@ -892,6 +892,7 @@ tar czf tikpilot-$(date +%F).tar.gz data/ .env
 | `LATENCY_PING_GATEWAY` | `1` | also ping each site's gateway |
 | `LATENCY_COUNT` | `5` | packets per measurement |
 | `METRICS_RETENTION_DAYS` | `14` | how long to keep the graphs |
+| `VENDORS_AUTO_UPDATE` | `1` | refresh the MAC vendor database from IEEE once a month |
 | `UI_REFRESH_INTERVAL` | `15` | how often the page refreshes itself, seconds |
 | `SESSION_MAX_AGE` | `43200` | session lifetime, seconds |
 | `SESSION_REMEMBER_AGE` | `2592000` | session lifetime with "Remember me" ticked, seconds |

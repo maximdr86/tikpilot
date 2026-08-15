@@ -332,6 +332,32 @@
 </div>
 
 {% if can("users.manage") %}
+<div class="panel">
+    <h2>Производители по MAC</h2>
+    <div class="panel-body">
+        <div class="hint">
+            Панель знает {{ vendors.total }} префиксов.
+            {% if vendors.downloaded_at %}
+            Реестры IEEE скачаны {{ vendors.downloaded_at | dt }}.
+            {% else %}
+            Пока только встроенный короткий список: частое железо узнаётся,
+            мелкие производители нет.
+            {% endif %}
+        </div>
+        <div class="hint">
+            Обновление идёт на standards-oui.ieee.org и занимает до минуты.
+            Скачанное лежит рядом с базой данных и переживает обновление панели.
+        </div>
+        <form method="post" action="/settings/vendors">
+            <button class="btn{% if vendors.stale %} primary{% endif %}" type="submit">
+                Обновить базу вендоров
+            </button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% if can("users.manage") %}
 <div class="panel" data-fold="prefs">
     <h2>Параметры работы</h2>
     <div class="panel-body">

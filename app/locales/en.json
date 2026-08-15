@@ -417,6 +417,14 @@
     [
       "^Менять было нечего$",
       "There was nothing to change"
+    ],
+    [
+      "^База вендоров обновлена, записей: (\\d+)$",
+      "Vendor database updated, records: \\1"
+    ],
+    [
+      "^База вендоров не обновилась: (.+)$",
+      "The vendor database was not updated: \\1"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
@@ -1658,5 +1666,11 @@
   "Старше этого срока строки удаляются при ночной уборке.": "Lines older than this are removed by the nightly cleanup.",
   "На парке в полсотни точек это самая объёмная таблица в базе.": "On a fleet of fifty sites this is the largest table in the database.",
   "Клиент, которого столько не видели, забывается. Подписанные руками не трогаются никогда.": "A client not seen for this long is forgotten. The ones labelled by hand are never touched.",
-  "История массовых действий вместе с результатами по устройствам.": "The history of bulk actions together with the per-device results."
+  "История массовых действий вместе с результатами по устройствам.": "The history of bulk actions together with the per-device results.",
+  "Обновить базу вендоров": "Update the vendor database",
+  "Обновление идёт на standards-oui.ieee.org и занимает до минуты. Скачанное лежит рядом с базой данных и переживает обновление панели.": "The update goes to standards-oui.ieee.org and takes up to a minute. What is downloaded sits next to the database and survives an update of the panel.",
+  "Панель знает %(p0)s префиксов.": "The panel knows %(p0)s prefixes.",
+  "Пока только встроенный короткий список: частое железо узнаётся, мелкие производители нет.": "So far only the built-in short list: common hardware is recognised, small vendors are not.",
+  "Производители по MAC": "Vendors by MAC",
+  "Реестры IEEE скачаны %(p0)s.": "The IEEE registries were downloaded on %(p0)s."
 }

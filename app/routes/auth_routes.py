@@ -18,7 +18,7 @@ from ..auth import (
 )
 from ..config import settings
 from ..crypto import hash_password
-from .. import demo, i18n, invites, loginguard, operator, permissions, prefs
+from .. import demo, i18n, invites, loginguard, operator, permissions, prefs, vendors
 from ..database import execute, log_audit, query, query_one, utcnow
 from .deps import LANG_COOKIE, form_bool, render, resolve_lang, templates
 
@@ -238,6 +238,7 @@ def _users_context(request: Request | None = None) -> dict[str, object]:
         "invite_hours": invites.DEFAULT_HOURS,
         "fresh_invite": "",
         "pref_groups": prefs.form(),
+        "vendors": vendors.state(),
         "unknown_operators": operator.unknown_names(),
         "operator_colors": operator.COLORS,
     }
@@ -634,4 +635,27 @@ async def reset_prefs(request: Request, user=Depends(require("users.manage"))):
     removed = prefs.reset(user["username"])
     return render("settings.html", request, user, active="settings",
                   message="Настройки снова берутся из .env, снято: %s" % removed,
+                  error=None, diag=_diagnostics(), **_users_context(request))
+
+
+@router.post("/settings/vendors")
+async def update_vendors(request: Request, user=Depends(require("users.manage"))):
+    """
+    Скачать реестры IEEE, чтобы клиенты определялись по MAC.
+
+    Встроенного списка хватает на частое железо, но у мелких
+    производителей блоки короче и в него они не попадают. Скачанное
+    ложится рядом с базой и переживает обновление панели.
+    """
+    try:
+        count = vendors.update()
+    except Exception as exc:  # noqa: BLE001 - причину показываем человеку
+        return render("settings.html", request, user, active="settings",
+                      message=None, error="База вендоров не обновилась: %s" % exc,
+                      diag=_diagnostics(), **_users_context(request))
+
+    log_audit(user["username"], "Обновлена база вендоров", "",
+              "записей: %s" % count, ip=client_ip(request))
+    return render("settings.html", request, user, active="settings",
+                  message="База вендоров обновлена, записей: %s" % count,
                   error=None, diag=_diagnostics(), **_users_context(request))

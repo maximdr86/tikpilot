@@ -54,35 +54,12 @@
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any, Iterable
-
-from .config import BASE_DIR
-
-#: Файл со списком префиксов MAC. Короткий, только частое железо: полная
-#: база IEEE весит три мегабайта и требует обновления, а разница для
-#: строки в таблице невелика.
-VENDORS_PATH = BASE_DIR / "app" / "vendors.json"
-
-_vendors: dict[str, str] = {}
 
 #: Вид подключения. Третьего не дано: клиент либо по кабелю, либо по воздуху.
 WIRED = "wired"
 WIRELESS = "wireless"
-
-
-def load_vendors() -> dict[str, str]:
-    """Прочитать список префиксов. Отсутствие файла не беда: обойдёмся."""
-    global _vendors
-
-    if _vendors:
-        return _vendors
-    try:
-        _vendors = json.loads(VENDORS_PATH.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        _vendors = {}
-    return _vendors
 
 
 def normalize_mac(value: Any) -> str:
@@ -100,23 +77,29 @@ def normalize_mac(value: Any) -> str:
 
 
 def vendor_of(mac: str) -> str:
-    """Производитель по первым трём байтам MAC."""
-    table = load_vendors()
-    prefix = normalize_mac(mac)[:8]
-    if not prefix:
+    """
+    Производитель по MAC.
+
+    Сам поиск живёт в `vendors`: там и встроенный короткий список,
+    и скачанные реестры IEEE с блоками разной длины.
+    """
+    from . import vendors
+
+    normalized = normalize_mac(mac)
+    if not normalized:
         return ""
 
     # Локально назначенный адрес: второй бит первого байта. Такие MAC
     # придумывает сам телефон ради приватности, и искать вендора
-    # бессмысленно — его там нет.
+    # бессмысленно - его там нет.
     try:
-        first = int(prefix[:2], 16)
+        first = int(normalized[:2], 16)
     except ValueError:
         return ""
     if first & 0b10:
         return "случайный MAC"
 
-    return table.get(prefix, "")
+    return vendors.lookup(normalized)
 
 
 def is_yes(value: Any) -> bool:
