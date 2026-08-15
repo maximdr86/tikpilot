@@ -149,6 +149,11 @@ class Settings:
         # Сколько дней помнить клиента, которого больше не видно.
         # Строки со своей подписью не удаляются никогда.
         self.client_retention_days: int = _int_env("CLIENT_RETENTION_DAYS", 30)
+        # Обновлять ли базу производителей по MAC самой, раз в месяц.
+        # Это единственный, кроме поиска оператора, поход панели наружу,
+        # поэтому его видно отдельной настройкой
+        self.vendors_auto_update: bool = os.getenv(
+            "VENDORS_AUTO_UPDATE", "1") not in ("0", "false", "no")
         # Сколько дней хранить историю падений и подъёмов
         self.monitor_event_retention_days: int = _int_env("MONITOR_EVENT_RETENTION_DAYS", 30)
         # Как часто интерфейс сам перечитывает таблицу устройств, секунд

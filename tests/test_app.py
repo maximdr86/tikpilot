@@ -8354,6 +8354,118 @@ def test_router_comment_becomes_the_name():
     assert both[0]["comment"] == "из аренды"
 
 
+def test_vendor_database_is_downloaded_from_ieee(client, monkeypatch):
+    """
+    Скачанные реестры IEEE дают имена, которых нет во встроенном списке.
+
+    Короткий список покрывает частое железо, а на площадках стоит и
+    редкое. Проверяем весь путь: скачивание, разбор, поиск и то, что
+    скачанное сильнее встроенного.
+    """
+    from app import vendors
+
+    registries = {
+        "oui.csv": (
+            "Registry,Assignment,Organization Name,Organization Address\n"
+            "MA-L,ACDE48,Some Tiny Vendor Co.,Ltd.,Shenzhen\n"
+            "MA-L,4C5E0C,Mikrotik Renamed Ltd,Riga\n"
+        ),
+        "mam.csv": (
+            "Registry,Assignment,Organization Name,Organization Address\n"
+            "MA-M,8C1F640,Medium Block Systems Ltd,Taipei\n"
+        ),
+        "oui36.csv": (
+            "Registry,Assignment,Organization Name,Organization Address\n"
+            "MA-S,70B3D5E1F,Small Block Technologies Inc.,Tokyo\n"
+        ),
+    }
+
+    def fake_fetch(url, timeout):
+        for name, text in registries.items():
+            if url.endswith(name):
+                return text
+        raise AssertionError("неожиданный адрес: %s" % url)
+
+    monkeypatch.setattr(vendors, "_fetch", fake_fetch)
+    vendors.forget()
+    try:
+        assert vendors.update() == 4
+
+        # Мелкий вендор из основного реестра
+        assert vendors.lookup("ac:de:48:11:22:33") == "Some Tiny Vendor"
+        # Блоки на 28 и 36 бит: их не найти по трём байтам
+        assert vendors.lookup("8c:1f:64:0a:bb:cc") == "Medium Block"
+        assert vendors.lookup("70:b3:d5:e1:f0:11") == "Small Block"
+        # Тот же префикс, но чужой подблок: имя владельца блока не подходит
+        assert vendors.lookup("70:b3:d5:aa:bb:cc") == ""
+        # Скачанное сильнее встроенного списка
+        assert vendors.lookup("4c:5e:0c:11:22:33") == "Mikrotik Renamed"
+        assert vendors.state()["downloaded_at"] is not None
+    finally:
+        vendors.LOCAL_PATH.unlink(missing_ok=True)
+        vendors.forget()
+
+    # Без скачанного остаётся встроенный список
+    assert vendors.lookup("4c:5e:0c:11:22:33") == "MikroTik"
+
+
+def test_vendor_names_lose_their_legal_tails():
+    """
+    В реестре имена юридические, в таблице они не нужны.
+
+    «TP-LINK TECHNOLOGIES CO.,LTD.» это TP-LINK. Имя из одного такого
+    слова не режем: от «Systems Ltd» иначе не остаётся ничего.
+    """
+    from app.vendors import clean_name
+
+    assert clean_name("Apple, Inc.") == "Apple"
+    assert clean_name("TP-LINK TECHNOLOGIES CO.,LTD.") == "TP-LINK"
+    assert clean_name("Hangzhou Hikvision Digital Technology Co.,Ltd.") == "Hangzhou Hikvision"
+    assert clean_name("  Ubiquiti   Networks  Inc. ") == "Ubiquiti"
+    assert clean_name("Ltd") == "Ltd"
+    assert clean_name("") == ""
+
+
+def test_vendor_update_survives_a_dead_registry(client, monkeypatch):
+    """
+    Реестр, который не ответил, не роняет обновление целиком.
+
+    Две трети базы лучше, чем ничего, и неполноту видно по числу записей.
+    А если молчат все три, честно сообщаем об ошибке.
+    """
+    from app import vendors
+
+    def half_dead(url, timeout):
+        if url.endswith("oui.csv"):
+            return ("Registry,Assignment,Organization Name,Organization Address\n"
+                    "MA-L,ACDE48,Live Vendor Inc.,Shenzhen\n")
+        raise OSError("реестр недоступен")
+
+    monkeypatch.setattr(vendors, "_fetch", half_dead)
+    vendors.forget()
+    try:
+        assert vendors.update() == 1
+        assert vendors.lookup("ac:de:48:00:00:01") == "Live Vendor"
+    finally:
+        vendors.LOCAL_PATH.unlink(missing_ok=True)
+        vendors.forget()
+
+    def all_dead(url, timeout):
+        raise OSError("реестр недоступен")
+
+    monkeypatch.setattr(vendors, "_fetch", all_dead)
+    with pytest.raises(RuntimeError):
+        vendors.update()
+    vendors.forget()
+
+
+def test_vendor_update_needs_the_right(client):
+    """Базу вендоров обновляет тот, кто управляет панелью."""
+    _make_user(client, "любознательный", ["clients.view", "settings.view"])
+    with _as("любознательный") as guest:
+        assert guest.post("/settings/vendors", follow_redirects=False).status_code == 403
+
+
 def test_random_mac_is_not_looked_up():
     """
     Локально назначенный MAC вендора не имеет.

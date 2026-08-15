@@ -71,10 +71,11 @@ body {
 a { color: var(--accent); }
 .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
 header { border-bottom: 1px solid var(--border); }
-.top { display: flex; align-items: center; gap: 14px; padding: 14px 0; }
+.top { display: flex; align-items: center; gap: 14px; padding: 14px 0; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; }
 .mark { display: block; border-radius: 5px; }
-.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 15px; }
+.top nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 15px; }
+.top nav a, .theme { white-space: nowrap; }
 .top nav a { color: var(--muted); text-decoration: none; }
 .top nav a:hover { color: var(--text); }
 
@@ -109,12 +110,12 @@ h2 { font-size: 26px; margin: 54px 0 6px; letter-spacing: -0.01em; }
 h2 + .sub { color: var(--muted); margin: 0 0 22px; }
 h2 + .grid, h2 + .pair, h2 + pre { margin-top: 22px; }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 22px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 22px; }
 .card { border: 1px solid var(--border); border-radius: 6px; padding: 18px 20px; background: var(--bg-soft); }
 .card h3 { margin: 0 0 6px; font-size: 17px; }
 .card p { margin: 0; color: var(--muted); font-size: 15px; }
 
-.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 26px; margin-top: 24px; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 26px; margin-top: 24px; }
 .pair figure { margin: 0; }
 .pair figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
 
@@ -156,6 +157,14 @@ ul.plain b { color: var(--text); font-weight: 600; }
 
 footer { margin-top: 64px; border-top: 1px solid var(--border); padding: 22px 0 48px; color: var(--muted); font-size: 15px; }
 footer a { color: var(--muted); }
+
+/* На телефоне шапка становится в две строки: сначала название,
+   потом меню. В одну строку оно всё равно не помещается, а перенос
+   посреди пункта читается как ошибка вёрстки. */
+@media (max-width: 720px) {
+    .top { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .top nav { margin-left: 0; width: 100%; }
+}
 
 @media (max-width: 600px) {
     h1 { font-size: 30px; }

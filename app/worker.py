@@ -191,12 +191,20 @@ def _dispatch_loop() -> None:
 
 
 def _housekeeping_loop() -> None:
-    """Раз в час подчищаем старую историю."""
+    """Раз в час подчищаем старую историю и смотрим на базу вендоров."""
+    from . import vendors
+
     while not _stop.is_set():
         try:
             cleanup_old_jobs()
         except Exception:  # noqa: BLE001
             log.exception("Ошибка очистки истории")
+        try:
+            # Реестры IEEE меняются медленно, поэтому проверка дешёвая:
+            # скачивание начинается, только если базе больше месяца
+            vendors.refresh_if_stale()
+        except Exception:  # noqa: BLE001
+            log.exception("Ошибка обновления базы вендоров")
         _stop.wait(timeout=3600)
 
 

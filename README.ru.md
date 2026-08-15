@@ -887,6 +887,7 @@ tar czf tikpilot-$(date +%F).tar.gz data/ .env
 | `LATENCY_PING_GATEWAY` | `1` | пинговать ли шлюз каждой точки |
 | `LATENCY_COUNT` | `5` | пакетов на одно измерение |
 | `METRICS_RETENTION_DAYS` | `14` | сколько дней хранить графики |
+| `VENDORS_AUTO_UPDATE` | `1` | обновлять базу производителей по MAC с IEEE раз в месяц |
 | `UI_REFRESH_INTERVAL` | `15` | как часто страница обновляется сама, секунд |
 | `SESSION_MAX_AGE` | `43200` | время жизни сессии, секунд |
 | `SESSION_REMEMBER_AGE` | `2592000` | время жизни сессии с галочкой «Запомнить меня», секунд |
