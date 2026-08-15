@@ -35,6 +35,12 @@ os.environ.setdefault("UPDATE_POLL_INTERVAL", "1")
 # чистого сна. Секундный интервал делает паузу микроскопической, а на
 # смысл проверок не влияет: они всё равно вызываются вручную.
 os.environ.setdefault("MONITOR_INTERVAL", "1")
+
+# Фоновая уборка не должна ходить в интернет во время прогона. На машине
+# с сетью она успевала скачать настоящие реестры IEEE прямо посреди
+# тестов, и проверка имени вендора падала через раз: в CI на 3.10 и 3.13
+# успевала, на 3.12 нет.
+os.environ.setdefault("VENDORS_AUTO_UPDATE", "0")
 # Проверки написаны по русским надписям, поэтому язык фиксируем явно.
 # Значение по умолчанию (английский) проверяется отдельным тестом.
 os.environ.setdefault("DEFAULT_LANG", "ru")
@@ -8407,6 +8413,59 @@ def test_vendor_database_is_downloaded_from_ieee(client, monkeypatch):
 
     # Без скачанного остаётся встроенный список
     assert vendors.lookup("4c:5e:0c:11:22:33") == "MikroTik"
+
+
+def test_the_first_vendor_download_is_always_asked_for(client, monkeypatch):
+    """
+    Пока базу не скачали руками, панель за ней сама не пойдёт.
+
+    Панель обещает работать в изолированной сети, и запрос в интернет
+    через час после установки, которого никто не просил, это нарушение
+    обещания. В CI это же поведение ломало тесты: фоновая уборка успевала
+    скачать настоящие реестры посреди прогона, и вендор `4c:5e:0c`
+    приезжал из IEEE вместо встроенного списка.
+
+    А вот если базу однажды скачали, поддерживать её свежей никого
+    не удивит.
+    """
+    from datetime import datetime, timedelta
+
+    from app import vendors
+    from app.config import settings
+
+    def forbidden(url, timeout):
+        raise AssertionError("панель полезла в интернет без спроса: %s" % url)
+
+    monkeypatch.setattr(vendors, "_fetch", forbidden)
+    monkeypatch.setattr(settings, "vendors_auto_update", True)
+    vendors.LOCAL_PATH.unlink(missing_ok=True)
+    vendors.forget()
+
+    assert vendors.state()["stale"] is False, "отсутствие файла это не «устарело»"
+    assert vendors.refresh_if_stale() == 0
+
+    # Скачанное месяц назад обновляется само
+    downloaded = {}
+
+    def fake_fetch(url, timeout):
+        downloaded[url] = True
+        return ("Registry,Assignment,Organization Name,Organization Address\n"
+                "MA-L,ACDE48,Fresh Vendor Inc.,Shenzhen\n")
+
+    vendors.LOCAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    vendors.LOCAL_PATH.write_bytes(b"")
+    old = (datetime.now() - timedelta(days=vendors.REFRESH_DAYS + 1)).timestamp()
+    import os
+
+    os.utime(vendors.LOCAL_PATH, (old, old))
+    monkeypatch.setattr(vendors, "_fetch", fake_fetch)
+    try:
+        assert vendors.state()["stale"] is True
+        assert vendors.refresh_if_stale() == 1
+        assert downloaded
+    finally:
+        vendors.LOCAL_PATH.unlink(missing_ok=True)
+        vendors.forget()
 
 
 def test_vendor_names_lose_their_legal_tails():

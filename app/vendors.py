@@ -129,7 +129,9 @@ def _read_local() -> dict[str, str]:
                     found[prefix] = name
     except FileNotFoundError:
         return {}
-    except OSError as exc:
+    except (OSError, EOFError, gzip.BadGzipFile) as exc:
+        # Оборванная закачка оставляет обрезанный файл. Это повод
+        # обойтись встроенным списком, а не поводом не открыть страницу
         log.warning("Не удалось прочитать базу вендоров: %s", exc)
         return {}
     return found
@@ -244,8 +246,10 @@ def state() -> dict[str, Any]:
         "total": len(load()),
         "bundled": len(load()) - len(_read_local()),
         "downloaded_at": downloaded,
-        "stale": downloaded is None
-        or (datetime.now(timezone.utc) - downloaded).days >= REFRESH_DAYS,
+        # Устаревшей считается только скачанная база. Отсутствие файла
+        # это не «пора обновиться», а «человек ещё не просил»
+        "stale": downloaded is not None
+        and (datetime.now(timezone.utc) - downloaded).days >= REFRESH_DAYS,
     }
 
 
@@ -253,13 +257,19 @@ def refresh_if_stale() -> int:
     """
     Обновить базу, если она старше месяца. Зовётся фоновой уборкой.
 
+    Первое скачивание всегда решает человек: пока файла нет, панель
+    наружу не ходит. Это важнее удобства. Панель обещает работать
+    в изолированной сети, и запрос в интернет через час после установки,
+    которого никто не просил, это нарушение обещания. А если базу один
+    раз скачали, поддерживать её свежей уже никого не удивит.
+
     Тихо возвращает 0, когда обновляться не нужно или не получилось:
     имена производителей приятны, но не настолько, чтобы из-за них
     шуметь в журнале каждую ночь.
     """
     if not settings.vendors_auto_update:
         return 0
-    if not state()["stale"]:
+    if not LOCAL_PATH.exists() or not state()["stale"]:
         return 0
     try:
         count = update()
