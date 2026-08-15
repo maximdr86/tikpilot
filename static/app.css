@@ -139,10 +139,8 @@ a:hover { text-decoration: underline; }
     border-bottom: 1px solid var(--nav-border);
     margin-bottom: 8px;
 }
-.brand .dot {
-    width: 9px; height: 9px; border-radius: 2px;
-    background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
-}
+.brand .mark { display: block; border-radius: 4px; }
+.login-card .head .mark { display: block; margin: 0 auto 8px; border-radius: 8px; }
 
 .nav-group {
     color: var(--nav-text-dim);

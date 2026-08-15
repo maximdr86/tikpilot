@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Tikpilot{% endblock %}</title>
     <link rel="stylesheet" href="/static/app.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='4' y='4' width='24' height='24' rx='4' fill='%233b6ea5'/></svg>">
+    <link rel="icon" href="/static/logo.svg">
     {# Тема применяется до отрисовки, иначе страница мигнёт светлым #}
     <script>
         try {
@@ -22,7 +22,7 @@
 
     <!-- ------------------------------------------------------ боковое меню -->
     <aside class="sidebar">
-        <div class="brand"><span class="dot"></span> Tikpilot</div>
+        <div class="brand"><img class="mark" src="/static/logo.svg" alt="" width="20" height="20"> Tikpilot</div>
 
         <div class="nav-group">Обзор</div>
         <a class="nav-link {% if active == 'dashboard' %}active{% endif %}" href="/">Дашборд</a>
