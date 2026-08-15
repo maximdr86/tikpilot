@@ -18,6 +18,9 @@ Celery, Node.js и сборка фронтенда. Интернет самой 
 > **Код написан Claude, моделью ИИ от Anthropic.** Подробнее в разделе
 > [Как появился проект](#как-появился-проект).
 
+> Промт и контекст проекта, из которого всё выросло: [docs/prompt-mikrotik-panel.md](docs/prompt-mikrotik-panel.md).
+
+
 **Сайт: [tikpilot.ru](https://tikpilot.ru)**
 
 ![Дашборд](docs/screenshots/dashboard.png)
