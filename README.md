@@ -18,6 +18,8 @@ The interface comes in English and Russian, switchable from the menu.
 > **The code was written by Claude, an AI model by Anthropic.** See
 > [How this project came about](#how-this-project-came-about).
 
+**Site: [tikpilot.ru](https://tikpilot.ru)**
+
 ![Dashboard](docs/screenshots/dashboard.png)
 
 | | |

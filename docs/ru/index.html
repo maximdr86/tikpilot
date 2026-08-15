@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tikpilot - панель управления парком MikroTik, self-hosted</title>
-<meta name="description" content="Своя панель для парка роутеров MikroTik: мониторинг доступности, массовые операции, бэкапы по расписанию, syslog, WireGuard. Ставится на свой сервер, без облака. Открытый код, лицензия MIT.">
+<title>Tikpilot - панель управления MikroTik: мониторинг, бэкапы, обновление RouterOS</title>
+<meta name="description" content="Управление парком роутеров MikroTik из одного окна: мониторинг доступности, обновление RouterOS и скрипты на весь парк, бэкапы по расписанию с диффом, syslog, WireGuard. Свой сервер, без облака, MIT.">
 <link rel="canonical" href="https://tikpilot.ru/ru/">
 <link rel="alternate" hreflang="en" href="https://tikpilot.ru/">
 <link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/">
@@ -15,6 +15,10 @@
 <meta property="og:image" content="https://tikpilot.ru/screenshots/dashboard.png">
 <meta property="og:url" content="https://tikpilot.ru/ru/">
 <meta name="twitter:card" content="summary_large_image">
+<meta property="og:image:alt" content="Дашборд Tikpilot: 49 роутеров MikroTik, одна точка недоступна">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:site_name" content="Tikpilot">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="../brand/logo.svg">
 <script>
@@ -152,6 +156,17 @@ ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--border); color: var
 ul.plain li:last-child { border-bottom: 0; }
 ul.plain b { color: var(--text); font-weight: 600; }
 
+.faq details {
+    border-bottom: 1px solid var(--border); padding: 4px 0;
+}
+.faq summary {
+    cursor: pointer; padding: 10px 0; font-weight: 500; list-style: none;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::before { content: "+ "; color: var(--accent); }
+.faq details[open] summary::before { content: "\2212 "; }
+.faq p { margin: 0 0 12px; color: var(--muted); }
+
 .note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 5px 5px 0; }
 .note p { margin: 0; }
 
@@ -173,6 +188,82 @@ footer a { color: var(--muted); }
     h2 { font-size: 22px; margin-top: 40px; }
 }
 </style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Tikpilot",
+  "applicationCategory": "DeveloperApplication",
+  "applicationSubCategory": "Network management",
+  "operatingSystem": "Linux, Docker",
+  "url": "https://tikpilot.ru/ru/",
+  "inLanguage": "ru",
+  "description": "Своя веб-панель для парка роутеров MikroTik: мониторинг доступности, массовые операции с RouterOS, бэкапы по расписанию, syslog и связи WireGuard.",
+  "image": "https://tikpilot.ru/screenshots/dashboard.png",
+  "license": "https://opensource.org/licenses/MIT",
+  "isAccessibleForFree": true,
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "softwareVersion": "1.60.0",
+  "codeRepository": "https://github.com/maximdr86/tikpilot",
+  "author": {
+    "@type": "Person",
+    "name": "maximdr86"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "inLanguage": "ru",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Чем заменить The Dude?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Отчасти Tikpilot. The Dude и Zabbix отвечают на вопрос «что происходит в сети» и делают это лучше. Tikpilot отвечает на другой: «сделай это на всех роутерах» - запустить скрипт, снять бэкап, обновить RouterOS, и показать результат по каждой точке. История доступности тут тоже есть, поэтому на небольшом парке он часто закрывает обе задачи."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Как обновить RouterOS сразу на всех роутерах?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Выбрать устройства или целую группу, запустить «Проверить обновления», затем «Обновить RouterOS». Каждый запуск становится задачей с результатом по каждой точке: панель ждёт возвращения роутера, не даёт откатиться на версию ниже и проверяет свободное место до начала."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Можно ли делать бэкапы MikroTik по расписанию?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Да. Правила работают сами: бинарный .backup, текстовый .rsc или оба сразу, с хранением N последних копий на устройство. Любые две конфигурации сравниваются построчно, и есть поиск по всем сохранённым."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Работает ли панель без интернета?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Да. Она общается только с вашими роутерами по API RouterOS и по SSH. Наружу есть ровно два необязательных выхода: поиск оператора связи в реестре адресов и скачивание базы производителей по MAC. Оба включаются вручную."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Сколько стоит?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Нисколько. Лицензия MIT, исходники на GitHub, платной версии и облачного аккаунта нет."
+      }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 
@@ -183,6 +274,7 @@ footer a { color: var(--muted); }
             <a href="#what">Что умеет</a>
             <a href="#screens">Экраны</a>
             <a href="#install">Установка</a>
+            <a href="#faq">Вопросы</a>
             <a href="https://github.com/maximdr86/tikpilot">GitHub</a>
             <a href="../">English</a>
             <button class="theme" id="theme" type="button">Тёмная тема</button>
@@ -260,37 +352,37 @@ footer a { color: var(--muted); }
     <div class="pair">
         <figure>
             <a class="zoom" href="../screenshots/devices.png">
-                <img src="../shots/devices.png" alt="Список устройств: имя, адрес, группа, модель, оператор связи и версия RouterOS" loading="lazy" width="1400" height="803">
+                <img src="../shots/devices.png" alt="Список устройств: имя, адрес, группа, модель, оператор связи и версия RouterOS" loading="lazy" decoding="async" width="1400" height="803">
             </a>
             <figcaption>Список устройств. Оператор связи определяется сам, по нему же работает поиск.</figcaption>
         </figure>
         <figure>
             <a class="zoom" href="../screenshots/monitoring.png">
-                <img src="../shots/monitoring.png" alt="Мониторинг: сводка, карта парка по группам и доступность за сутки" loading="lazy" width="1400" height="803">
+                <img src="../shots/monitoring.png" alt="Мониторинг: сводка, карта парка по группам и доступность за сутки" loading="lazy" decoding="async" width="1400" height="803">
             </a>
             <figcaption>Мониторинг: карта парка по группам и доступность за сутки с длительностью простоя.</figcaption>
         </figure>
         <figure>
             <a class="zoom" href="../screenshots/actions.png">
-                <img src="../shots/actions.png" alt="Диалог массового действия: цель - все 49 устройств, список доступных действий" loading="lazy" width="800" height="710">
+                <img src="../shots/actions.png" alt="Диалог массового действия: цель - все 49 устройств, список доступных действий" loading="lazy" decoding="async" width="800" height="710">
             </a>
             <figcaption>Одно действие на все 49 точек. Опасные помечены, каждый запуск попадает в задачи.</figcaption>
         </figure>
         <figure>
             <a class="zoom" href="../screenshots/wireguard.png">
-                <img src="../shots/wireguard.png" alt="WireGuard: настройки хаба и таблица связей с рукопожатиями и трафиком" loading="lazy" width="1400" height="803">
+                <img src="../shots/wireguard.png" alt="WireGuard: настройки хаба и таблица связей с рукопожатиями и трафиком" loading="lazy" decoding="async" width="1400" height="803">
             </a>
             <figcaption>WireGuard: хаб, связи, рукопожатия и трафик. Конфигурация споука генерируется сама.</figcaption>
         </figure>
         <figure>
             <a class="zoom" href="../screenshots/scripts.png">
-                <img src="../shots/scripts.png" alt="Библиотека скриптов и таблица того, на каких точках они стоят" loading="lazy" width="1400" height="547">
+                <img src="../shots/scripts.png" alt="Библиотека скриптов и таблица того, на каких точках они стоят" loading="lazy" decoding="async" width="1400" height="547">
             </a>
             <figcaption>Библиотека скриптов и ответ на вопрос, у кого из парка какой стоит.</figcaption>
         </figure>
         <figure>
             <a class="zoom" href="../screenshots/logs.png">
-                <img src="../shots/logs.png" alt="Логи с устройств: время, точка, тема сообщения и текст, с правилами подсветки" loading="lazy" width="1400" height="693">
+                <img src="../shots/logs.png" alt="Логи с устройств: время, точка, тема сообщения и текст, с правилами подсветки" loading="lazy" decoding="async" width="1400" height="693">
             </a>
             <figcaption>Syslog со всего парка. Правила подсветки и скрытия убирают повторяющийся шум.</figcaption>
         </figure>
@@ -322,6 +414,31 @@ docker compose up -d</pre>
         <li><b>Уведомлений в мессенджеры нет.</b> Сознательно: на парке с плохими
         каналами такой поток сообщений перестают читать через неделю.</li>
     </ul>
+
+    <h2 id="faq">Частые вопросы</h2>
+
+    <div class="faq">
+        <details>
+            <summary>Чем заменить The Dude?</summary>
+            <p>Отчасти Tikpilot. The Dude и Zabbix отвечают на вопрос «что происходит в сети» и делают это лучше. Tikpilot отвечает на другой: «сделай это на всех роутерах» - запустить скрипт, снять бэкап, обновить RouterOS, и показать результат по каждой точке. История доступности тут тоже есть, поэтому на небольшом парке он часто закрывает обе задачи.</p>
+        </details>
+        <details>
+            <summary>Как обновить RouterOS сразу на всех роутерах?</summary>
+            <p>Выбрать устройства или целую группу, запустить «Проверить обновления», затем «Обновить RouterOS». Каждый запуск становится задачей с результатом по каждой точке: панель ждёт возвращения роутера, не даёт откатиться на версию ниже и проверяет свободное место до начала.</p>
+        </details>
+        <details>
+            <summary>Можно ли делать бэкапы MikroTik по расписанию?</summary>
+            <p>Да. Правила работают сами: бинарный .backup, текстовый .rsc или оба сразу, с хранением N последних копий на устройство. Любые две конфигурации сравниваются построчно, и есть поиск по всем сохранённым.</p>
+        </details>
+        <details>
+            <summary>Работает ли панель без интернета?</summary>
+            <p>Да. Она общается только с вашими роутерами по API RouterOS и по SSH. Наружу есть ровно два необязательных выхода: поиск оператора связи в реестре адресов и скачивание базы производителей по MAC. Оба включаются вручную.</p>
+        </details>
+        <details>
+            <summary>Сколько стоит?</summary>
+            <p>Нисколько. Лицензия MIT, исходники на GitHub, платной версии и облачного аккаунта нет.</p>
+        </details>
+    </div>
 
     <h2>Как это сделано</h2>
     <div class="grid">
@@ -365,12 +482,6 @@ docker compose up -d</pre>
     </div>
 </footer>
 
-<div class="full" id="full-logs">
-    <a class="backdrop" href="#" aria-label="Закрыть"></a>
-    <img src="../screenshots/logs.png" alt="Логи целиком">
-    <a class="close" href="#">×</a>
-    <a class="raw" href="../screenshots/logs.png">Открыть файл в полном размере</a>
-</div>
 
 <div class="full" id="viewer">
     <button class="backdrop" type="button" aria-label="Закрыть"></button>
