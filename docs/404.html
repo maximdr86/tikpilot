@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page not found - Tikpilot</title>
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/brand/logo.svg">
+<style>
+:root {
+    --bg: #ffffff;
+    --bg-soft: #f4f6f6;
+    --border: #dfe4e3;
+    --text: #1d2b28;
+    --muted: #64756f;
+    --accent: #0f6156;
+    --accent-soft: #e7f1ef;
+    --code-bg: #f7f9f9;
+    --shot-bg: #f4f6f6;
+}
+html[data-theme="dark"] {
+    --bg: #121a19;
+    --bg-soft: #1a2523;
+    --border: #32433f;
+    --text: #dfe8e5;
+    --muted: #869491;
+    --accent: #2f9e8b;
+    --accent-soft: #16302b;
+    --code-bg: #16211f;
+    --shot-bg: #0e1615;
+}
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+        --bg: #121a19;
+        --bg-soft: #1a2523;
+        --border: #32433f;
+        --text: #dfe8e5;
+        --muted: #869491;
+        --accent: #2f9e8b;
+        --accent-soft: #16302b;
+        --code-bg: #16211f;
+        --shot-bg: #0e1615;
+    }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+}
+a { color: var(--accent); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+header { border-bottom: 1px solid var(--border); }
+.top { display: flex; align-items: center; gap: 14px; padding: 14px 0; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; }
+.mark { display: block; border-radius: 5px; }
+.top nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 15px; }
+.top nav a, .theme { white-space: nowrap; }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover { color: var(--text); }
+
+.hero { padding: 56px 0 8px; }
+h1 { font-size: 40px; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.02em; }
+.lead { font-size: 20px; color: var(--muted); margin: 0 0 26px; max-width: 46em; }
+.buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn {
+    display: inline-block; padding: 11px 20px; border-radius: 5px;
+    text-decoration: none; font-weight: 500; font-size: 16px;
+    border: 1px solid var(--accent);
+}
+.btn.primary { background: var(--accent); color: #fff; }
+.theme {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    color: var(--muted); font: inherit; font-size: 15px;
+}
+.theme:hover { color: var(--text); }
+.btn.ghost { color: var(--accent); }
+.facts { color: var(--muted); font-size: 15px; margin-left: 6px; }
+
+.shot { margin: 34px 0 10px; }
+.shot img, .pair img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--shot-bg);
+}
+.zoom { display: block; cursor: zoom-in; }
+.caption { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+
+h2 { font-size: 26px; margin: 54px 0 6px; letter-spacing: -0.01em; }
+h2 + .sub { color: var(--muted); margin: 0 0 22px; }
+h2 + .grid, h2 + .pair, h2 + pre { margin-top: 22px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 22px; }
+.card { border: 1px solid var(--border); border-radius: 6px; padding: 18px 20px; background: var(--bg-soft); }
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 26px; margin-top: 24px; }
+.pair figure { margin: 0; }
+.pair figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+
+/* Full-screen view. Without JavaScript the links simply open the PNG. */
+.full {
+    display: none; position: fixed; inset: 0; z-index: 20;
+    background: rgba(16, 24, 22, .88); padding: 24px;
+    align-items: center; justify-content: center;
+}
+.full.open { display: flex; }
+.full img {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    border-radius: 4px; background: #fff;
+}
+.full .backdrop { position: absolute; inset: 0; background: none; border: 0; cursor: zoom-out; }
+.full .close {
+    position: absolute; top: 10px; right: 16px; color: #fff;
+    font-size: 30px; line-height: 1; background: none; border: 0; cursor: pointer;
+}
+.full .raw {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 14px;
+}
+
+pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 16px 18px; overflow-x: auto; font-size: 14.5px; line-height: 1.7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .93em; }
+
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
+ul.plain li:last-child { border-bottom: 0; }
+ul.plain b { color: var(--text); font-weight: 600; }
+
+.faq details {
+    border-bottom: 1px solid var(--border); padding: 4px 0;
+}
+.faq summary {
+    cursor: pointer; padding: 10px 0; font-weight: 500; list-style: none;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::before { content: "+ "; color: var(--accent); }
+.faq details[open] summary::before { content: "\2212 "; }
+.faq p { margin: 0 0 12px; color: var(--muted); }
+
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 5px 5px 0; }
+.note p { margin: 0; }
+
+footer { margin-top: 64px; border-top: 1px solid var(--border); padding: 22px 0 48px; color: var(--muted); font-size: 15px; }
+footer a { color: var(--muted); }
+
+/* На телефоне шапка становится в две строки: сначала название,
+   потом меню. В одну строку оно всё равно не помещается, а перенос
+   посреди пункта читается как ошибка вёрстки. */
+@media (max-width: 720px) {
+    .top { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .top nav { margin-left: 0; width: 100%; }
+}
+
+@media (max-width: 600px) {
+    h1 { font-size: 30px; }
+    .lead { font-size: 18px; }
+    .hero { padding-top: 34px; }
+    h2 { font-size: 22px; margin-top: 40px; }
+}
+</style>
+</head>
+<body>
+<header>
+    <div class="wrap top">
+        <span class="brand"><img class="mark" src="/brand/logo.svg" alt="" width="22" height="22"> Tikpilot</span>
+    </div>
+</header>
+<main class="wrap">
+    <section class="hero">
+        <h1>Page not found</h1>
+        <p class="lead">The address does not exist, or the page has moved.</p>
+        <div class="buttons">
+            <a class="btn primary" href="/">Home</a>
+            <a class="btn ghost" href="https://github.com/maximdr86/tikpilot">GitHub</a>
+        </div>
+    </section>
+</main>
+</body>
+</html>

@@ -18,6 +18,8 @@ Celery, Node.js и сборка фронтенда. Интернет самой 
 > **Код написан Claude, моделью ИИ от Anthropic.** Подробнее в разделе
 > [Как появился проект](#как-появился-проект).
 
+**Сайт: [tikpilot.ru](https://tikpilot.ru)**
+
 ![Дашборд](docs/screenshots/dashboard.png)
 
 | | |

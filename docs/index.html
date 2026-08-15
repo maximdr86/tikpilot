@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tikpilot - self-hosted panel for a fleet of MikroTik routers</title>
-<meta name="description" content="Your own panel for a fleet of MikroTik routers: availability monitoring, bulk operations, scheduled backups, syslog, WireGuard. Runs on your own server, no cloud. Open source, MIT.">
+<title>Tikpilot - MikroTik management panel, self-hosted and open source</title>
+<meta name="description" content="Manage a fleet of MikroTik routers from one place: monitoring, bulk RouterOS upgrades and scripts, scheduled backups with diffs, syslog, WireGuard. Self-hosted, no cloud, MIT.">
 <link rel="canonical" href="https://tikpilot.ru/">
 <link rel="alternate" hreflang="en" href="https://tikpilot.ru/">
 <link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/">
@@ -15,6 +15,10 @@
 <meta property="og:image" content="https://tikpilot.ru/screenshots/dashboard.png">
 <meta property="og:url" content="https://tikpilot.ru/">
 <meta name="twitter:card" content="summary_large_image">
+<meta property="og:image:alt" content="The Tikpilot dashboard: 49 MikroTik routers, one unreachable">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="ru_RU">
+<meta property="og:site_name" content="Tikpilot">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="brand/logo.svg">
 <script>
@@ -152,6 +156,17 @@ ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--border); color: var
 ul.plain li:last-child { border-bottom: 0; }
 ul.plain b { color: var(--text); font-weight: 600; }
 
+.faq details {
+    border-bottom: 1px solid var(--border); padding: 4px 0;
+}
+.faq summary {
+    cursor: pointer; padding: 10px 0; font-weight: 500; list-style: none;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::before { content: "+ "; color: var(--accent); }
+.faq details[open] summary::before { content: "\2212 "; }
+.faq p { margin: 0 0 12px; color: var(--muted); }
+
 .note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 5px 5px 0; }
 .note p { margin: 0; }
 
@@ -173,6 +188,82 @@ footer a { color: var(--muted); }
     h2 { font-size: 22px; margin-top: 40px; }
 }
 </style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Tikpilot",
+  "applicationCategory": "DeveloperApplication",
+  "applicationSubCategory": "Network management",
+  "operatingSystem": "Linux, Docker",
+  "url": "https://tikpilot.ru/",
+  "inLanguage": "en",
+  "description": "Self-hosted web panel for a fleet of MikroTik routers: availability monitoring, bulk RouterOS operations, scheduled backups, syslog and WireGuard links.",
+  "image": "https://tikpilot.ru/screenshots/dashboard.png",
+  "license": "https://opensource.org/licenses/MIT",
+  "isAccessibleForFree": true,
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "softwareVersion": "1.60.0",
+  "codeRepository": "https://github.com/maximdr86/tikpilot",
+  "author": {
+    "@type": "Person",
+    "name": "maximdr86"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "inLanguage": "en",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is Tikpilot an alternative to The Dude?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Partly. The Dude and Zabbix answer “what is happening in my network” and do it better. Tikpilot answers “do this on all my routers”: run a script, take a backup, upgrade RouterOS, and show a result for every device. It also keeps availability history, so for a small fleet it often replaces both."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I upgrade RouterOS on all routers at once?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Pick the devices or a whole group, choose “Check for RouterOS updates” and then “Upgrade RouterOS”. Every run becomes a job with a per-device result, the panel waits for each router to come back, refuses downgrades and checks free space before it starts."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can it back up MikroTik configs on a schedule?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Rules run on their own: binary .backup, text .rsc or both, N copies kept per device. Any two configs can be compared line by line, and there is full-text search across everything stored."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does it work without internet access?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. The panel talks only to your routers over the RouterOS API and SSH. The two optional exceptions are looking up the mobile operator in the address registry and downloading the MAC vendor database, both of which you switch on yourself."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How much does it cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Nothing. MIT licence, the source is on GitHub, there is no paid edition and no cloud account."
+      }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 
@@ -183,6 +274,7 @@ footer a { color: var(--muted); }
             <a href="#what">What it does</a>
             <a href="#screens">Screens</a>
             <a href="#install">Install</a>
+            <a href="#faq">FAQ</a>
             <a href="https://github.com/maximdr86/tikpilot">GitHub</a>
             <a href="ru/">Русский</a>
             <button class="theme" id="theme" type="button">Dark theme</button>
@@ -260,37 +352,37 @@ footer a { color: var(--muted); }
     <div class="pair">
         <figure>
             <a class="zoom" href="screenshots/devices.png">
-                <img src="shots/devices.png" alt="Device list: name, address, group, model, mobile operator and RouterOS version" loading="lazy" width="1400" height="803">
+                <img src="shots/devices.png" alt="Device list: name, address, group, model, mobile operator and RouterOS version" loading="lazy" decoding="async" width="1400" height="803">
             </a>
             <figcaption>Device list. The mobile operator is detected automatically and search works on it too.</figcaption>
         </figure>
         <figure>
             <a class="zoom" href="screenshots/monitoring.png">
-                <img src="shots/monitoring.png" alt="Monitoring: summary, fleet map by group and uptime over the last 24 hours" loading="lazy" width="1400" height="803">
+                <img src="shots/monitoring.png" alt="Monitoring: summary, fleet map by group and uptime over the last 24 hours" loading="lazy" decoding="async" width="1400" height="803">
             </a>
             <figcaption>Monitoring: the fleet map by group and uptime over 24 hours with the downtime.</figcaption>
         </figure>
         <figure>
             <a class="zoom" href="screenshots/actions.png">
-                <img src="shots/actions.png" alt="Bulk action dialog: target is all 49 devices, with the list of available actions" loading="lazy" width="800" height="710">
+                <img src="shots/actions.png" alt="Bulk action dialog: target is all 49 devices, with the list of available actions" loading="lazy" decoding="async" width="800" height="710">
             </a>
             <figcaption>One action across all 49 sites. The dangerous ones are marked, every run becomes a job.</figcaption>
         </figure>
         <figure>
             <a class="zoom" href="screenshots/wireguard.png">
-                <img src="shots/wireguard.png" alt="WireGuard: hub settings and the table of links with handshakes and traffic" loading="lazy" width="1400" height="803">
+                <img src="shots/wireguard.png" alt="WireGuard: hub settings and the table of links with handshakes and traffic" loading="lazy" decoding="async" width="1400" height="803">
             </a>
             <figcaption>WireGuard: hub, links, handshakes and traffic. The spoke config is generated for you.</figcaption>
         </figure>
         <figure>
             <a class="zoom" href="screenshots/scripts.png">
-                <img src="shots/scripts.png" alt="The script library and a table of which sites they sit on" loading="lazy" width="1400" height="547">
+                <img src="shots/scripts.png" alt="The script library and a table of which sites they sit on" loading="lazy" decoding="async" width="1400" height="547">
             </a>
             <figcaption>The script library and the answer to which router has which script.</figcaption>
         </figure>
         <figure>
             <a class="zoom" href="screenshots/logs.png">
-                <img src="shots/logs.png" alt="Device logs: time, site, message topic and text, with highlighting rules" loading="lazy" width="1400" height="693">
+                <img src="shots/logs.png" alt="Device logs: time, site, message topic and text, with highlighting rules" loading="lazy" decoding="async" width="1400" height="693">
             </a>
             <figcaption>Syslog from the whole fleet. Highlight and hide rules take out the repetitive noise.</figcaption>
         </figure>
@@ -322,6 +414,31 @@ docker compose up -d</pre>
         <li><b>No messenger notifications.</b> On purpose: on a fleet with bad links that
         stream of messages stops being read within a week.</li>
     </ul>
+
+    <h2 id="faq">Frequently asked</h2>
+
+    <div class="faq">
+        <details>
+            <summary>Is Tikpilot an alternative to The Dude?</summary>
+            <p>Partly. The Dude and Zabbix answer “what is happening in my network” and do it better. Tikpilot answers “do this on all my routers”: run a script, take a backup, upgrade RouterOS, and show a result for every device. It also keeps availability history, so for a small fleet it often replaces both.</p>
+        </details>
+        <details>
+            <summary>How do I upgrade RouterOS on all routers at once?</summary>
+            <p>Pick the devices or a whole group, choose “Check for RouterOS updates” and then “Upgrade RouterOS”. Every run becomes a job with a per-device result, the panel waits for each router to come back, refuses downgrades and checks free space before it starts.</p>
+        </details>
+        <details>
+            <summary>Can it back up MikroTik configs on a schedule?</summary>
+            <p>Yes. Rules run on their own: binary .backup, text .rsc or both, N copies kept per device. Any two configs can be compared line by line, and there is full-text search across everything stored.</p>
+        </details>
+        <details>
+            <summary>Does it work without internet access?</summary>
+            <p>Yes. The panel talks only to your routers over the RouterOS API and SSH. The two optional exceptions are looking up the mobile operator in the address registry and downloading the MAC vendor database, both of which you switch on yourself.</p>
+        </details>
+        <details>
+            <summary>How much does it cost?</summary>
+            <p>Nothing. MIT licence, the source is on GitHub, there is no paid edition and no cloud account.</p>
+        </details>
+    </div>
 
     <h2>How it is built</h2>
     <div class="grid">
@@ -364,12 +481,6 @@ docker compose up -d</pre>
     </div>
 </footer>
 
-<div class="full" id="full-logs">
-    <a class="backdrop" href="#" aria-label="Close"></a>
-    <img src="screenshots/logs.png" alt="The whole device log page">
-    <a class="close" href="#">×</a>
-    <a class="raw" href="screenshots/logs.png">Open the file at full size</a>
-</div>
 
 <div class="full" id="viewer">
     <button class="backdrop" type="button" aria-label="Close"></button>
