@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tikpilot - self-hosted panel for a fleet of MikroTik routers</title>
+<meta name="description" content="Your own panel for a fleet of MikroTik routers: availability monitoring, bulk operations, scheduled backups, syslog, WireGuard. Runs on your own server, no cloud. Open source, MIT.">
+<link rel="canonical" href="https://tikpilot.ru/">
+<link rel="alternate" hreflang="en" href="https://tikpilot.ru/">
+<link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/">
+<link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Tikpilot - self-hosted panel for a MikroTik fleet">
+<meta property="og:description" content="Monitoring, bulk operations, backups, syslog and WireGuard for a MikroTik fleet. Your own server, no cloud, MIT.">
+<meta property="og:image" content="https://tikpilot.ru/screenshots/dashboard.png">
+<meta property="og:url" content="https://tikpilot.ru/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="brand/logo.svg">
+<script>
+    // The theme is picked before rendering, otherwise the light one flashes
+    (function () {
+        var saved = localStorage.getItem("tikpilot-theme");
+        if (saved) { document.documentElement.dataset.theme = saved; }
+    })();
+</script>
+<style>
+:root {
+    --bg: #ffffff;
+    --bg-soft: #f4f6f6;
+    --border: #dfe4e3;
+    --text: #1d2b28;
+    --muted: #64756f;
+    --accent: #0f6156;
+    --accent-soft: #e7f1ef;
+    --code-bg: #f7f9f9;
+    --shot-bg: #f4f6f6;
+}
+html[data-theme="dark"] {
+    --bg: #121a19;
+    --bg-soft: #1a2523;
+    --border: #32433f;
+    --text: #dfe8e5;
+    --muted: #869491;
+    --accent: #2f9e8b;
+    --accent-soft: #16302b;
+    --code-bg: #16211f;
+    --shot-bg: #0e1615;
+}
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+        --bg: #121a19;
+        --bg-soft: #1a2523;
+        --border: #32433f;
+        --text: #dfe8e5;
+        --muted: #869491;
+        --accent: #2f9e8b;
+        --accent-soft: #16302b;
+        --code-bg: #16211f;
+        --shot-bg: #0e1615;
+    }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+}
+a { color: var(--accent); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+header { border-bottom: 1px solid var(--border); }
+.top { display: flex; align-items: center; gap: 14px; padding: 14px 0; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; }
+.mark { display: block; border-radius: 5px; }
+.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 15px; }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover { color: var(--text); }
+
+.hero { padding: 56px 0 8px; }
+h1 { font-size: 40px; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.02em; }
+.lead { font-size: 20px; color: var(--muted); margin: 0 0 26px; max-width: 46em; }
+.buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn {
+    display: inline-block; padding: 11px 20px; border-radius: 5px;
+    text-decoration: none; font-weight: 500; font-size: 16px;
+    border: 1px solid var(--accent);
+}
+.btn.primary { background: var(--accent); color: #fff; }
+.theme {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    color: var(--muted); font: inherit; font-size: 15px;
+}
+.theme:hover { color: var(--text); }
+.btn.ghost { color: var(--accent); }
+.facts { color: var(--muted); font-size: 15px; margin-left: 6px; }
+
+.shot { margin: 34px 0 10px; }
+.shot img, .pair img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--shot-bg);
+}
+.zoom { display: block; cursor: zoom-in; }
+.caption { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+
+h2 { font-size: 26px; margin: 54px 0 6px; letter-spacing: -0.01em; }
+h2 + .sub { color: var(--muted); margin: 0 0 22px; }
+h2 + .grid, h2 + .pair, h2 + pre { margin-top: 22px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 22px; }
+.card { border: 1px solid var(--border); border-radius: 6px; padding: 18px 20px; background: var(--bg-soft); }
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 26px; margin-top: 24px; }
+.pair figure { margin: 0; }
+.pair figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+
+/* Full-screen view. Without JavaScript the links simply open the PNG. */
+.full {
+    display: none; position: fixed; inset: 0; z-index: 20;
+    background: rgba(16, 24, 22, .88); padding: 24px;
+    align-items: center; justify-content: center;
+}
+.full.open { display: flex; }
+.full img {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    border-radius: 4px; background: #fff;
+}
+.full .backdrop { position: absolute; inset: 0; background: none; border: 0; cursor: zoom-out; }
+.full .close {
+    position: absolute; top: 10px; right: 16px; color: #fff;
+    font-size: 30px; line-height: 1; background: none; border: 0; cursor: pointer;
+}
+.full .raw {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 14px;
+}
+
+pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 16px 18px; overflow-x: auto; font-size: 14.5px; line-height: 1.7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .93em; }
+
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
+ul.plain li:last-child { border-bottom: 0; }
+ul.plain b { color: var(--text); font-weight: 600; }
+
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 5px 5px 0; }
+.note p { margin: 0; }
+
+footer { margin-top: 64px; border-top: 1px solid var(--border); padding: 22px 0 48px; color: var(--muted); font-size: 15px; }
+footer a { color: var(--muted); }
+
+@media (max-width: 600px) {
+    h1 { font-size: 30px; }
+    .lead { font-size: 18px; }
+    .hero { padding-top: 34px; }
+    h2 { font-size: 22px; margin-top: 40px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+    <div class="wrap top">
+        <span class="brand"><img class="mark" src="brand/logo.svg" alt="" width="22" height="22"> Tikpilot</span>
+        <nav>
+            <a href="#what">What it does</a>
+            <a href="#screens">Screens</a>
+            <a href="#install">Install</a>
+            <a href="https://github.com/maximdr86/tikpilot">GitHub</a>
+            <a href="ru/">Русский</a>
+            <button class="theme" id="theme" type="button">Dark theme</button>
+        </nav>
+    </div>
+</header>
+
+<main class="wrap">
+
+    <section class="hero">
+        <h1>Fifty MikroTik routers in one window</h1>
+        <p class="lead">
+            Availability monitoring, bulk operations, scheduled backups, logs and
+            WireGuard links. It runs on your own server, the data sits in a file
+            next to it and goes nowhere.
+        </p>
+        <div class="buttons">
+            <a class="btn primary" href="#install">Install</a>
+            <a class="btn ghost" href="https://github.com/maximdr86/tikpilot">Read the code</a>
+            <span class="facts">MIT · Python · no cloud, no build step</span>
+        </div>
+    </section>
+
+    <div class="shot">
+        <a class="zoom" href="screenshots/dashboard.png">
+            <img src="shots/hero-dashboard.png" alt="Dashboard: 49 sites, one unreachable, a breakdown by group, RouterOS versions and recent jobs" width="1900" height="738">
+        </a>
+        <p class="caption">
+            The screenshots come from a live fleet of 49 routers with screenshot mode on:
+            site names, addresses and client names are replaced by the panel itself.
+        </p>
+    </div>
+
+    <h2 id="what">What it does</h2>
+    <p class="sub">Everything a fleet makes you do by hand, one router at a time.</p>
+
+    <div class="grid">
+        <div class="card">
+            <h3>One action for the whole fleet</h3>
+            <p>Reboot, a script, a backup, setting identity, checking for and installing
+            RouterOS updates. Every run becomes a job with a per-device result: you
+            see which 3 of 49 failed and what the router actually said.</p>
+        </div>
+        <div class="card">
+            <h3>Availability monitoring</h3>
+            <p>History per site, latency and loss measured by the router itself, a fleet
+            map and reports by group, by device and over any date range.</p>
+        </div>
+        <div class="card">
+            <h3>Scheduled backups</h3>
+            <p>Binary <code>.backup</code> and text <code>.rsc</code>, N copies kept per
+            device, a diff between any two configs and full-text search across all of
+            them. Plus an archive of the panel itself, for the day the server dies.</p>
+        </div>
+        <div class="card">
+            <h3>Script library</h3>
+            <p>Your scripts in one place, and the answer to which router actually has
+            which one. Deploy to chosen sites or to the whole fleet in two clicks.</p>
+        </div>
+        <div class="card">
+            <h3>WireGuard</h3>
+            <p>Router-to-router links through a hub: handshakes, traffic and routes in one
+            table. The spoke configuration is generated for you.</p>
+        </div>
+        <div class="card">
+            <h3>Logs and clients</h3>
+            <p>A syslog receiver for the whole fleet, with filters and rules for hiding
+            the noise. And a list of what is connected at each site: wired or wireless,
+            in which port, with which address.</p>
+        </div>
+    </div>
+
+    <h2 id="screens">Screens</h2>
+
+    <div class="pair">
+        <figure>
+            <a class="zoom" href="screenshots/devices.png">
+                <img src="shots/devices.png" alt="Device list: name, address, group, model, mobile operator and RouterOS version" loading="lazy" width="1400" height="803">
+            </a>
+            <figcaption>Device list. The mobile operator is detected automatically and search works on it too.</figcaption>
+        </figure>
+        <figure>
+            <a class="zoom" href="screenshots/monitoring.png">
+                <img src="shots/monitoring.png" alt="Monitoring: summary, fleet map by group and uptime over the last 24 hours" loading="lazy" width="1400" height="803">
+            </a>
+            <figcaption>Monitoring: the fleet map by group and uptime over 24 hours with the downtime.</figcaption>
+        </figure>
+        <figure>
+            <a class="zoom" href="screenshots/actions.png">
+                <img src="shots/actions.png" alt="Bulk action dialog: target is all 49 devices, with the list of available actions" loading="lazy" width="800" height="710">
+            </a>
+            <figcaption>One action across all 49 sites. The dangerous ones are marked, every run becomes a job.</figcaption>
+        </figure>
+        <figure>
+            <a class="zoom" href="screenshots/wireguard.png">
+                <img src="shots/wireguard.png" alt="WireGuard: hub settings and the table of links with handshakes and traffic" loading="lazy" width="1400" height="803">
+            </a>
+            <figcaption>WireGuard: hub, links, handshakes and traffic. The spoke config is generated for you.</figcaption>
+        </figure>
+        <figure>
+            <a class="zoom" href="screenshots/scripts.png">
+                <img src="shots/scripts.png" alt="The script library and a table of which sites they sit on" loading="lazy" width="1400" height="547">
+            </a>
+            <figcaption>The script library and the answer to which router has which script.</figcaption>
+        </figure>
+        <figure>
+            <a class="zoom" href="screenshots/logs.png">
+                <img src="shots/logs.png" alt="Device logs: time, site, message topic and text, with highlighting rules" loading="lazy" width="1400" height="693">
+            </a>
+            <figcaption>Syslog from the whole fleet. Highlight and hide rules take out the repetitive noise.</figcaption>
+        </figure>
+    </div>
+
+    <h2 id="install">Install</h2>
+    <p class="sub">Any server with Docker that can reach the routers. The panel comes up on port 8080.</p>
+
+<pre>git clone https://github.com/maximdr86/tikpilot
+cd tikpilot
+cp .env.example .env
+docker compose up -d</pre>
+
+    <p class="caption">
+        Then: create an API user on the routers and add devices by hand or by CSV import.
+        The panel talks to RouterOS over the API (8728/8729) and over SSH for the terminal.
+        To update: <code>git pull</code> and <code>docker compose up -d --build</code>.
+    </p>
+
+    <h2>What it is not</h2>
+
+    <ul class="plain">
+        <li><b>Not a replacement for Zabbix or The Dude.</b> It does not scan the network,
+        does not draw topology and does not poll SNMP. It manages a fleet you already know about.</li>
+        <li><b>Not a replacement for WinBox.</b> Fine tuning still happens there; the panel
+        takes over the repetitive work across the fleet.</li>
+        <li><b>Not a cloud service.</b> No sign-up and nothing running on someone else's
+        side: it all runs on your machine and the database is a single SQLite file.</li>
+        <li><b>No messenger notifications.</b> On purpose: on a fleet with bad links that
+        stream of messages stops being read within a week.</li>
+    </ul>
+
+    <h2>How it is built</h2>
+    <div class="grid">
+        <div class="card">
+            <h3>A boring stack</h3>
+            <p>Python and FastAPI, pages rendered on the server, a SQLite file for the
+            database. No build step, no npm, no external CDN: it works in an isolated network.</p>
+        </div>
+        <div class="card">
+            <h3>Passwords and access</h3>
+            <p>Router passwords are encrypted with a key kept outside the database. The
+            panel can be limited to trusted networks, every capability is granted separately,
+            and everything anyone does goes into an audit log.</p>
+        </div>
+        <div class="card">
+            <h3>Proven on a live fleet</h3>
+            <p>49 routers in shops, canteens and oilfield sites, reachable over WireGuard
+            with SSTP as a fallback. More than 300 tests run in CI on three versions
+            of Python.</p>
+        </div>
+    </div>
+
+    <div class="note" style="margin-top:28px">
+        <p>
+            The code was written by an AI model (Claude) under my direction: I am a
+            sysadmin, not a developer. The panel runs my own fleet, so the bugs reach me
+            first. The code is open - read it before you trust it.
+        </p>
+    </div>
+
+</main>
+
+<footer>
+    <div class="wrap">
+        <a href="https://github.com/maximdr86/tikpilot">GitHub</a> ·
+        <a href="https://github.com/maximdr86/tikpilot/releases">Releases</a> ·
+        <a href="https://github.com/maximdr86/tikpilot/issues">Questions and bugs</a> ·
+        <a href="ru/">Русский</a>
+        <p>MIT licence. Tikpilot is not affiliated with MikroTik and is not their product.</p>
+    </div>
+</footer>
+
+<div class="full" id="full-logs">
+    <a class="backdrop" href="#" aria-label="Close"></a>
+    <img src="screenshots/logs.png" alt="The whole device log page">
+    <a class="close" href="#">×</a>
+    <a class="raw" href="screenshots/logs.png">Open the file at full size</a>
+</div>
+
+<div class="full" id="viewer">
+    <button class="backdrop" type="button" aria-label="Close"></button>
+    <img id="viewer-image" src="" alt="">
+    <button class="close" type="button" aria-label="Close">&times;</button>
+    <a class="raw" id="viewer-raw" href="" target="_blank" rel="noopener">Open the file at full size</a>
+</div>
+
+<script>
+    (function () {
+        var root = document.documentElement;
+        var button = document.getElementById("theme");
+        var dark = matchMedia("(prefers-color-scheme: dark)");
+
+        function current() {
+            return root.dataset.theme || (dark.matches ? "dark" : "light");
+        }
+        function label() {
+            button.textContent = current() === "dark" ? "Light theme" : "Dark theme";
+        }
+        button.addEventListener("click", function () {
+            var next = current() === "dark" ? "light" : "dark";
+            root.dataset.theme = next;
+            localStorage.setItem("tikpilot-theme", next);
+            label();
+        });
+        dark.addEventListener("change", label);
+        label();
+    })();
+
+    // Screenshot viewer: an own layer instead of an anchor, otherwise
+    // closing it throws the page back to the top
+    (function () {
+        var viewer = document.getElementById("viewer");
+        var image = document.getElementById("viewer-image");
+        var raw = document.getElementById("viewer-raw");
+        if (!viewer || !image || !raw) { return; }
+
+        function show(href, alt) {
+            image.src = href;
+            image.alt = alt;
+            raw.href = href;
+            viewer.classList.add("open");
+            document.body.style.overflow = "hidden";
+        }
+        function hide() {
+            viewer.classList.remove("open");
+            document.body.style.overflow = "";
+            image.src = "";
+        }
+
+        document.querySelectorAll("a.zoom").forEach(function (link) {
+            link.addEventListener("click", function (event) {
+                if (event.metaKey || event.ctrlKey || event.button !== 0) { return; }
+                event.preventDefault();
+                show(link.getAttribute("href"), link.querySelector("img").alt);
+            });
+        });
+        viewer.querySelector(".backdrop").addEventListener("click", hide);
+        viewer.querySelector(".close").addEventListener("click", hide);
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") { hide(); }
+        });
+    })();
+</script>
+
+</body>
+</html>

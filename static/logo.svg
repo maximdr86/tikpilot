@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Tikpilot">
+    <title>Tikpilot</title>
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="#0f6156"/>
+    <circle cx="32" cy="32" r="13.4" fill="none" stroke="#ffffff" stroke-width="3.2"/>
+    <circle cx="32" cy="32" r="5.4" fill="#ffffff"/>
+    <g fill="#ffffff">
+        <circle cx="32" cy="12.5" r="3.1"/>
+        <circle cx="48.9" cy="22.2" r="3.1"/>
+        <circle cx="48.9" cy="41.8" r="3.1"/>
+        <circle cx="32" cy="51.5" r="3.1"/>
+        <circle cx="15.1" cy="41.8" r="3.1"/>
+        <circle cx="15.1" cy="22.2" r="3.1"/>
+    </g>
+</svg>
