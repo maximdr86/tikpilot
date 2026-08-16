@@ -23,6 +23,7 @@ from . import activity
 from .database import init_db
 from .routes.deps import LANG_COOKIE
 from .routes import (
+    alerts as alert_routes,
     auth_routes, backups, clients, devices, groups, jobs, pages, public,
     snippets as snippet_routes, syslog as syslog_routes,
     terminal as terminal_routes, visits, wireguard,
@@ -182,6 +183,7 @@ app.include_router(clients.router)
 app.include_router(syslog_routes.router)
 app.include_router(terminal_routes.router)
 app.include_router(visits.router)
+app.include_router(alert_routes.router)
 app.include_router(snippet_routes.router)
 app.include_router(public.router)
 

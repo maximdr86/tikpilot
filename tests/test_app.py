@@ -2178,8 +2178,12 @@ def test_english_pages_contain_no_russian(client, router):
 
     client.get("/lang/en", follow_redirects=False)
     try:
+        # Карточка устройства проверяется наравне со списками: разделов
+        # в ней больше, чем на любой другой странице, и новая надпись
+        # чаще всего появляется именно тут
         for page in ("/", "/devices", "/monitoring", "/jobs", "/backups",
-                     "/history", "/settings", "/groups", "/scripts"):
+                     "/history", "/settings", "/groups", "/scripts", "/alerts",
+                     f"/devices/{device_id}"):
             html = client.get(page).text
             # Комментарии разработчика и переключатель языка не в счёт
             # Раскодируем сущности: параметры задач попадают на страницу
@@ -8752,3 +8756,766 @@ def test_clients_need_permission_and_scope(client, router):
         assert narrow.post(f"/api/clients/{row['id']}/label",
                            json={"label": "чужое"}).status_code == 403
         assert narrow.post(f"/api/clients/{row['id']}/delete").status_code == 403
+
+
+# ------------------------------------------------------------------ трафик
+def test_traffic_rate_from_counters():
+    """Скорость считается из разницы счётчиков, а не из мгновенного замера."""
+    from app import traffic
+
+    was = {"rx_bytes": 1_000_000, "tx_bytes": 500_000}
+    now = {"rx-byte": "1_750_000".replace("_", ""), "tx-byte": "500000"}
+
+    # За 60 секунд пришло 750 000 байт: это 100 000 бит в секунду
+    assert traffic.rate(was, now, 60) == (100_000, 0)
+
+    # Первый обход считать нечем
+    assert traffic.rate(None, now, 60) is None
+
+
+def test_traffic_skips_counter_reset_and_bad_spans():
+    """
+    Обнулившийся счётчик не превращается в всплеск на гигабиты.
+
+    Роутер перезагрузили, интерфейс пересоздали, в шестой версии счётчик
+    переполнился. Признак один: новое значение меньше прежнего.
+    """
+    from app import traffic
+
+    was = {"rx_bytes": 10_000_000, "tx_bytes": 10_000_000}
+    after_reboot = {"rx-byte": "1000", "tx-byte": "1000"}
+    assert traffic.rate(was, after_reboot, 60) is None
+
+    # Слишком короткий и слишком длинный интервалы тоже не считаем
+    ok = {"rx-byte": "10001000", "tx-byte": "10001000"}
+    assert traffic.rate(was, ok, 1) is None
+    assert traffic.rate(was, ok, 100000) is None
+    assert traffic.rate(was, ok, 60) is not None
+
+
+def test_uplink_detected_from_default_route():
+    """Аплинк узнаётся и в седьмой версии, и в шестой."""
+    from app import traffic
+
+    seven = [{"dst-address": "10.0.0.0/8", "gateway": "wg1"},
+             {"dst-address": "0.0.0.0/0", "gateway": "10.8.0.1",
+              "immediate-gw": "10.8.0.1%ether1"}]
+    assert traffic.uplink_from_routes(seven) == "ether1"
+
+    six = [{"dst-address": "0.0.0.0/0", "gateway": "192.168.1.1",
+            "gateway-status": "192.168.1.1 reachable via ether5"}]
+    assert traffic.uplink_from_routes(six) == "ether5"
+
+    # Выключенный маршрут по умолчанию не считается, как и его отсутствие
+    assert traffic.uplink_from_routes([{"dst-address": "0.0.0.0/0",
+                                        "immediate-gw": "1.1.1.1%ether1",
+                                        "disabled": True}]) == ""
+    assert traffic.uplink_from_routes([]) == ""
+
+
+def test_traffic_collected_for_uplink_only(client, router):
+    """
+    Полный обход снимает счётчики и пишет скорость только по аплинку.
+
+    Остальные интерфейсы молчат, пока за ними не попросили следить: на
+    коробке с тремя десятками VLAN лишние ряды не нужны никому.
+    """
+    from app import monitor, traffic
+
+    device_id = _add_device(client, router, "traf-uplink")
+
+    # Первый обход только запоминает точку отсчёта
+    monitor.run_cycle(full=True)
+    assert traffic.history(device_id, "ether1", hours=1) == []
+    device = query_one("SELECT uplink_interface FROM devices WHERE id = ?", (device_id,))
+    assert device["uplink_interface"] == "ether1"
+
+    # Счётчик отматывается назад, чтобы интервал получился зачётным
+    from app.database import execute_changes
+    execute_changes(
+        "UPDATE traffic_counters SET ts = datetime(ts, '-60 seconds'),"
+        " rx_bytes = rx_bytes - 750000 WHERE device_id = ? AND interface = 'ether1'",
+        (device_id,),
+    )
+
+    monitor.run_cycle(full=True)
+    rows = traffic.history(device_id, "ether1", hours=1)
+    assert len(rows) == 1, rows
+    # 750 000 байт за примерно минуту это около 100 кбит/с. Точное число
+    # зависит от того, сколько заняла сама проверка, поэтому сравниваем
+    # с допуском, а не по равенству
+    assert 90_000 <= rows[0]["rx_bps"] <= 100_000, rows[0]["rx_bps"]
+    assert 55 <= rows[0]["span"] <= 70, rows[0]["span"]
+
+    # По неотмеченным интерфейсам замеров нет
+    assert traffic.history(device_id, "ether2", hours=1) == []
+
+
+def test_traffic_watch_survives_inventory_refresh(client, router):
+    """
+    Отметка интерфейса переживает обновление паспорта.
+
+    Паспорт при каждом обходе переписывается заново, поэтому галочка
+    живёт в своей таблице, а не в списке портов.
+    """
+    from app import inventory, traffic
+
+    device_id = _add_device(client, router, "traf-watch")
+    traffic.set_watch(device_id, "ether2", True)
+    assert traffic.watched(device_id) == {"ether2"}
+
+    device = dict(query_one("SELECT * FROM devices WHERE id = ?", (device_id,)))
+    with MikroTik(_device(router), "s3cret") as mt:
+        inventory.save(device_id, inventory.collect(mt))
+
+    assert traffic.watched(device_id) == {"ether2"}
+
+    # Аплинк добавляется к отмеченному, а не заменяет его
+    device["uplink_interface"] = "ether1"
+    assert traffic.wanted(device) == {"ether1", "ether2"}
+
+    traffic.set_watch(device_id, "ether2", False)
+    assert traffic.watched(device_id) == set()
+
+
+def test_traffic_panel_shows_interfaces_and_toggle(client, router):
+    """
+    В карточке есть раздел трафика: аплинк отмечен, остальные с галочкой.
+
+    Проверяем и то, что галочка доходит до базы: страница показывает
+    состояние наблюдения, и расхождение между ней и базой означало бы,
+    что человек включил сбор, которого нет.
+    """
+    from app import monitor, traffic
+
+    device_id = _add_device(client, router, "traf-card")
+    monitor.run_cycle(full=True)
+
+    page = client.get(f"/devices/{device_id}").text
+    assert "Трафик на интерфейсах" in page
+    assert "ether2" in page
+    assert "аплинк" in page
+
+    r = client.post(f"/api/devices/{device_id}/traffic-watch",
+                    json={"interface": "ether2", "on": True})
+    assert r.status_code == 200, r.text
+    assert traffic.watched(device_id) == {"ether2"}
+    assert query_one(
+        "SELECT COUNT(*) AS c FROM audit_log WHERE action LIKE 'Включены счётчики%'"
+    )["c"] >= 1
+
+    r = client.post(f"/api/devices/{device_id}/traffic-watch",
+                    json={"interface": "", "on": True})
+    assert r.status_code == 400
+
+
+def test_traffic_watch_needs_permission_and_scope(client, router):
+    """Наблюдение включает тот, кому позволено править карточку."""
+    device_id = _add_device(client, router, "traf-rights")
+
+    _make_user(client, "trafview", ["clients.view"])
+    with _as("trafview") as limited:
+        assert limited.post(f"/api/devices/{device_id}/traffic-watch",
+                            json={"interface": "ether2", "on": True}).status_code == 403
+
+    _make_user(client, "trafnarrow", ["devices.edit"], scope_all=False)
+    with _as("trafnarrow") as narrow:
+        assert narrow.post(f"/api/devices/{device_id}/traffic-watch",
+                           json={"interface": "ether2", "on": True}).status_code == 403
+
+
+# ------------------------------------------------------------------- пороги
+def test_alert_rule_waits_for_the_hold_time(client, router):
+    """
+    Правило молчит, пока условие не продержится оговорённое время.
+
+    Это главное в порогах: всплеск загрузки при ночном бэкапе событием
+    не является, а полчаса на том же уровне является.
+    """
+    from app import alerts
+    from app.database import execute, execute_changes, utcnow
+
+    device_id = _add_device(client, router, "alert-hold")
+    rule_id = alerts.save_rule({
+        "metric": "cpu", "comparison": "above", "value": 50,
+        "hold_minutes": 10, "scope_kind": "device", "scope_id": device_id,
+    }, "admin")
+
+    execute("INSERT INTO device_metrics (device_id, ts, cpu_load, free_memory)"
+            " VALUES (?,?,?,?)", (device_id, utcnow(), 90.0, 1048576))
+
+    # Первый проход только запоминает начало: выдержка ещё не вышла
+    assert alerts.evaluate()["fired"] == 0
+    assert [r for r in alerts.active() if r["rule_id"] == rule_id] == []
+    assert any(r["rule_id"] == rule_id for r in alerts.pending())
+
+    # Отматываем начало на одиннадцать минут назад
+    execute_changes(
+        "UPDATE alert_state SET since = datetime(since, '-11 minutes')"
+        " WHERE rule_id = ?", (rule_id,))
+    assert alerts.evaluate()["fired"] == 1
+
+    firing = [r for r in alerts.active() if r["rule_id"] == rule_id]
+    assert len(firing) == 1
+    assert firing[0]["last_value"] == 90.0
+
+    # Второй проход не плодит одинаковых событий
+    assert alerts.evaluate()["fired"] == 0
+
+    # Значение вернулось в норму: правило гаснет и пишет об этом
+    execute("INSERT INTO device_metrics (device_id, ts, cpu_load, free_memory)"
+            " VALUES (?,?,?,?)", (device_id, utcnow(), 5.0, 1048576))
+    assert alerts.evaluate()["resolved"] == 1
+    assert [r for r in alerts.active() if r["rule_id"] == rule_id] == []
+
+    kinds = [e["kind"] for e in alerts.events(10) if e["rule_id"] == rule_id]
+    assert kinds[:2] == ["resolved", "fired"], kinds
+
+
+def test_alert_ignores_missing_values(client, router):
+    """
+    Нечитаемая метрика это не срабатывание и не выздоровление.
+
+    У части плат нет датчика температуры, и правило «выше 60» не должно
+    ни гореть на них, ни считаться проверенным.
+    """
+    from app import alerts
+    from app.database import execute_changes
+
+    device_id = _add_device(client, router, "alert-nodata")
+    execute_changes("UPDATE devices SET temperature = '' WHERE id = ?", (device_id,))
+
+    rule_id = alerts.save_rule({
+        "metric": "temperature", "comparison": "above", "value": 60,
+        "hold_minutes": 0, "scope_kind": "device", "scope_id": device_id,
+    }, "admin")
+    alerts.evaluate()
+    assert [r for r in alerts.active() if r["rule_id"] == rule_id] == []
+
+    # Появилось значение выше порога, выдержки нет: горит сразу
+    execute_changes("UPDATE devices SET temperature = '75' WHERE id = ?", (device_id,))
+    alerts.evaluate()
+    assert len([r for r in alerts.active() if r["rule_id"] == rule_id]) == 1
+
+
+def test_alert_scope_limits_devices(client, router):
+    """Правило на группу не трогает точки из других групп."""
+    from app import alerts
+    from app.database import execute_changes, query_one as one
+
+    first = _add_device(client, router, "alert-scope-1")
+    second = _add_device(client, router, "alert-scope-2")
+    client.post("/api/groups", data={"name": "порогов", "color": "blue"})
+    group_id = one("SELECT id FROM groups WHERE name = 'порогов'")["id"]
+    execute_changes("UPDATE devices SET group_id = ? WHERE id = ?", (group_id, first))
+    execute_changes("UPDATE devices SET temperature = '80' WHERE id IN (?,?)",
+                    (first, second))
+
+    rule_id = alerts.save_rule({
+        "metric": "temperature", "comparison": "above", "value": 60,
+        "hold_minutes": 0, "scope_kind": "group", "scope_id": group_id,
+    }, "admin")
+    alerts.evaluate()
+
+    hit = [r["device_id"] for r in alerts.active() if r["rule_id"] == rule_id]
+    assert hit == [first], hit
+
+
+def test_alerts_page_and_rights(client, router):
+    """Страница закрыта правом на просмотр, правка отдельным правом."""
+    page = client.get("/alerts")
+    assert page.status_code == 200
+    assert "Пороги" in page.text
+
+    _make_user(client, "alertblind", ["clients.view"])
+    with _as("alertblind") as blind:
+        assert blind.get("/alerts").status_code == 403
+
+    _make_user(client, "alertreader", ["alerts.view"])
+    with _as("alertreader") as reader:
+        assert reader.get("/alerts").status_code == 200
+        assert reader.post("/api/alerts/rules", json={
+            "metric": "cpu", "comparison": "above", "value": 90, "hold_minutes": 5,
+        }).status_code == 403
+
+    # Негодная метрика отклоняется с понятным ответом, а не пятисоткой
+    bad = client.post("/api/alerts/rules", json={"metric": "погода", "value": 1})
+    assert bad.status_code == 400
+
+
+# -------------------------------------------------------------- уведомления
+@contextlib.contextmanager
+def _fake_telegram():
+    """
+    Поддельный api.telegram.org на localhost.
+
+    Заглушка, а не мок: панель делает настоящий HTTP-запрос, и ошибка
+    в адресе или в теле сообщения видна здесь, а не в бою.
+    """
+    import json as json_lib
+    import threading as th
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    received: list[dict] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - имя задано библиотекой
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json_lib.loads(self.rfile.read(length) or b"{}")
+            received.append({"path": self.path, "body": body,
+                             "headers": dict(self.headers)})
+            answer = b'{"ok":true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(answer)))
+            self.end_headers()
+            self.wfile.write(answer)
+
+        def log_message(self, *args):  # тишина в выводе тестов
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = th.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", received
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_notify_sends_one_digest_to_telegram(client, router):
+    """
+    Пять событий уходят одним сообщением, а не пятью.
+
+    Ради этого всё и затевалось: поток сообщений на дребезжащем парке
+    перестают читать через неделю.
+    """
+    from app import alerts, notify
+    from app.config import settings
+    from app.database import execute, execute_changes, utcnow
+
+    device_id = _add_device(client, router, "notify-digest")
+    execute_changes("DELETE FROM alert_events")
+    for index in range(5):
+        execute(
+            "INSERT INTO alert_events (rule_id, rule_name, device_id, device_name,"
+            " metric, kind, value, ts, sent) VALUES (?,?,?,?,?,?,?,?,0)",
+            (None, f"правило {index}", device_id, "notify-digest", "cpu",
+             "fired", 90 + index, utcnow()),
+        )
+
+    with _fake_telegram() as (base, received):
+        old_api, old_on = notify.TELEGRAM_API, settings.notify_enabled
+        old_quiet = (settings.notify_quiet_from, settings.notify_quiet_to)
+        try:
+            notify.TELEGRAM_API = base
+            settings.notify_enabled = True
+            settings.notify_quiet_from = settings.notify_quiet_to = 0
+            channel_id = notify.save_channel({
+                "address": "-100500", "secret": "12345:secret",
+            })
+
+            result = notify.dispatch(force=True)
+            assert result["sent"] == 5, result
+            assert result["failed"] == 0
+        finally:
+            notify.TELEGRAM_API = old_api
+            settings.notify_enabled = old_on
+            settings.notify_quiet_from, settings.notify_quiet_to = old_quiet
+
+    assert len(received) == 1, received
+    assert received[0]["path"] == "/bot12345:secret/sendMessage"
+    text = received[0]["body"]["text"]
+    assert text.count("notify-digest") == 5, text
+    assert received[0]["body"]["chat_id"] == "-100500"
+
+    # События помечены отправленными и второй раз не уходят
+    assert alerts.unsent() == []
+
+
+def test_notify_is_silent_until_switched_on(client, router):
+    """
+    Пока уведомления выключены, панель наружу не ходит вовсе.
+
+    Панель обещает работать в сети без интернета, и незапрошенный поход
+    на api.telegram.org был бы нарушением обещания.
+    """
+    from app import notify
+    from app.config import settings
+    from app.database import execute, execute_changes, utcnow
+
+    device_id = _add_device(client, router, "notify-off")
+    execute_changes("DELETE FROM alert_events")
+    execute("INSERT INTO alert_events (rule_name, device_id, device_name, metric,"
+            " kind, value, ts, sent) VALUES (?,?,?,?,?,?,?,0)",
+            ("тишина", device_id, "notify-off", "cpu", "fired", 99, utcnow()))
+
+    with _fake_telegram() as (base, received):
+        old_api, old_on = notify.TELEGRAM_API, settings.notify_enabled
+        try:
+            notify.TELEGRAM_API = base
+            settings.notify_enabled = False
+            notify.save_channel({"address": "-1", "secret": "1:2"})
+            assert notify.dispatch(force=True) == {"sent": 0, "failed": 0,
+                                                   "reason": "off"}
+        finally:
+            notify.TELEGRAM_API = old_api
+            settings.notify_enabled = old_on
+
+    assert received == []
+
+
+def test_notify_quiet_hours_and_token_secrecy(client, router):
+    """Тихие часы считаются через полночь, а токен наружу не отдаётся."""
+    from datetime import datetime
+
+    from app import notify
+    from app.config import settings
+    from app.database import query_one as one
+
+    old = (settings.notify_quiet_from, settings.notify_quiet_to)
+    try:
+        settings.notify_quiet_from, settings.notify_quiet_to = 23, 7
+        assert notify.quiet_now(datetime(2026, 8, 16, 2, 0)) is True
+        assert notify.quiet_now(datetime(2026, 8, 16, 23, 30)) is True
+        assert notify.quiet_now(datetime(2026, 8, 16, 12, 0)) is False
+
+        # Совпадающие границы означают «тихих часов нет»
+        settings.notify_quiet_from = settings.notify_quiet_to = 0
+        assert notify.quiet_now(datetime(2026, 8, 16, 3, 0)) is False
+    finally:
+        settings.notify_quiet_from, settings.notify_quiet_to = old
+
+    channel_id = notify.save_channel({
+        "address": "-100777", "secret": "999:верь-мне",
+    })
+    # В базе токен зашифрован
+    stored = one("SELECT secret_enc FROM notify_channels WHERE id = ?", (channel_id,))
+    assert "верь-мне" not in str(stored["secret_enc"])
+
+    # Наружу отдаётся только признак «задан»
+    listed = [c for c in notify.channels() if c["id"] == channel_id][0]
+    assert listed["has_secret"] is True
+    assert "secret_enc" not in listed
+
+    page = client.get("/alerts").text
+    assert "верь-мне" not in page
+
+    # Правка без токена не затирает прежний
+    notify.save_channel({"id": channel_id, "address": "-100888", "secret": ""})
+    again = [c for c in notify.channels() if c["id"] == channel_id][0]
+    assert again["has_secret"] is True
+    assert again["address"] == "-100888"
+
+
+def test_notify_channels_need_permission(client, router):
+    """Каналы заводит тот же, кто заводит пороги."""
+    _make_user(client, "notifyreader", ["alerts.view"])
+    with _as("notifyreader") as reader:
+        assert reader.post("/api/notify/channels", json={
+            "address": "-1", "secret": "1:2"}).status_code == 403
+        assert reader.post("/api/notify/send").status_code == 403
+
+    # Пустой чат отклоняется понятным ответом, а не пятисоткой
+    bad = client.post("/api/notify/channels", json={"address": "", "secret": "1:2"})
+    assert bad.status_code == 400
+
+
+def test_heartbeat_pings_the_watchdog(client):
+    """
+    Панель регулярно дёргает внешний адрес.
+
+    Сообщить о собственной смерти она не может: мёртвая программа ничего
+    не отправляет. Поэтому тревогу поднимает тот, к кому сигнал перестал
+    приходить.
+    """
+    import threading as th
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from app import notify
+    from app.config import settings
+    from app.database import execute_changes
+
+    hits: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - имя задано библиотекой
+            hits.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    th.Thread(target=server.serve_forever, daemon=True).start()
+
+    old_url, old_minutes = settings.heartbeat_url, settings.heartbeat_minutes
+    execute_changes("DELETE FROM notify_log WHERE kind = 'heartbeat'")
+    try:
+        settings.heartbeat_url = f"http://127.0.0.1:{server.server_port}/ping/abc"
+        settings.heartbeat_minutes = 15
+        assert notify.heartbeat() is True
+        assert hits == ["/ping/abc"]
+
+        # Второй раз подряд сигнал не идёт: интервал ещё не вышел
+        assert notify.heartbeat() is False
+        assert len(hits) == 1
+
+        # Пустой адрес означает «выключено»
+        settings.heartbeat_url = ""
+        assert notify.heartbeat() is False
+    finally:
+        settings.heartbeat_url, settings.heartbeat_minutes = old_url, old_minutes
+        server.shutdown()
+        server.server_close()
+
+
+def test_backup_age_metric_notices_a_missed_backup(client, router):
+    """
+    Несделанный бэкап это обычное правило по возрасту последней копии.
+
+    Точка, у которой копий не было никогда, молчит: пустой список бэкапов
+    виден и без порогов, а правило «старше суток» о ней ничего не знает.
+    """
+    from app import alerts
+    from app.database import execute, execute_changes, utcnow
+
+    device_id = _add_device(client, router, "alert-backup")
+    rule_id = alerts.save_rule({
+        "metric": "backup_age", "comparison": "above", "value": 24,
+        "hold_minutes": 0, "scope_kind": "device", "scope_id": device_id,
+    }, "admin")
+
+    alerts.evaluate()
+    assert [r for r in alerts.active() if r["rule_id"] == rule_id] == []
+
+    execute("INSERT INTO backups (device_id, device_name, kind, filename, size,"
+            " created_at) VALUES (?,?,?,?,?, datetime('now', '-30 hours'))",
+            (device_id, "alert-backup", "binary", "old.backup", 1024))
+    alerts.evaluate()
+    assert len([r for r in alerts.active() if r["rule_id"] == rule_id]) == 1
+
+    execute("INSERT INTO backups (device_id, device_name, kind, filename, size,"
+            " created_at) VALUES (?,?,?,?,?,?)",
+            (device_id, "alert-backup", "binary", "fresh.backup", 1024, utcnow()))
+    alerts.evaluate()
+    assert [r for r in alerts.active() if r["rule_id"] == rule_id] == []
+
+
+def test_dialogs_use_the_house_markup():
+    """
+    Всё, что открывается через openModal, должно быть .modal-backdrop.
+
+    Проверка появилась после того, как раздел порогов уехал с диалогом
+    собственной разметки: без фона он не прятался, лежал блоком внизу
+    страницы, а кнопка «Новое правило» выглядела сломанной. Стили и
+    открытие модалок общие, отступать от них нельзя.
+    """
+    import re
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+
+    templates = sorted((BASE_DIR / "templates").rglob("*.html"))
+    texts = {path: path.read_text(encoding="utf-8") for path in templates}
+    everything = "\n".join(texts.values())
+
+    broken = []
+    for match in re.finditer(r"openModal\('([^']+)'\)", everything):
+        target = match.group(1)
+        for path, text in texts.items():
+            found = re.search(r'<div class="([^"]*)" id="%s"' % re.escape(target), text)
+            if found and "modal-backdrop" not in found.group(1):
+                broken.append(f"{path.name}: #{target} = {found.group(1)}")
+
+    assert not broken, broken
+
+
+def test_alerts_dialog_opens_with_the_shared_helper(client):
+    """Кнопка «Новое правило» зовёт общий openModal, а не свой код."""
+    page = client.get("/alerts").text
+    assert 'class="modal-backdrop" id="rule-modal"' in page
+    assert "openModal('rule-modal')" in page
+
+
+def test_offline_value_is_shown_as_duration():
+    """
+    «1705.41» это правда, но человек читает «1 д 4 ч 25 мин».
+
+    Минуты недоступности единственная метрика, где сырое число хуже
+    пересчёта: почти двое суток в уме никто не переводит.
+    """
+    from app import alerts
+
+    assert alerts.format_value("offline", 1705.41) == "1 д 4 ч 25 мин"
+    assert alerts.format_value("offline", 30) == "30 мин"
+    assert alerts.format_value("cpu", 94.0) == "94 %"
+    assert alerts.format_value("cpu", None) == "—"
+
+
+def test_traffic_chart_switches_to_kilobits(client, router):
+    """
+    На аплинке в десятки килобит шкала должна быть в килобитах.
+
+    Иначе ось подписана тремя одинаковыми «0.0 Мбит/с»: у парка на LTE
+    мегабит это слишком крупная единица, и график превращается
+    в прямую линию без масштаба.
+    """
+    from app.database import execute, utcnow
+    from app.routes.devices import _traffic_panel
+
+    device_id = _add_device(client, router, "traf-units")
+    device = dict(query_one("SELECT * FROM devices WHERE id = ?", (device_id,)))
+    for shift in (10, 5):
+        execute(
+            "INSERT INTO traffic_samples (device_id, interface, ts, rx_bps, tx_bps, span)"
+            " VALUES (?,?, datetime('now', ?), ?,?,?)",
+            (device_id, "lte1", f"-{shift} minutes", 85_000, 16_900, 60),
+        )
+
+    panel = _traffic_panel(device, 24, "ru")
+    assert "Кбит/с" in panel["rx"], panel["rx"][:200]
+    assert "Мбит/с" not in panel["rx"]
+
+    # Появился мегабитный интерфейс: шкала переключается обратно
+    execute(
+        "INSERT INTO traffic_samples (device_id, interface, ts, rx_bps, tx_bps, span)"
+        " VALUES (?,?,?,?,?,?)",
+        (device_id, "ether1", utcnow(), 12_000_000, 3_000_000, 60),
+    )
+    panel = _traffic_panel(device, 24, "ru")
+    assert "Мбит/с" in panel["rx"]
+
+
+def test_traffic_list_puts_the_uplink_first_and_hides_service_interfaces(client, router):
+    """
+    Аплинк первым, служебное под спойлером.
+
+    Четырнадцать галочек в три ряда, где lte1 десятый по алфавиту, это
+    не список, а стена. Петля и клиентские туннели прячутся, но не
+    исчезают: за ними тоже можно следить, если попросить.
+    """
+    from app import traffic
+    from app.routes.devices import _traffic_panel
+
+    device_id = _add_device(client, router, "traf-order")
+    traffic.remember_uplink(device_id, "wlan1")
+    device = dict(query_one("SELECT * FROM devices WHERE id = ?", (device_id,)))
+    client.post(f"/api/devices/{device_id}/inventory")
+
+    panel = _traffic_panel(device, 24, "ru")
+    names = [row["name"] for row in panel["interfaces"]]
+    assert names[0] == "wlan1", names
+
+    minor = {row["name"] for row in panel["interfaces"] if row["minor"]}
+    assert "lo" not in names or "lo" in minor
+
+    # Отмеченный служебный интерфейс перестаёт быть второстепенным
+    traffic.set_watch(device_id, "lo", True)
+    panel = _traffic_panel(device, 24, "ru")
+    row = [r for r in panel["interfaces"] if r["name"] == "lo"]
+    if row:
+        assert row[0]["minor"] is False
+
+
+def test_sort_has_a_third_click_that_resets_it():
+    """
+    Третий клик по заголовку возвращает порядок сервера.
+
+    Без него сортировка, выбранная однажды, живёт в браузере вечно:
+    журнал действий, отсортированный по «подробностям», выглядит кашей,
+    и вернуть хронологию нечем.
+    """
+    from app.config import BASE_DIR
+
+    code = (BASE_DIR / "static" / "sort.js").read_text(encoding="utf-8")
+    assert "function resetSort" in code
+    assert "sortDir === 'desc'" in code
+    assert "localStorage.removeItem" in code
+
+
+def test_dispatch_says_why_it_stayed_silent(client, router):
+    """
+    Молчание объясняется причиной, а не ответом «отправлено: 0».
+
+    Именно на этом обожглись в бою: отправка была выключена в настройках,
+    кнопка отвечала нулём, проверочное сообщение при этом уходило, и
+    понять, что происходит, было нельзя.
+    """
+    from app import notify
+    from app.config import settings
+    from app.database import execute, execute_changes, utcnow
+
+    device_id = _add_device(client, router, "notify-why")
+    execute_changes("DELETE FROM alert_events")
+    execute_changes("DELETE FROM notify_channels")
+
+    old = (settings.notify_enabled, settings.notify_quiet_from, settings.notify_quiet_to)
+    try:
+        settings.notify_quiet_from = settings.notify_quiet_to = 0
+
+        # Выключено: это первая и главная причина
+        settings.notify_enabled = False
+        assert notify.dispatch(force=True)["reason"] == "off"
+        assert notify.why_silent() == "off"
+
+        # Включили, но чата нет
+        settings.notify_enabled = True
+        assert notify.dispatch(force=True)["reason"] == "no_channels"
+        assert notify.why_silent() == "no_channels"
+
+        # Чат есть, событий нет
+        notify.save_channel({"address": "-100", "secret": "1:2"})
+        assert notify.dispatch(force=True)["reason"] == "nothing"
+        assert notify.why_silent() == "nothing"
+
+        # Событие есть: причина молчания исчезает
+        execute("INSERT INTO alert_events (rule_name, device_id, device_name, metric,"
+                " kind, value, ts, sent) VALUES (?,?,?,?,?,?,?,0)",
+                ("почему", device_id, "notify-why", "cpu", "fired", 99, utcnow()))
+        assert notify.why_silent() == ""
+    finally:
+        (settings.notify_enabled, settings.notify_quiet_from,
+         settings.notify_quiet_to) = old
+
+
+def test_send_now_answers_with_a_human_reason(client, router):
+    """Кнопка «отправить сейчас» возвращает текст причины, а не пустоту."""
+    from app.config import settings
+
+    old = settings.notify_enabled
+    try:
+        settings.notify_enabled = False
+        answer = client.post("/api/notify/send").json()
+        assert answer["sent"] == 0
+        assert answer["reason"] == "off"
+        assert "выключена" in answer["message"], answer
+    finally:
+        settings.notify_enabled = old
+
+
+def test_webhook_is_gone(client):
+    """
+    Вебхука больше нет: канал только один, Телеграм.
+
+    Проверяем не только код, но и страницу: половина удалённой функции,
+    оставшаяся в интерфейсе, хуже, чем её отсутствие.
+    """
+    from app import notify
+
+    assert "webhook" not in notify.__doc__.lower()
+    assert "X-Tikpilot-Token" not in (notify.send.__doc__ or "")
+
+    page = client.get("/alerts").text
+    assert "Вебхук" not in page
+    assert "X-Tikpilot-Token" not in page
+
+    # Вид канала больше не выбирается: что бы ни прислали, это Телеграм
+    channel_id = notify.save_channel({"kind": "webhook", "address": "-42",
+                                      "secret": "1:2"})
+    saved = [c for c in notify.channels() if c["id"] == channel_id][0]
+    assert saved["kind"] == "telegram"

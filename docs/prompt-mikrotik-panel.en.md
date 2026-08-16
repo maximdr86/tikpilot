@@ -66,9 +66,10 @@ it over together with the main prompt.
 - **Site visits are expensive.** Any action that can leave a site
   unreachable must be either reversible or guarded. A firewall mistake on a
   distant site is a business trip.
-- **No messenger notifications.** On bad links sites flap, and a stream of
-  notifications makes the panel useless. History is read with your eyes,
-  when there is a reason.
+- **Notifications as a digest, never as a stream.** On bad links sites flap,
+  and a stream of messages makes the panel useless within a week. One message
+  every N minutes about everything that piled up, with quiet hours and a pause
+  per site, and switched off until someone asks for it.
 - **Some sites are shown to contractors.** A public link is needed with
   names and state only, without addresses, versions or error texts.
 

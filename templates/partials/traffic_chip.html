@@ -1,0 +1,18 @@
+{# Одна галочка интерфейса в разделе «Трафик». Вынесено отдельно, потому
+   что показывается дважды: сразу и под «служебными». #}
+<span class="chip {% if i.watched or i.uplink %}on{% endif %}">
+    <span class="mono">{{ i.name }}</span>
+    {% if i.uplink %}
+        <span class="muted small">аплинк</span>
+    {% elif can("devices.edit") %}
+        <label class="small">
+            <input type="checkbox" {% if i.watched %}checked{% endif %}
+                   onchange="watchTraffic({{ device.id }}, this)"
+                   data-interface="{{ i.name }}">
+            следить
+        </label>
+    {% endif %}
+    {% if i.has_data %}
+        <span class="muted small">{{ i.rx }} / {{ i.tx }}</span>
+    {% endif %}
+</span>

@@ -176,6 +176,7 @@ def _device_charts(device_id: int, hours: int, lang: str = "ru") -> dict[str, st
     """
     from .. import charts, i18n, monitor
 
+    empty = i18n.translate_text("данных пока нет", lang)
     latency = monitor.latency_history(device_id, hours)
     metrics = monitor.metrics_history(device_id, hours)
 
@@ -201,13 +202,108 @@ def _device_charts(device_id: int, hours: int, lang: str = "ru") -> dict[str, st
     )]
 
     return {
-        "rtt": charts.line_chart(rtt_series, unit=" мс") if rtt_series else charts.line_chart([]),
+        "rtt": charts.line_chart(rtt_series, unit=" мс", empty_text=empty)
+                if rtt_series else charts.line_chart([], empty_text=empty),
         "rtt_legend": charts.legend(rtt_series) if rtt_series else "",
-        "loss": charts.line_chart(loss_series, unit=" %", y_min=0) if loss_series else "",
-        "cpu": charts.line_chart(cpu_series, unit=" %", y_min=0, y_max=100),
-        "memory": charts.line_chart(memory_series, unit=" МиБ", y_min=0),
+        "loss": charts.line_chart(loss_series, unit=" %", y_min=0, empty_text=empty)
+                 if loss_series else "",
+        "cpu": charts.line_chart(cpu_series, unit=" %", y_min=0, y_max=100, empty_text=empty),
+        "memory": charts.line_chart(memory_series, unit=" МиБ", y_min=0, empty_text=empty),
         "has_latency": bool(latency),
         "has_metrics": bool(metrics),
+    }
+
+
+def _traffic_panel(device: dict, hours: int, lang: str) -> dict:
+    """
+    Данные для раздела «Трафик»: графики и список интерфейсов с галочками.
+
+    В списке не только то, за чем следим, но и всё, что панель видела
+    в паспорте: иначе включить наблюдение можно было бы только через базу.
+    Интерфейсы, по которым уже есть замеры, показываются даже когда их
+    удалили с роутера: график за прошлую неделю от этого не портится.
+    """
+    from .. import charts, i18n, traffic
+
+    empty = i18n.translate_text("данных пока нет", lang)
+    device_id = int(device["id"])
+    uplink = str(device.get("uplink_interface") or "").strip()
+    watched = traffic.watched(device_id)
+    latest = traffic.latest(device_id)
+
+    ports = {str(row["name"]): dict(row) for row in query(
+        "SELECT name, kind, physical FROM device_ports WHERE device_id = ?",
+        (device_id,),
+    )}
+    known = list(ports)
+    for name in traffic.interfaces(device_id):
+        if name not in known:
+            known.append(name)
+    # Аплинк и отмеченное показываем всегда, даже если паспорт ещё
+    # не собран: иначе на свежей точке список пуст, а счётчики уже идут
+    for name in ([uplink] if uplink else []) + sorted(watched):
+        if name and name not in known:
+            known.append(name)
+
+    rows = []
+    for name in known:
+        port = ports.get(name, {})
+        rows.append({
+            "name": name,
+            "uplink": name == uplink,
+            "watched": name in watched,
+            "rx": traffic.human_rate(latest.get(name, {}).get("rx")),
+            "tx": traffic.human_rate(latest.get(name, {}).get("tx")),
+            "has_data": name in latest,
+            "physical": bool(port.get("physical")),
+            # Служебное и временное: петля, туннели клиентов, поднятые
+            # роутером сессии. Их десятки, а следят за ними примерно
+            # никогда, поэтому по умолчанию они спрятаны
+            "minor": traffic.is_minor(name, str(port.get("kind") or ""))
+                     and name != uplink and name not in watched
+                     and name not in latest,
+        })
+
+    # Аплинк первым, за ним отмеченные, потом физические порты, потом
+    # остальное: в списке из четырнадцати галочек важное должно быть
+    # в начале, а не десятым по алфавиту
+    rows.sort(key=lambda r: (not r["uplink"], not r["watched"],
+                             not r["has_data"], not r["physical"], r["name"]))
+
+    # Единица выбирается по самому большому значению на графике. На парке,
+    # где аплинки отдают десятки килобит, шкала в мегабитах давала три
+    # одинаковых «0.0» вместо подписей
+    series_data = {name: traffic.history(device_id, name, hours) for name in sorted(latest)}
+    peak = max((max((r["rx_bps"] or 0, r["tx_bps"] or 0)) for rows_ in series_data.values()
+                for r in rows_), default=0)
+    divisor, unit = (1_000_000, " Мбит/с") if peak >= 1_000_000 else (1_000, " Кбит/с")
+
+    rx_series, tx_series = [], []
+    for index, (name, history) in enumerate(series_data.items()):
+        if not history:
+            continue
+        color = charts.COLORS[index % len(charts.COLORS)]
+        rx_series.append(charts.Series(
+            name, [(r["ts"], (r["rx_bps"] or 0) / divisor) for r in history], color))
+        tx_series.append(charts.Series(
+            name, [(r["ts"], (r["tx_bps"] or 0) / divisor) for r in history], color))
+
+    # Счётчики сняты, а замеров нет: между обходами точка успела упасть,
+    # и пара «прошлое и текущее» не сложилась. Молчаливое «замеров нет»
+    # в этом случае врёт: сбор идёт, просто считать не из чего
+    counted = query_one(
+        "SELECT COUNT(*) AS c FROM traffic_counters WHERE device_id = ?", (device_id,))
+
+    return {
+        "interfaces": rows,
+        "has_data": bool(rx_series),
+        "counters": int(counted["c"]) if counted else 0,
+        "rx": charts.line_chart(rx_series, unit=i18n.translate_text(unit.strip(), lang),
+                                y_min=0, empty_text=empty) if rx_series else "",
+        "tx": charts.line_chart(tx_series, unit=i18n.translate_text(unit.strip(), lang),
+                                y_min=0, empty_text=empty) if tx_series else "",
+        "legend": charts.legend(rx_series) if rx_series else "",
+        "uplink": uplink,
     }
 
 
@@ -258,9 +354,42 @@ async def device_detail(request: Request, device_id: int, hours: int = 24, user=
             (device_id,))["c"],
         charts=_device_charts(device_id, hours if hours in (1, 6, 24, 168) else 24,
                               resolve_lang(request, user)),
+        traffic=_traffic_panel(dict(device), hours if hours in (1, 6, 24, 168) else 24,
+                               resolve_lang(request, user)),
         hours=hours if hours in (1, 6, 24, 168) else 24,
         actions=permissions.allowed_actions(user),
     )
+
+
+@router.post("/api/devices/{device_id}/traffic-watch")
+async def toggle_traffic_watch(request: Request, device_id: int, user=Depends(current_user)):
+    """
+    Включить или выключить счётчики по интерфейсу.
+
+    Право то же, что и на правку карточки: это настройка наблюдения,
+    а не действие над роутером. На самом устройстве ничего не меняется,
+    панель лишь начинает или перестаёт читать его счётчики.
+    """
+    from .. import traffic
+
+    if not permissions.can_touch(user, [device_id]) or not permissions.has(user, "devices.edit"):
+        raise Forbidden()
+
+    device = query_one("SELECT * FROM devices WHERE id = ?", (device_id,))
+    if device is None:
+        return JSONResponse({"error": "Устройство не найдено"}, status_code=404)
+
+    data = await request.json()
+    name = str(data.get("interface") or "").strip()
+    on = bool(data.get("on"))
+    if not name:
+        return JSONResponse({"error": "Не указан интерфейс"}, status_code=400)
+
+    traffic.set_watch(device_id, name, on)
+    log_audit(user["username"],
+              "Включены счётчики интерфейса" if on else "Выключены счётчики интерфейса",
+              str(device["name"]), name, client_ip(request))
+    return {"ok": True, "on": on}
 
 
 @router.post("/api/devices/{device_id}/inventory/forget")

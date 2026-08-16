@@ -31,7 +31,15 @@
                 if (th.classList.contains('no-sort')) { return; }
                 th.classList.add('sortable-col');
                 th.addEventListener('click', () => {
+                    // Три состояния, а не два: по возрастанию, по убыванию
+                    // и обратно как пришло с сервера. Без третьего клика
+                    // журнал, отсортированный однажды по «подробностям»,
+                    // остаётся таким навсегда, и вернуть хронологию нечем
                     const same = table.dataset.sortCol === String(index);
+                    if (same && table.dataset.sortDir === 'desc') {
+                        resetSort(table);
+                        return;
+                    }
                     const dir = same && table.dataset.sortDir === 'asc' ? 'desc' : 'asc';
                     sortTable(table, index, dir);
                 });
@@ -50,6 +58,12 @@
 
         const rows = Array.from(tbody.rows).filter((r) => !r.querySelector('.empty'));
         if (rows.length < 2) { return; }
+
+        // Запоминаем исходный порядок один раз, чтобы третий клик мог
+        // его вернуть
+        rows.forEach((row, i) => {
+            if (row.dataset.order === undefined) { row.dataset.order = String(i); }
+        });
 
         const value = (row) => {
             const cell = row.cells[index];
@@ -80,6 +94,28 @@
         if (!quiet) { rememberSort(table, index, dir); }
     }
 
+    /**
+     * Вернуть таблицу к порядку, в котором её отдал сервер.
+     *
+     * Исходный номер строки запоминается при первой сортировке: своей
+     * копии таблицы у нас нет, а перезагружать страницу ради сброса
+     * невежливо, человек мог что-то ввести в фильтры.
+     */
+    function resetSort(table) {
+        const tbody = table.tBodies[0];
+        if (!tbody) { return; }
+        Array.from(tbody.rows)
+            .sort((a, b) => (a.dataset.order || 0) - (b.dataset.order || 0))
+            .forEach((row) => tbody.appendChild(row));
+
+        delete table.dataset.sortCol;
+        delete table.dataset.sortDir;
+        all('thead th', table).forEach((th) => {
+            th.classList.remove('sorted-asc', 'sorted-desc');
+        });
+        try { localStorage.removeItem(sortKey(table)); } catch (e) { /* приватный режим */ }
+    }
+
     /** Ключ для запоминания сортировки: страница + номер таблицы на ней. */
     function sortKey(table) {
         return 'tikpilot-sort:' + window.location.pathname
@@ -103,6 +139,7 @@
 
     window.initSortableTables = initSortableTables;
     window.sortTable = sortTable;
+    window.resetSortedTable = resetSort;
 
     document.addEventListener('DOMContentLoaded', () => initSortableTables());
 }());

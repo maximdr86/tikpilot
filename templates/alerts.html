@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+{% block title %}Пороги · Tikpilot{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Пороги</h1>
+        <div class="sub">
+            Правило срабатывает, когда значение держится за порогом дольше
+            указанного времени. Мгновенный всплеск событием не считается.
+        </div>
+    </div>
+    {% if can("alerts.manage") %}
+    <div class="btn-row">
+        <button class="btn primary" onclick="openRule()">Новое правило</button>
+        <button class="btn" onclick="checkNow()">Проверить сейчас</button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ------------------------------------------------------------ что горит -->
+<div class="panel">
+    <h2>Сейчас за порогом
+        <span class="h2-extra muted">{{ firing | length }}</span>
+    </h2>
+    {% if firing %}
+    <div class="table-wrap">
+        <table>
+            <thead><tr>
+                <th>Точка</th><th>Правило</th><th class="nowrap">Значение</th>
+                <th class="nowrap">С какого времени</th>
+            </tr></thead>
+            <tbody>
+            {% for row in firing %}
+                <tr>
+                    <td><a href="/devices/{{ row.device_id }}">{{ row.device_name }}</a></td>
+                    <td>{{ row.rule_name }}</td>
+                    <td class="mono">{{ row.value_text }}</td>
+                    <td class="nowrap">{{ row.fired_at | dt }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="panel-body"><div class="hint">Всё в норме.</div></div>
+    {% endif %}
+</div>
+
+{% if pending %}
+{# Показываем и то, что ещё выдерживается: иначе панель выглядит так,
+   будто она проспала, хотя она как раз считает минуты. #}
+<div class="panel">
+    <h2>Держится, но выдержка не вышла</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr>
+                <th>Точка</th><th>Правило</th><th class="nowrap">Значение</th>
+                <th class="nowrap">Ждём с</th><th class="nowrap">Выдержка</th>
+            </tr></thead>
+            <tbody>
+            {% for row in pending %}
+                <tr>
+                    <td><a href="/devices/{{ row.device_id }}">{{ row.device_name }}</a></td>
+                    <td>{{ row.rule_name }}</td>
+                    <td class="mono">{{ row.value_text }}</td>
+                    <td class="nowrap">{{ row.since | dt }}</td>
+                    <td class="nowrap mono">{{ row.hold_minutes }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- -------------------------------------------------------------- правила -->
+<div class="panel">
+    <h2>Правила <span class="h2-extra muted">{{ rules | length }}</span></h2>
+    {% if rules %}
+    <div class="table-wrap">
+        <table>
+            <thead><tr>
+                <th>Название</th><th>Условие</th><th>Область</th>
+                <th class="nowrap">Выдержка</th><th class="nowrap">Состояние</th>
+                <th></th>
+            </tr></thead>
+            <tbody>
+            {% for rule in rules %}
+                <tr>
+                    <td>{{ rule.name }}</td>
+                    <td class="mono">
+                        {{ rule.metric_label | t }}
+                        {% if rule.comparison == 'below' %}&lt;{% else %}&gt;{% endif %}
+                        {{ '%g' % rule.value }} {{ rule.unit | t }}
+                    </td>
+                    <td>{{ rule.scope_label | t }}</td>
+                    <td class="nowrap mono">{{ rule.hold_minutes }} мин</td>
+                    <td class="nowrap">
+                        {% if rule.enabled %}
+                            <span class="badge online"><span class="led"></span>включено</span>
+                        {% else %}
+                            <span class="badge unknown"><span class="led"></span>выключено</span>
+                        {% endif %}
+                    </td>
+                    <td class="nowrap">
+                        {% if can("alerts.manage") %}
+                            <button class="btn sm" onclick="toggleRule({{ rule.id }})">
+                                {% if rule.enabled %}Выключить{% else %}Включить{% endif %}
+                            </button>
+                            <button class="btn sm danger" onclick="deleteRule({{ rule.id }}, '{{ rule.name }}')">Удалить</button>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="panel-body">
+        <div class="hint">
+            Правил пока нет. Полезные для начала: точка не отвечает дольше
+            пятнадцати минут, свободное место меньше двух мегабайт, потери
+            выше десяти процентов полчаса подряд.
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ----------------------------------------------------------- уведомления -->
+{# Ограничители включены по умолчанию не из осторожности, а из опыта:
+   на дребезжащих каналах поток сообщений перестают читать за неделю. #}
+<div class="panel">
+    <h2>Куда отправлять
+        <span class="h2-extra muted">Телеграм</span>
+    </h2>
+
+    {% if silent %}
+    {# Молчание без объяснения хуже ошибки: непонятно, чинить или ждать #}
+    <div class="panel-body">
+        <div class="alert {% if silent == 'off' %}warn{% endif %}">
+            {{ silent_text }}.
+            {% if silent == 'off' %}
+                Включите «Отправлять уведомления» в
+                <a href="/settings#prefs">настройках панели</a>: пока выключено,
+                панель наружу не ходит и события просто копятся здесь.
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if channels %}
+    <div class="table-wrap">
+        <table>
+            <thead><tr>
+                <th>Чат</th><th class="nowrap">Токен</th>
+                <th class="nowrap">Состояние</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for c in channels %}
+                <tr>
+                    <td class="mono">{{ c.address }}</td>
+                    <td class="nowrap">{% if c.has_secret %}задан{% else %}нет{% endif %}</td>
+                    <td class="nowrap">
+                        {% if c.enabled %}
+                            <span class="badge online"><span class="led"></span>включён</span>
+                        {% else %}
+                            <span class="badge unknown"><span class="led"></span>выключен</span>
+                        {% endif %}
+                    </td>
+                    <td class="nowrap">
+                        {% if can("alerts.manage") %}
+                            <button class="btn sm" onclick="testChannel({{ c.id }})">Проверить</button>
+                            <button class="btn sm danger" onclick="deleteChannel({{ c.id }})">Удалить</button>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {% if can("alerts.manage") %}
+    <div class="panel-body">
+        <div class="grid cols-2">
+            <div class="field">
+                <label for="c-address">Идентификатор чата</label>
+                <input type="text" id="c-address" placeholder="-1001234567890">
+            </div>
+            <div class="field">
+                <label for="c-secret">Токен бота</label>
+                <input type="password" id="c-secret" autocomplete="new-password">
+            </div>
+            <div class="field" style="align-self:end">
+                <button class="btn primary" onclick="saveChannel()">Добавить</button>
+            </div>
+        </div>
+        <div class="hint">
+            Токен получают у BotFather, идентификатор чата покажет любой бот
+            вроде userinfobot. Бота нужно добавить в чат, иначе он не сможет
+            туда писать. Токен хранится зашифрованным и обратно не показывается.
+        </div>
+        <div class="btn-row" style="margin-top:10px">
+            <button class="btn" onclick="sendNow()">Отправить накопившееся сейчас</button>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if notify_log %}
+    <div class="panel-body">
+        <div class="small muted" style="margin-bottom:5px">Последние попытки</div>
+        <ul class="plain small">
+            {% for row in notify_log %}
+                <li>
+                    {{ row.ts | dt }} · {{ row.kind }} ·
+                    {% if row.ok %}<span style="color:var(--ok)">ушло</span>
+                    {% else %}<span style="color:var(--bad)">{{ row.error }}</span>{% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ---------------------------------------------------------------- лента -->
+<div class="panel">
+    <h2>Что срабатывало</h2>
+    {% if events %}
+    <div class="table-wrap">
+        <table>
+            <thead><tr>
+                <th class="nowrap">Время</th><th>Точка</th><th>Правило</th>
+                <th class="nowrap">Что случилось</th><th class="nowrap">Значение</th>
+            </tr></thead>
+            <tbody>
+            {% for e in events %}
+                <tr>
+                    <td class="nowrap">{{ e.ts | dt }}</td>
+                    <td>{% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ e.device_name }}</a>{% else %}{{ e.device_name }}{% endif %}</td>
+                    <td>{{ e.rule_name }}</td>
+                    <td class="nowrap">
+                        {% if e.kind == 'fired' %}
+                            <span class="badge offline">вышло за порог</span>
+                        {% else %}
+                            <span class="badge online">вернулось в норму</span>
+                        {% endif %}
+                    </td>
+                    <td class="mono">{{ e.value_text }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="panel-body"><div class="hint">Событий пока не было.</div></div>
+    {% endif %}
+</div>
+
+{% if can("alerts.manage") %}
+{# Разметка как у остальных диалогов панели: фон .modal-backdrop, внутри
+   .modal с шапкой, телом и подвалом. Свой вариант выглядел бы блоком,
+   лежащим внизу страницы, а кнопка «Новое правило» ничего бы не делала. #}
+<div class="modal-backdrop" id="rule-modal">
+    <div class="modal">
+        <header>
+            <h3>Новое правило</h3>
+            <button type="button" class="close-x" onclick="closeModal('rule-modal')">&times;</button>
+        </header>
+
+        <div class="body">
+        <div class="field">
+            <label for="r-metric">Что мерим</label>
+            <select id="r-metric" onchange="metricChanged()">
+                {% for m in metrics %}
+                    <option value="{{ m.key }}" data-unit="{{ m.unit | t }}"
+                            data-natural="{{ m.natural }}">{{ m.label | t }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="r-comparison">Сравнение</label>
+            <select id="r-comparison">
+                <option value="above">больше порога</option>
+                <option value="below">меньше порога</option>
+            </select>
+        </div>
+        <div class="field">
+            <label for="r-value">Порог <span class="mono muted" id="r-unit"></span></label>
+            <input type="text" id="r-value" inputmode="decimal">
+        </div>
+        <div class="field">
+            <label for="r-hold">Держится, минут</label>
+            <input type="number" id="r-hold" value="15" min="0" max="1440">
+            <div class="hint" id="r-hold-hint">
+                0 значит «сразу». На плохих каналах короткая выдержка даёт
+                поток срабатываний ни о чём.
+            </div>
+            {# У метрики времени недоступности порог сам по себе уже время,
+               и выдержка складывается с ним: «больше 30 мин» плюс выдержка
+               15 даёт срабатывание на 45-й минуте. Читается это иначе,
+               поэтому для неё выдержка обнуляется и подсказка меняется. #}
+            <div class="hint" id="r-hold-time" style="display:none">
+                Здесь порог сам по себе время, поэтому выдержку обычно
+                оставляют нулевой: иначе она складывается с порогом и
+                правило «больше 30 мин» с выдержкой 15 сработает через 45.
+            </div>
+        </div>
+        <div class="field">
+            <label for="r-scope">Область</label>
+            <select id="r-scope" onchange="scopeChanged()">
+                <option value="all">весь парк</option>
+                <option value="group">группа</option>
+                <option value="device">одна точка</option>
+            </select>
+        </div>
+        <div class="field" id="r-group-field" style="display:none">
+            <label for="r-group">Группа</label>
+            <select id="r-group">
+                {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="field" id="r-device-field" style="display:none">
+            <label for="r-device">Точка</label>
+            <select id="r-device">
+                {% for d in devices %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
+            </select>
+        </div>
+        </div>
+
+        <footer>
+            <button type="button" class="btn" onclick="closeModal('rule-modal')">Отмена</button>
+            <button type="button" class="btn primary" onclick="saveRule()">Сохранить</button>
+        </footer>
+    </div>
+</div>
+{% endif %}
+
+<script>
+    function openRule() {
+        openModal('rule-modal');
+        metricChanged();
+    }
+    function metricChanged() {
+        const select = document.getElementById('r-metric');
+        const option = select.options[select.selectedIndex];
+        document.getElementById('r-unit').textContent = option.dataset.unit || '';
+        // Подставляем сравнение по смыслу метрики: свободную память
+        // сторожат снизу, всё остальное сверху
+        document.getElementById('r-comparison').value = option.dataset.natural || 'above';
+
+        // Время недоступности мерится в минутах, и выдержка к нему
+        // прибавляется: по умолчанию обнуляем, чтобы «больше 30 мин»
+        // означало ровно тридцать
+        const isTime = select.value === 'offline';
+        const hold = document.getElementById('r-hold');
+        if (isTime && hold.value === '15') { hold.value = '0'; }
+        if (!isTime && hold.value === '0') { hold.value = '15'; }
+        document.getElementById('r-hold-hint').style.display = isTime ? 'none' : '';
+        document.getElementById('r-hold-time').style.display = isTime ? '' : 'none';
+    }
+    function scopeChanged() {
+        const kind = document.getElementById('r-scope').value;
+        document.getElementById('r-group-field').style.display = kind === 'group' ? '' : 'none';
+        document.getElementById('r-device-field').style.display = kind === 'device' ? '' : 'none';
+    }
+    async function saveRule() {
+        const kind = document.getElementById('r-scope').value;
+        const body = {
+            metric: document.getElementById('r-metric').value,
+            comparison: document.getElementById('r-comparison').value,
+            value: document.getElementById('r-value').value,
+            hold_minutes: document.getElementById('r-hold').value,
+            scope_kind: kind,
+            scope_id: kind === 'group' ? document.getElementById('r-group').value
+                    : kind === 'device' ? document.getElementById('r-device').value : 0,
+        };
+        try {
+            await api('/api/alerts/rules', { method: 'POST', body: JSON.stringify(body) });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+    async function toggleRule(id) {
+        try {
+            await api(`/api/alerts/rules/${id}/toggle`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+    async function deleteRule(id, name) {
+        if (!confirm(T('Удалить правило?') + ' ' + name)) { return; }
+        try {
+            await api(`/api/alerts/rules/${id}/delete`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+    async function saveChannel() {
+        const body = {
+            address: document.getElementById('c-address').value,
+            secret: document.getElementById('c-secret').value,
+        };
+        try {
+            await api('/api/notify/channels', { method: 'POST', body: JSON.stringify(body) });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+    async function testChannel(id) {
+        try {
+            await api(`/api/notify/channels/${id}/test`, { method: 'POST' });
+            toast(T('Сообщение отправлено'));
+        } catch (err) { toast(err.message, 'error'); }
+    }
+    async function deleteChannel(id) {
+        if (!confirm(T('Удалить канал?'))) { return; }
+        try {
+            await api(`/api/notify/channels/${id}/delete`, { method: 'POST' });
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+    async function sendNow() {
+        try {
+            const r = await api('/api/notify/send', { method: 'POST' });
+            // Причина важнее числа: «отправлено: 0» ничего не объясняет
+            toast(r.sent ? T('Отправлено событий') + ': ' + r.sent : r.message,
+                  r.sent ? 'ok' : 'error');
+            if (r.sent) { window.location.reload(); }
+        } catch (err) { toast(err.message, 'error'); }
+    }
+    async function checkNow() {
+        try {
+            const r = await api('/api/alerts/check', { method: 'POST' });
+            toast(T('Проверено') + ': ' + r.fired + ' / ' + r.resolved);
+            window.location.reload();
+        } catch (err) { toast(err.message, 'error'); }
+    }
+</script>
+{% endblock %}

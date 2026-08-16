@@ -69,6 +69,9 @@ def start() -> None:
     guard = threading.Thread(target=_rollback_loop, name="rollback-guard", daemon=True)
     guard.start()
     _threads.append(guard)
+    watcher = threading.Thread(target=_alerts_loop, name="alerts", daemon=True)
+    watcher.start()
+    _threads.append(watcher)
     log.info("Фоновый воркер запущен (потоков: %s)", settings.max_workers)
 
 
@@ -206,6 +209,41 @@ def _housekeeping_loop() -> None:
         except Exception:  # noqa: BLE001
             log.exception("Ошибка обновления базы вендоров")
         _stop.wait(timeout=3600)
+
+
+def _alerts_loop() -> None:
+    """
+    Раз в минуту пересчитываем пороги.
+
+    Отдельным потоком, а не внутри обхода: обход бывает занят полсотни
+    точек подряд, а выдержка правила меряется минутами, и опаздывать
+    на пять минут из-за чужой очереди она не должна. Само вычисление
+    ходит только в базу, сети тут нет вовсе.
+    """
+    # Импорт под другим именем: в этом модуле уже есть своя notify(),
+    # которая будит диспетчер, и путать их не стоит
+    from . import alerts
+    from . import notify as notifier
+
+    while not _stop.is_set():
+        try:
+            alerts.evaluate()
+        except Exception:  # noqa: BLE001
+            log.exception("Ошибка проверки порогов")
+        try:
+            # Отправка живёт в том же потоке: считать пороги и рассылать
+            # накопившееся в разных потоках незачем, а порядок «сначала
+            # посчитали, потом отправили» тут единственно правильный
+            notifier.dispatch()
+        except Exception:  # noqa: BLE001
+            log.exception("Ошибка отправки уведомлений")
+        try:
+            # Сигнал живости не зависит от уведомлений: тот рассказывает
+            # о парке, а этот о самой панели
+            notifier.heartbeat()
+        except Exception:  # noqa: BLE001
+            log.exception("Ошибка сигнала живости")
+        _stop.wait(timeout=60)
 
 
 def _rollback_loop() -> None:

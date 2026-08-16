@@ -311,6 +311,30 @@ def _collect_metrics(device: dict[str, Any], info: dict[str, str]) -> None:
     )
 
 
+def _collect_traffic(device: dict[str, Any]) -> None:
+    """
+    Снять счётчики интерфейсов в той же сессии, что и всё остальное.
+
+    Аплинк определяется один раз и запоминается в карточке: маршруты
+    спрашиваем только пока не знаем, через что точка ходит наружу.
+    """
+    from . import traffic
+
+    try:
+        with pool.borrow(device) as mt:
+            if not str(device.get("uplink_interface") or "").strip():
+                routes = mt.cmd("/ip/route/print", **{
+                    ".proplist": "dst-address,gateway,immediate-gw,gateway-status,disabled",
+                })
+                name = traffic.uplink_from_routes(routes)
+                if name:
+                    traffic.remember_uplink(device["id"], name)
+                    device["uplink_interface"] = name
+            traffic.collect(device, mt)
+    except DeviceError as exc:
+        log.debug("Трафик не прочитан для %s: %s", device.get("host"), exc)
+
+
 def _latency_targets(device: dict[str, Any]) -> list[tuple[str, str]]:
     """
     Список целей пинга для устройства: пары (адрес, подпись).
@@ -456,6 +480,8 @@ def _full_poll(device: dict[str, Any]) -> tuple[bool, str]:
             _collect_clients(device)
         if settings.inventory_enabled:
             _collect_inventory(device)
+        if settings.traffic_enabled:
+            _collect_traffic(device)
         _collect_operator(device)
         if settings.latency_enabled:
             try:

@@ -452,6 +452,106 @@ CREATE TABLE IF NOT EXISTS device_metrics (
 );
 CREATE INDEX IF NOT EXISTS idx_device_metrics ON device_metrics(device_id, ts);
 
+-- Чаты, куда уходят уведомления. Токен бота лежит зашифрованным тем же
+-- ключом, что и пароли роутеров, и обратно в интерфейс не отдаётся.
+CREATE TABLE IF NOT EXISTS notify_channels (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- Всегда telegram. Колонка осталась от версии, где был ещё вебхук:
+    -- удалять её ради чистоты значит переписывать таблицу на боевой базе
+    kind       TEXT NOT NULL DEFAULT 'telegram',
+    address    TEXT NOT NULL,               -- идентификатор чата
+    secret_enc TEXT NOT NULL DEFAULT '',    -- токен бота, зашифрован
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Попытки отправки: без них молчащий канал не отладить
+CREATE TABLE IF NOT EXISTS notify_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id INTEGER,
+    kind       TEXT NOT NULL DEFAULT '',
+    ok         INTEGER NOT NULL DEFAULT 0,
+    error      TEXT NOT NULL DEFAULT '',
+    ts         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notify_log_ts ON notify_log(ts DESC);
+
+-- Пороги: правило, его состояние по каждой точке и лента срабатываний
+CREATE TABLE IF NOT EXISTS alert_rules (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    metric       TEXT NOT NULL,             -- ключ из alerts.METRICS
+    comparison   TEXT NOT NULL DEFAULT 'above',  -- above | below
+    value        REAL NOT NULL,
+    hold_minutes INTEGER NOT NULL DEFAULT 0,     -- сколько держаться до срабатывания
+    scope_kind   TEXT NOT NULL DEFAULT 'all',    -- all | group | device
+    scope_id     INTEGER NOT NULL DEFAULT 0,
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    created_by   TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS alert_state (
+    rule_id    INTEGER NOT NULL,
+    device_id  INTEGER NOT NULL,
+    since      TEXT NOT NULL,        -- когда условие стало верным
+    firing     INTEGER NOT NULL DEFAULT 0,
+    fired_at   TEXT,
+    last_value REAL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (rule_id, device_id)
+);
+
+CREATE TABLE IF NOT EXISTS alert_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id     INTEGER,
+    rule_name   TEXT NOT NULL DEFAULT '',
+    device_id   INTEGER,
+    device_name TEXT NOT NULL DEFAULT '',
+    metric      TEXT NOT NULL DEFAULT '',
+    kind        TEXT NOT NULL,        -- fired | resolved
+    value       REAL,
+    ts          TEXT NOT NULL,
+    -- Ушло ли событие в уведомление. Доставка отдельная и может быть
+    -- выключена: тогда флаг просто остаётся нулём и никому не мешает
+    sent        INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_alert_events_ts ON alert_events(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_events_sent ON alert_events(sent);
+
+-- Скорость на интерфейсах: посчитана из разницы счётчиков между обходами
+CREATE TABLE IF NOT EXISTS traffic_samples (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id   INTEGER NOT NULL,
+    interface   TEXT NOT NULL,
+    ts          TEXT NOT NULL,
+    rx_bps      INTEGER NOT NULL DEFAULT 0,
+    tx_bps      INTEGER NOT NULL DEFAULT 0,
+    span        INTEGER NOT NULL DEFAULT 0   -- секунд между снятиями счётчиков
+);
+CREATE INDEX IF NOT EXISTS idx_traffic ON traffic_samples(device_id, interface, ts);
+
+-- Последние снятые счётчики: точка отсчёта для следующего обхода.
+-- Хранится по одной строке на интерфейс, история тут не нужна.
+CREATE TABLE IF NOT EXISTS traffic_counters (
+    device_id   INTEGER NOT NULL,
+    interface   TEXT NOT NULL,
+    ts          TEXT NOT NULL,
+    rx_bytes    INTEGER NOT NULL,
+    tx_bytes    INTEGER NOT NULL,
+    PRIMARY KEY (device_id, interface)
+);
+
+-- За какими интерфейсами следить помимо аплинка. Отдельно от паспорта:
+-- паспорт при каждом обходе переписывается, а выбор человека остаётся.
+CREATE TABLE IF NOT EXISTS traffic_watch (
+    device_id   INTEGER NOT NULL,
+    interface   TEXT NOT NULL,
+    PRIMARY KEY (device_id, interface)
+);
+
 -- Результаты проверок задержки: устройство пингует цель и сообщает итог
 CREATE TABLE IF NOT EXISTS latency_samples (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -630,6 +730,10 @@ MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         ("operator_detail", "TEXT NOT NULL DEFAULT ''"),
         ("operator_raw", "TEXT NOT NULL DEFAULT ''"),
         ("operator_at", "TEXT"),
+        # Интерфейс, через который у точки уходит маршрут по умолчанию.
+        # Определяется сам и запоминается: спрашивать маршруты каждый
+        # обход ради имени, которое меняется раз в год, незачем.
+        ("uplink_interface", "TEXT NOT NULL DEFAULT ''"),
     ],
     "syslog": [
         # Исходная строка целиком: страховка на случай, если разбор ошибся
@@ -815,7 +919,7 @@ def cleanup_old_jobs() -> None:
 
     metric_days = settings.metrics_retention_days
     if metric_days > 0:
-        for table in ("device_metrics", "latency_samples"):
+        for table in ("device_metrics", "latency_samples", "traffic_samples"):
             execute(f"DELETE FROM {table} WHERE ts < datetime('now', ?)", (f"-{metric_days} days",))
 
     client_days = settings.client_retention_days
@@ -829,6 +933,12 @@ def cleanup_old_jobs() -> None:
     if event_days > 0:
         execute(
             "DELETE FROM status_events WHERE ts < datetime('now', ?)",
+            (f"-{event_days} days",),
+        )
+        # Лента порогов живёт по тем же правилам, что и события статуса:
+        # это соседние строки об одном и том же парке
+        execute(
+            "DELETE FROM alert_events WHERE ts < datetime('now', ?)",
             (f"-{event_days} days",),
         )
 
