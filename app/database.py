@@ -772,6 +772,10 @@ MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         ("public_token", "TEXT NOT NULL DEFAULT ''"),
         # Когда ссылку открывали последний раз (UTC)
         ("public_last_seen", "TEXT"),
+        # Показывать ли оператора связи на публичном листе. По умолчанию
+        # нет: лист задуман как «имя точки и состояние», и всё, что
+        # добавляется сверх этого, добавляется осознанно и по одной группе
+        ("public_show_operator", "INTEGER NOT NULL DEFAULT 0"),
     ],
     "users": [
         # Выбранный язык интерфейса. Пусто — берётся DEFAULT_LANG из .env.

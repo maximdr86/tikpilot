@@ -429,6 +429,16 @@ revoked one answer identically, so guessing tells the visitor nothing.
 
 ---
 
+
+**The operator on the public page.** Off by default: the page is meant to be
+"a site name and its state". If it helps the contractor to know whose link a
+site runs on, and it usually does since they will call the ISP themselves,
+tick "show the operator" next to the link. The tick belongs to one group.
+
+Only the operator name is shown. The details, the public address, the radio
+technology and the signal level, stay inside the panel: that is information
+about the network rather than an answer to "whose link is this".
+
 ## Site-to-site WireGuard
 
 The WireGuard section sets up router-to-router links in a hub-and-spoke layout:

@@ -713,6 +713,27 @@ async function revokePublicLink(groupId, name) {
     }
 }
 
+/**
+ * Показывать ли оператора связи на публичном листе этой группы.
+ *
+ * Галочка возвращается на место, если сервер отказал: показывать
+ * включённой настройку, которой нет, хуже, чем не показать ничего.
+ */
+async function togglePublicOperator(groupId, box) {
+    const wanted = box.checked;
+    box.disabled = true;
+    try {
+        const r = await api(`/api/groups/${groupId}/public-operator`, { method: 'POST' });
+        toast(r.enabled ? T('Оператор виден на публичной ссылке')
+                        : T('Оператор скрыт с публичной ссылки'), 'ok');
+    } catch (err) {
+        box.checked = !wanted;
+        toast(err.message, 'error');
+    } finally {
+        box.disabled = false;
+    }
+}
+
 /** Скопировать готовый адрес в буфер обмена. */
 async function copyPublicLink(token) {
     const url = window.location.origin + '/status/' + token;

@@ -52,6 +52,14 @@
                         <button class="btn sm" data-new-link="{{ g.id }}">Обновить</button>
                         <button class="btn sm danger" data-revoke-link="{{ g.id }}"
                                 data-name="{{ g.name }}">Отозвать</button>
+                        {# Оператор на публичной странице по галочке и по одной
+                           группе: подрядчику магазинов знать, чей канал, полезно,
+                           а на удалённых точках это лишние сведения о сети #}
+                        <label class="small" style="display:block;margin-top:4px">
+                            <input type="checkbox" {% if g.public_show_operator %}checked{% endif %}
+                                   onchange="togglePublicOperator({{ g.id }}, this)">
+                            показывать оператора
+                        </label>
                         {% set v = visits.get(g.id) %}
                         <div class="small muted" style="margin-top:3px">
                             {% if g.public_last_seen %}

@@ -138,6 +138,35 @@ async def toggle_public_link(request: Request, group_id: int,
     return {"ok": True, "url": ""}
 
 
+@router.post("/api/groups/{group_id}/public-operator")
+async def toggle_public_operator(request: Request, group_id: int,
+                                 user=Depends(require("groups.manage"))):
+    """
+    Показывать ли оператора связи на публичном листе этой группы.
+
+    Отдельным переключателем на каждую ссылку, а не общей настройкой:
+    подрядчику магазинов знать оператора полезно (он сам позвонит
+    провайдеру), а подрядчику, которому дали ссылку на удалённые точки,
+    знать нечего. По умолчанию выключено.
+
+    Показывается только имя оператора. Подробности (адрес, технология
+    и уровень сигнала) остаются в панели: это уже сведения о сети.
+    """
+    group = query_one("SELECT id, name, public_show_operator FROM groups WHERE id = ?",
+                      (group_id,))
+    if group is None:
+        return JSONResponse({"error": "Группа не найдена"}, status_code=404)
+
+    on = not bool(group["public_show_operator"])
+    execute("UPDATE groups SET public_show_operator = ? WHERE id = ?",
+            (1 if on else 0, group_id))
+    log_audit(user["username"],
+              "Оператор показан на публичной ссылке" if on
+              else "Оператор скрыт с публичной ссылки",
+              group["name"], ip=client_ip(request))
+    return {"ok": True, "enabled": on}
+
+
 @router.get("/api/groups/{group_id}/devices")
 async def group_devices(group_id: int, user=Depends(current_user)):
     """Идентификаторы устройств группы — нужны для массовых действий."""
