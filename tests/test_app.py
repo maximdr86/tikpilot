@@ -9579,3 +9579,59 @@ def test_housekeeping_sweeps_orphan_rows(client, router):
 
     assert cleanup_orphan_rows() >= 2
     assert cleanup_orphan_rows() == 0
+
+
+def test_public_page_hides_the_operator_by_default(client, router):
+    """
+    Публичный лист показывает имя точки и состояние, и ничего сверх.
+
+    Оператор появляется только по галочке группы, и только имя: адрес
+    и уровень сигнала из operator_detail это уже сведения о сети,
+    которым на странице для подрядчика не место.
+    """
+    from app.database import execute, execute_changes, query_one as one
+
+    device_id = _add_device(client, router, "public-op")
+    client.post("/api/groups", data={"name": "публичная", "color": "green"})
+    group_id = one("SELECT id FROM groups WHERE name = 'публичная'")["id"]
+    execute_changes(
+        "UPDATE devices SET group_id = ?, operator = 'МегаФон',"
+        " operator_detail = '178.178.200.108 · LTE -71 дБм' WHERE id = ?",
+        (group_id, device_id))
+
+    r = client.post(f"/api/groups/{group_id}/public-link", json={"enabled": True})
+    token = one("SELECT public_token FROM groups WHERE id = ?", (group_id,))["public_token"]
+
+    with _anon() as anon:
+        page = anon.get(f"/status/{token}").text
+        assert "public-op" in page
+        assert "МегаФон" not in page
+        assert "178.178.200.108" not in page
+
+    # Включаем показ оператора
+    r = client.post(f"/api/groups/{group_id}/public-operator")
+    assert r.json()["enabled"] is True
+
+    with _anon() as anon:
+        page = anon.get(f"/status/{token}").text
+        assert "МегаФон" in page
+        # Подробности не показываются никогда
+        assert "178.178.200.108" not in page
+        assert "дБм" not in page
+
+    # И выключается обратно
+    assert client.post(f"/api/groups/{group_id}/public-operator").json()["enabled"] is False
+    with _anon() as anon:
+        assert "МегаФон" not in anon.get(f"/status/{token}").text
+
+
+def test_public_operator_toggle_needs_permission(client, router):
+    """Галочку переключает тот, кто управляет группами."""
+    from app.database import query_one as one
+
+    client.post("/api/groups", data={"name": "права-оператор", "color": "blue"})
+    group_id = one("SELECT id FROM groups WHERE name = 'права-оператор'")["id"]
+
+    _make_user(client, "groupless", ["clients.view"])
+    with _as("groupless") as limited:
+        assert limited.post(f"/api/groups/{group_id}/public-operator").status_code == 403

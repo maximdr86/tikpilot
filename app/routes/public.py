@@ -161,7 +161,8 @@ async def public_status(request: Request, token: str, lang: str = ""):
     group = None
     if len(token) >= 16:
         group = query_one(
-            "SELECT id, name, color FROM groups WHERE public_token = ? AND public_token <> ''",
+            "SELECT id, name, color, public_show_operator FROM groups"
+            " WHERE public_token = ? AND public_token <> ''",
             (token,),
         )
 
@@ -175,12 +176,17 @@ async def public_status(request: Request, token: str, lang: str = ""):
             headers=_headers(),
         )
 
+    # Оператор попадает на страницу только по отдельной галочке группы,
+    # и только имя: operator_detail это адрес и уровень сигнала, то есть
+    # уже сведения о сети, а не «чей канал»
+    show_operator = bool(group["public_show_operator"])
     devices = query(
-        "SELECT id, name, status, status_changed_at, last_seen FROM devices "
+        "SELECT id, name, status, status_changed_at, last_seen,"
+        " CASE WHEN ? THEN operator ELSE '' END AS operator FROM devices "
         "WHERE group_id = ? AND enabled = 1 "
         "ORDER BY CASE status WHEN 'offline' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END, "
         "name COLLATE NOCASE",
-        (group["id"],),
+        (1 if show_operator else 0, group["id"]),
     )
 
     counts = {"online": 0, "offline": 0, "unknown": 0}
@@ -204,6 +210,7 @@ async def public_status(request: Request, token: str, lang: str = ""):
             "downtime_hours": DOWNTIME_HOURS,
             "downtime_total": sum(r["down_seconds"] for r in rows),
             "downtime_points": sum(1 for r in rows if r["down_seconds"]),
+            "show_operator": show_operator,
         },
         headers=_headers(),
     )

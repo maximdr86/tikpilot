@@ -59,6 +59,7 @@
                 <thead>
                 <tr>
                     <th>Точка</th>
+                    {% if show_operator %}<th class="nowrap">Оператор</th>{% endif %}
                     <th class="nowrap">Состояние</th>
                     <th class="nowrap">С какого времени</th>
                     <th class="nowrap">Простой за сутки</th>
@@ -68,6 +69,19 @@
                 {% for d in devices %}
                     <tr>
                         <td><strong>{{ d.name }}</strong></td>
+                        {% if show_operator %}
+                        {# Только имя оператора: подробности это адрес
+                           и уровень сигнала, им на публичной странице
+                           не место #}
+                        <td class="nowrap small">
+                            {% if d.operator %}
+                                {% set color = d.operator | operator_color %}
+                                {% if color %}
+                                    <span class="badge tag-{{ color }}">{{ d.operator | t }}</span>
+                                {% else %}{{ d.operator | t }}{% endif %}
+                            {% else %}<span class="muted">—</span>{% endif %}
+                        </td>
+                        {% endif %}
                         {# Сортировка по состоянию должна начинаться с упавших:
                            ради них страницу и открывают #}
                         <td class="nowrap" data-sort="{% if d.status == 'offline' %}0{% elif d.status == 'online' %}2{% else %}1{% endif %}">
