@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tikpilot - MikroTik management panel, self-hosted and open source</title>
-<meta name="description" content="Manage a fleet of MikroTik routers from one place: monitoring, bulk RouterOS upgrades and scripts, scheduled backups with diffs, syslog, WireGuard. Self-hosted, no cloud, MIT.">
+<meta name="description" content="Manage a fleet of MikroTik routers from one place: monitoring with thresholds and Telegram alerts, bulk RouterOS upgrades and scripts, scheduled backups with diffs, syslog, WireGuard. Self-hosted, no cloud, MIT.">
 <link rel="canonical" href="https://tikpilot.ru/">
 <link rel="alternate" hreflang="en" href="https://tikpilot.ru/">
 <link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/">
 <link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Tikpilot - MikroTik management panel, self-hosted and open source">
-<meta property="og:description" content="Manage a fleet of MikroTik routers from one place: monitoring, bulk RouterOS upgrades and scripts, scheduled backups with diffs, syslog, WireGuard. Self-hosted, no cloud, MIT.">
+<meta property="og:description" content="Manage a fleet of MikroTik routers from one place: monitoring with thresholds and Telegram alerts, bulk RouterOS upgrades and scripts, scheduled backups with diffs, syslog, WireGuard. Self-hosted, no cloud, MIT.">
 <meta property="og:image" content="https://tikpilot.ru/screenshots/dashboard.png">
 <meta property="og:url" content="https://tikpilot.ru/">
 <meta name="twitter:card" content="summary_large_image">
@@ -340,6 +340,19 @@ footer a { color: var(--muted); }
             table. The spoke configuration is generated for you.</p>
         </div>
         <div class="card">
+            <h3>Thresholds and Telegram</h3>
+            <p>A rule is a metric, a comparison, a value and a hold time: a spike during a
+            nightly backup is not an event, half an hour at the same level is. Alerts go to
+            Telegram as a digest, with quiet hours and a pause per site, and stay off until
+            you turn them on.</p>
+        </div>
+        <div class="card">
+            <h3>Interface throughput</h3>
+            <p>Speed on the uplink and any interface you tick, computed from the byte
+            counters between polls: an average over the interval instead of a one second
+            spike, and one command for every interface.</p>
+        </div>
+        <div class="card">
             <h3>Logs and clients</h3>
             <p>A syslog receiver for the whole fleet, with filters and rules for hiding
             the noise. And a list of what is connected at each site: wired or wireless,
@@ -411,8 +424,9 @@ docker compose up -d</pre>
         takes over the repetitive work across the fleet.</li>
         <li><b>Not a cloud service.</b> No sign-up and nothing running on someone else's
         side: it all runs on your machine and the database is a single SQLite file.</li>
-        <li><b>No messenger notifications.</b> On purpose: on a fleet with bad links that
-        stream of messages stops being read within a week.</li>
+        <li><b>Not a stream of notifications.</b> Alerts exist, but as a digest with
+        quiet hours and a pause per site: on a fleet with bad links a stream of messages
+        stops being read within a week.</li>
     </ul>
 
     <h2 id="faq">Frequently asked</h2>

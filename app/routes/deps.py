@@ -309,10 +309,17 @@ def base_context(
         f"SELECT COUNT(*) AS c FROM devices d WHERE enabled=1 AND status='offline'{where}",
         tuple(scope_params),
     )
+    # Счётчик у пункта «Пороги» считается только тем, кому раздел виден:
+    # лишний запрос на каждой странице ради скрытого пункта не нужен
+    firing = None
+    if permissions.has(user, "alerts.view"):
+        firing = query_one("SELECT COUNT(*) AS c FROM alert_state WHERE firing = 1")
+
     ctx: dict[str, Any] = {
         "user": user,
         "running_jobs": running["c"] if running else 0,
         "offline_count": offline["c"] if offline else 0,
+        "firing_count": firing["c"] if firing else 0,
         "app_version": __version__,
         "monitor_on": settings.monitor_enabled,
         "ui_refresh_interval": settings.ui_refresh_interval,

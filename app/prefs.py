@@ -49,7 +49,7 @@ class Field(NamedTuple):
 
     key: str                    # имя в `.env` и в таблице
     attr: str                   # имя поля в объекте настроек
-    kind: str                   # int | bool | list
+    kind: str                   # int | bool | list | text
     group: str                  # раздел формы
     label: str
     hint: str
@@ -91,6 +91,54 @@ FIELDS: tuple[Field, ...] = (
           "Цели пинга",
           "Через запятую. Шлюз точки добавляется сам, если это не выключено"
           " отдельно в `.env`."),
+
+    Field("TRAFFIC_ENABLED", "traffic_enabled", "bool", "Трафик",
+          "Считать скорость на интерфейсах",
+          "Счётчики снимаются вместе с полным опросом, отдельных подключений"
+          " к роутеру не появляется."),
+    Field("TRAFFIC_ALL_INTERFACES", "traffic_all_interfaces", "bool", "Трафик",
+          "Следить за всеми интерфейсами",
+          "Обычно достаточно аплинка и того, что отмечено в карточке точки."
+          " На коробке с тремя десятками VLAN это тридцать рядов вместо одного."),
+
+    Field("NOTIFY_ENABLED", "notify_enabled", "bool", "Уведомления",
+          "Отправлять уведомления",
+          "Пока выключено, панель наружу не ходит и события просто копятся"
+          " на странице порогов."),
+    Field("NOTIFY_DIGEST_MINUTES", "notify_digest_minutes", "int", "Уведомления",
+          "Сводка не чаще чем раз в, минут",
+          "Всё накопившееся уходит одним сообщением. На парке с дребезжащими"
+          " каналами это единственный режим, который читают через месяц.",
+          1, 1440),
+    Field("NOTIFY_QUIET_FROM", "notify_quiet_from", "int", "Уведомления",
+          "Тихие часы с",
+          "По времени сервера. Ночью события копятся и уходят утром.",
+          0, 23),
+    Field("NOTIFY_QUIET_TO", "notify_quiet_to", "int", "Уведомления",
+          "Тихие часы до",
+          "Совпадающие границы означают, что тихих часов нет.",
+          0, 23),
+    Field("NOTIFY_COOLDOWN_MINUTES", "notify_cooldown_minutes", "int", "Уведомления",
+          "Не повторять одно и то же чаще чем раз в, минут",
+          "Считается по паре «правило и точка». Дребезжащая точка не должна"
+          " заслонять собой всё остальное.",
+          0, 1440),
+    Field("NOTIFY_RESOLVED", "notify_resolved", "bool", "Уведомления",
+          "Сообщать о возвращении в норму",
+          "Иначе непонятно, закончилось ли то, о чём написали час назад."),
+
+    Field("HEARTBEAT_URL", "heartbeat_url", "text", "Уведомления",
+          "Адрес сигнала живости",
+          "Панель раз в несколько минут дёргает этот адрес. Смысл в обратном:"
+          " если сигнал перестал приходить, значит умерла сама панель или"
+          " сервер, и сказать вам об этом она уже не сможет. Подходит любой"
+          " сторож, который умеет ждать запрос: healthchecks.io, свой скрипт,"
+          " задача в кроне на другой машине. Пусто значит выключено."),
+    Field("HEARTBEAT_MINUTES", "heartbeat_minutes", "int", "Уведомления",
+          "Как часто подавать сигнал, минут",
+          "Сторож должен ждать заметно дольше этого срока, иначе он будет"
+          " срабатывать на каждую перезагрузку панели.",
+          1, 1440),
 
     Field("OPERATOR_LOOKUP", "operator_lookup", "bool", "Операторы",
           "Спрашивать оператора в реестре адресов",
@@ -149,6 +197,8 @@ def parse(field: Field, raw: Any) -> Any:
         return text.lower() in ("1", "true", "yes", "on", "да")
     if field.kind == "list":
         return [part.strip() for part in text.split(",") if part.strip()]
+    if field.kind == "text":
+        return text
     try:
         number = int(text)
     except ValueError:
@@ -164,7 +214,7 @@ def to_text(field: Field, value: Any) -> str:
         return "1" if value else "0"
     if field.kind == "list":
         return ", ".join(str(part) for part in value or ())
-    return str(value)
+    return str(value or "") if field.kind == "text" else str(value)
 
 
 def stored() -> dict[str, str]:

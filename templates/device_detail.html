@@ -143,7 +143,7 @@
                 </td>
             </tr>
             <tr><td class="muted">Загрузка CPU</td><td class="mono">{{ device.cpu_load or '—' }}{% if device.cpu_load %} %{% endif %}</td></tr>
-            <tr><td class="muted">Свободно памяти</td><td class="mono">{{ device.free_memory or '—' }}</td></tr>
+            <tr><td class="muted">Свободно памяти</td><td class="mono">{{ device.free_memory | t or '—' }}</td></tr>
             <tr><td class="muted">Последняя проверка</td><td>{{ device.last_check | dt }}</td></tr>
             <tr><td class="muted">Последний раз отвечало</td><td>{{ device.last_seen | dt }}</td></tr>
             <tr>
@@ -415,6 +415,73 @@
     </div>
 </div>
 
+<!-- --------------------------------------------------------------- трафик -->
+{# Скорость считается из разницы счётчиков между обходами, поэтому первая
+   точка на графике появляется только после второго полного опроса. #}
+<div class="panel" data-fold="traffic">
+    <h2>Трафик на интерфейсах
+        <span class="h2-extra muted">средняя скорость между обходами</span>
+    </h2>
+
+    {% if traffic.interfaces %}
+    <div class="panel-body">
+        <div class="small muted" style="margin-bottom:5px">За чем следим</div>
+        <div class="chip-row">
+            {% for i in traffic.interfaces if not i.minor %}
+                {% include "partials/traffic_chip.html" %}
+            {% endfor %}
+        </div>
+        {% set hidden = traffic.interfaces | selectattr("minor") | list %}
+        {% if hidden %}
+        <details style="margin-top:8px">
+            <summary class="small muted" style="cursor:pointer">
+                Служебные интерфейсы ({{ hidden | length }})
+            </summary>
+            <div class="chip-row" style="margin-top:8px">
+                {% for i in hidden %}
+                    {% include "partials/traffic_chip.html" %}
+                {% endfor %}
+            </div>
+        </details>
+        {% endif %}
+        <div class="hint" style="margin-top:10px">
+            Аплинк выбирается сам, по маршруту по умолчанию, и снимается всегда.
+            Значения рядом с именем это последняя скорость: приём и передача.
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="panel-body">
+        {% if traffic.has_data %}
+            <div class="small muted" style="margin-bottom:2px">Приём</div>
+            {{ traffic.rx | safe }}
+            {{ traffic.legend | safe }}
+            <div class="small muted" style="margin:12px 0 2px">Передача</div>
+            {{ traffic.tx | safe }}
+        {% else %}
+            {% if traffic.counters %}
+            {# Счётчики сняты, а замеров нет: между обходами точка падала,
+               и пара «прошлое и текущее» не сложилась. Молчаливое «замеров
+               нет» тут врало бы: сбор идёт, считать не из чего. #}
+            <div class="hint">
+                Счётчики снимаются, но замеров пока нет. Так бывает на точке,
+                которая часто падает: после разрыва счётчики на роутере
+                начинаются заново, и пара «прошлый обход и текущий» не
+                складывается. Появятся, как только точка продержится на связи
+                два полных обхода подряд.
+            </div>
+            {% else %}
+            <div class="hint">
+                Замеров пока нет. Скорость считается из разницы счётчиков между
+                двумя полными обходами, поэтому первая точка появляется после
+                второго из них. Сбор выключается переменной
+                <span class="mono">TRAFFIC_ENABLED</span>.
+            </div>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+
 <!-- ---------------------------------------------------------------- лента -->
 <div class="panel">
     <h2>Хронология <span class="h2-extra muted">статусы, операции и бэкапы вместе</span></h2>
@@ -507,6 +574,24 @@
             await api(`/api/devices/${deviceId}/rollback/${what}`, { method: 'POST' });
             window.location.reload();
         } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function watchTraffic(deviceId, box) {
+        // Галочка возвращается на место, если сервер отказал: показывать
+        // включённое наблюдение, которого нет, хуже, чем ничего не показать
+        const wanted = box.checked;
+        box.disabled = true;
+        try {
+            await api(`/api/devices/${deviceId}/traffic-watch`, {
+                method: 'POST',
+                body: JSON.stringify({ interface: box.dataset.interface, on: wanted }),
+            });
+        } catch (err) {
+            box.checked = !wanted;
+            toast(err.message, 'error');
+        } finally {
+            box.disabled = false;
+        }
     }
 
     async function collectPassport(deviceId) {

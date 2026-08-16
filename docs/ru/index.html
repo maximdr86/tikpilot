@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tikpilot - панель управления MikroTik: мониторинг, бэкапы, обновление RouterOS</title>
-<meta name="description" content="Управление парком роутеров MikroTik из одного окна: мониторинг доступности, обновление RouterOS и скрипты на весь парк, бэкапы по расписанию с диффом, syslog, WireGuard. Свой сервер, без облака, MIT.">
+<meta name="description" content="Управление парком роутеров MikroTik из одного окна: мониторинг с порогами и уведомлениями в Телеграм, обновление RouterOS и скрипты на весь парк, бэкапы по расписанию с диффом, syslog, WireGuard. Свой сервер, без облака, MIT.">
 <link rel="canonical" href="https://tikpilot.ru/ru/">
 <link rel="alternate" hreflang="en" href="https://tikpilot.ru/">
 <link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/">
 <link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Tikpilot - панель управления MikroTik: мониторинг, бэкапы, обновление RouterOS">
-<meta property="og:description" content="Управление парком роутеров MikroTik из одного окна: мониторинг доступности, обновление RouterOS и скрипты на весь парк, бэкапы по расписанию с диффом, syslog, WireGuard. Свой сервер, без облака, MIT.">
+<meta property="og:description" content="Управление парком роутеров MikroTik из одного окна: мониторинг с порогами и уведомлениями в Телеграм, обновление RouterOS и скрипты на весь парк, бэкапы по расписанию с диффом, syslog, WireGuard. Свой сервер, без облака, MIT.">
 <meta property="og:image" content="https://tikpilot.ru/screenshots/dashboard.png">
 <meta property="og:url" content="https://tikpilot.ru/ru/">
 <meta name="twitter:card" content="summary_large_image">
@@ -198,7 +198,7 @@ footer a { color: var(--muted); }
   "operatingSystem": "Linux, Docker",
   "url": "https://tikpilot.ru/ru/",
   "inLanguage": "ru",
-  "description": "Своя веб-панель для парка роутеров MikroTik: мониторинг доступности, массовые операции с RouterOS, бэкапы по расписанию, syslog и связи WireGuard.",
+  "description": "Своя веб-панель для парка роутеров MikroTik: мониторинг с порогами и уведомлениями, массовые операции с RouterOS, бэкапы по расписанию, syslog и связи WireGuard.",
   "image": "https://tikpilot.ru/screenshots/dashboard.png",
   "license": "https://opensource.org/licenses/MIT",
   "isAccessibleForFree": true,
@@ -340,6 +340,19 @@ footer a { color: var(--muted); }
             таблице. Конфигурация споука генерируется сама.</p>
         </div>
         <div class="card">
+            <h3>Пороги и Телеграм</h3>
+            <p>Правило это метрика, сравнение, значение и время удержания: всплеск
+            при ночном бэкапе не событие, а полчаса на том же уровне уже событие.
+            Уведомления уходят в Телеграм сводкой, с тихими часами и паузой
+            по точке, и выключены, пока их не включат.</p>
+        </div>
+        <div class="card">
+            <h3>Трафик на интерфейсах</h3>
+            <p>Скорость на аплинке и на любом отмеченном интерфейсе, посчитанная
+            из разницы счётчиков между обходами: средняя за интервал вместо
+            мгновенного всплеска, и одна команда на все интерфейсы сразу.</p>
+        </div>
+        <div class="card">
             <h3>Логи и клиенты</h3>
             <p>Приёмник syslog со всего парка с фильтрами и правилами скрытия шума.
             И список того, что подключено на каждой площадке: по кабелю или по
@@ -411,8 +424,9 @@ docker compose up -d</pre>
         на себя однообразную работу по всему парку.</li>
         <li><b>Это не облако.</b> Никакой регистрации и никакого сервиса на стороне:
         всё крутится на вашей машине, база лежит одним файлом SQLite.</li>
-        <li><b>Уведомлений в мессенджеры нет.</b> Сознательно: на парке с плохими
-        каналами такой поток сообщений перестают читать через неделю.</li>
+        <li><b>Это не поток уведомлений.</b> Оповещения есть, но сводкой, с тихими
+        часами и паузой по точке: на парке с плохими каналами поток сообщений
+        перестают читать за неделю.</li>
     </ul>
 
     <h2 id="faq">Частые вопросы</h2>

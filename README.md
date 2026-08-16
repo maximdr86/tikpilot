@@ -575,6 +575,90 @@ network.
 
 ---
 
+## Interface throughput
+
+Latency and loss tell you about the state of the link, not who is using it up.
+The panel computes speed from the **difference between byte counters** read on
+two full polls: an average over the interval rather than the one second spike
+`/interface/monitor-traffic` reports, and one command for every interface
+instead of one per interface.
+
+The uplink is watched by default. It is detected from the default route: in
+RouterOS 7 from `immediate-gw`, which looks like `10.8.0.1%ether1`, in version 6
+from `gateway-status`. The name is remembered on the device page.
+
+Other interfaces are ticked on the device page, in the "Interface throughput"
+section. That choice lives apart from the passport: the passport is rewritten on
+every poll, the tick has to survive it.
+
+A counter that went backwards is skipped rather than turned into a spike of
+gigabits: a reboot, a recreated interface and a 32 bit counter wrapping in
+RouterOS 6 all look the same, the new value being lower than the old one.
+
+Switch it off with `TRAFFIC_ENABLED=0`; watch everything with
+`TRAFFIC_ALL_INTERFACES=1` (on a box with thirty VLANs that means thirty rows in
+the database instead of one).
+
+---
+
+## Thresholds and notifications
+
+The panel shows everything, but nobody can watch it around the clock. A rule is
+a metric, a comparison, a value and a **hold time**. The last one is what
+matters: a spike of CPU during a nightly backup is not an event, half an hour at
+the same level is.
+
+You can measure what is collected anyway: how long a site has been unreachable,
+CPU load, free memory, temperature, latency, loss, interface throughput and the
+age of the last backup. Each rule has its own scope: the whole fleet, a group or
+a single site.
+
+A value that cannot be read counts as neither an alert nor a recovery. On a
+board with no temperature sensor the rule "above 60" simply stays quiet.
+
+**Useful rules to start with:**
+
+| Rule | Why |
+|---|---|
+| site unreachable > 15 min | an outage rather than a flap |
+| age of the last backup > 26 h | the backup did not happen and nobody would know |
+| free memory < 16 MiB | it is about to start failing on memory |
+| loss > 10 % for half an hour | the link degraded but the site is still up |
+
+### Where it goes
+
+Telegram. The message goes out as a **digest**: everything that
+piled up in one message every `NOTIFY_DIGEST_MINUTES` minutes. Fifteen outages
+are fifteen lines, not fifteen messages.
+
+There are three limiters and all of them are on by default:
+
+* the **digest** instead of a stream of events;
+* **quiet hours** (`NOTIFY_QUIET_FROM`, `NOTIFY_QUIET_TO`): at night events pile
+  up and go out in the morning, and the range may cross midnight;
+* a **pause per rule and site** (`NOTIFY_COOLDOWN_MINUTES`), so one flapping site
+  does not drown out the rest.
+
+Telegram needs a bot token (from BotFather) and a chat id (any bot like
+userinfobot will show it). The bot has to be added to the chat, otherwise it
+cannot write there. The token is stored encrypted with the same key as the
+router passwords and is never shown back. There is a test button next to it: a
+mistyped chat id is otherwise discovered during the first real outage.
+
+All of this is off until you turn it on (`NOTIFY_ENABLED=1`): the panel promises
+to work in a network with no internet, and a request to api.telegram.org nobody
+asked for would break that promise.
+
+### Liveness signal
+
+The panel cannot report its own death: a dead program sends nothing. So it does
+the opposite - every few minutes it pings the address you set (`HEARTBEAT_URL`),
+and whoever stops receiving the ping raises the alarm. healthchecks.io, your own
+script or a cron job on another machine will all do. The watchdog should wait
+noticeably longer than the interval, otherwise it fires on every restart.
+
+---
+
 ## Upgrading RouterOS
 
 The riskiest operation, which is why it is split into two steps.

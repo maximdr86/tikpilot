@@ -130,17 +130,23 @@ class FakeRouter:
         # --- паспорт устройства: порты, сервисы, соседи, датчики ---
         # librouteros превращает true/false в настоящие bool, поэтому здесь
         # они такие же: разбор обязан это учитывать.
+        # Счётчики байт настоящие: их отдаёт /interface/print, и панель
+        # считает по ним скорость. Строками, как на живой коробке.
         self.interfaces: list[dict[str, Any]] = [
             {".id": "*1", "name": "ether1", "type": "ether", "running": True,
-             "disabled": False, "mac-address": "CC:2D:E0:F2:4C:F0", "comment": "uplink"},
+             "disabled": False, "mac-address": "CC:2D:E0:F2:4C:F0", "comment": "uplink",
+             "rx-byte": "1000000", "tx-byte": "500000"},
             {".id": "*2", "name": "ether2", "type": "ether", "running": True,
-             "disabled": False, "mac-address": "CC:2D:E0:F2:4C:F1"},
+             "disabled": False, "mac-address": "CC:2D:E0:F2:4C:F1",
+             "rx-byte": "2000", "tx-byte": "3000"},
             {".id": "*3", "name": "ether3", "type": "ether", "running": False,
-             "disabled": False, "mac-address": "CC:2D:E0:F2:4C:F2"},
+             "disabled": False, "mac-address": "CC:2D:E0:F2:4C:F2",
+             "rx-byte": "0", "tx-byte": "0"},
             {".id": "*4", "name": "bridge", "type": "bridge", "running": True,
-             "disabled": False},
+             "disabled": False, "rx-byte": "4000", "tx-byte": "4000"},
             {".id": "*5", "name": "vlan-100", "type": "vlan", "running": True,
-             "disabled": False, "vlan-id": "100", "interface": "bridge"},
+             "disabled": False, "vlan-id": "100", "interface": "bridge",
+             "rx-byte": "100", "tx-byte": "100"},
         ]
         # В print скорости нет: там только настройка «что разрешено
         # согласовать», а на части плат нет и её. Договорённая скорость
@@ -609,6 +615,9 @@ class FakeRouter:
             for row in rows:
                 if row.get("dst-address") == "0.0.0.0/0":
                     row["gateway"] = self.gateway
+                    # В седьмой версии рядом лежит готовая пара «сосед и
+                    # интерфейс»: именно по ней панель узнаёт аплинк
+                    row["immediate-gw"] = f"{self.gateway}%ether1"
             return rows
 
         if cmd == "/ip/address/print":

@@ -44,6 +44,7 @@ def line_chart(
     width: int = WIDTH,
     y_min: float | None = None,
     y_max: float | None = None,
+    empty_text: str = "данных пока нет",
 ) -> str:
     """
     Построить линейный график по нескольким рядам.
@@ -53,7 +54,7 @@ def line_chart(
     """
     values = [v for s in series for _, v in s.points if v is not None]
     if not values:
-        return _empty(width, height)
+        return _empty(width, height, empty_text)
 
     low = y_min if y_min is not None else min(values)
     high = y_max if y_max is not None else max(values)
@@ -258,11 +259,17 @@ def _time_label(value: Any) -> str:
     return moment.astimezone().strftime("%d.%m %H:%M")
 
 
-def _empty(width: int, height: int) -> str:
-    """Заглушка, когда данных ещё нет."""
+def _empty(width: int, height: int, text: str = "данных пока нет") -> str:
+    """
+    Заглушка, когда данных ещё нет.
+
+    Надпись приходит параметром, а не берётся из каталога здесь: рисование
+    графика ничего не знает о языке страницы, и до появления параметра
+    английская карточка показывала русскую надпись внутри SVG.
+    """
     return (
         f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}" '
         f'xmlns="http://www.w3.org/2000/svg" style="display:block">'
         f'<text x="{width / 2}" y="{height / 2}" text-anchor="middle" font-size="12" '
-        f'fill="var(--muted)">данных пока нет</text></svg>'
+        f'fill="var(--muted)">{text}</text></svg>'
     )
