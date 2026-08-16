@@ -313,7 +313,12 @@ def base_context(
     # лишний запрос на каждой странице ради скрытого пункта не нужен
     firing = None
     if permissions.has(user, "alerts.view"):
-        firing = query_one("SELECT COUNT(*) AS c FROM alert_state WHERE firing = 1")
+        # Через связь с устройствами, как и список на странице. Иначе
+        # счётчик считает строки состояния от удалённых точек, страница
+        # их не показывает, и в меню висит двойка при одной строке
+        firing = query_one(
+            "SELECT COUNT(*) AS c FROM alert_state s"
+            " JOIN devices d ON d.id = s.device_id WHERE s.firing = 1")
 
     ctx: dict[str, Any] = {
         "user": user,

@@ -12,7 +12,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from .. import sessions
 from ..auth import client_ip, current_user
 from ..crypto import encrypt
-from ..database import execute, log_audit, query, query_one, utcnow
+from ..database import (execute, forget_device_traces, log_audit, query,
+                        query_one, utcnow)
 from ..mikrotik import is_newer
 from .. import permissions
 from ..auth import Forbidden, require
@@ -648,6 +649,9 @@ async def delete_device(request: Request, device_id: int,
         raise Forbidden()
     row = query_one("SELECT name FROM devices WHERE id = ?", (device_id,))
     execute("DELETE FROM devices WHERE id = ?", (device_id,))
+    # Пороги и счётчики трафика живут без внешнего ключа, каскад их
+    # не заденет: убираем сами, иначе удалённая точка останется гореть
+    forget_device_traces([device_id])
     sessions.pool.drop(device_id)
     log_audit(user["username"], "Удалено устройство", row["name"] if row else str(device_id), ip=client_ip(request))
     return {"ok": True}
@@ -662,6 +666,7 @@ async def bulk_delete(request: Request, user=Depends(require("devices.edit"))):
         return JSONResponse({"error": "Не выбрано ни одного устройства"}, status_code=400)
     placeholders = ",".join("?" * len(ids))
     execute(f"DELETE FROM devices WHERE id IN ({placeholders})", ids)
+    forget_device_traces(ids)
     for device_id in ids:
         sessions.pool.drop(device_id)
     log_audit(user["username"], "Массовое удаление устройств", f"{len(ids)} шт.", ip=client_ip(request))
