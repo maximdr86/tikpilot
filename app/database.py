@@ -905,6 +905,47 @@ def log_audit(username: str, action: str, target: str = "", details: str = "", i
         _audit_log.info(line)
 
 
+def forget_device_traces(device_ids: Sequence[int]) -> None:
+    """
+    Убрать следы удалённых точек из таблиц без внешнего ключа.
+
+    Паспорт, клиенты и прочее уходят каскадом: у них есть
+    `REFERENCES devices(id) ON DELETE CASCADE`. У порогов и трафика его
+    нет, и добавить задним числом нельзя: SQLite не умеет
+    `ALTER TABLE ADD CONSTRAINT`, а переписывать боевую таблицу ради
+    этого дороже, чем убрать строки руками.
+
+    Пока их не убирали, удалённая точка продолжала гореть в счётчике
+    меню: список на странице соединяется с устройствами и её не
+    показывал, а счётчик считал строки состояния и видел.
+
+    Лента срабатываний не трогается: это история, и в ней имя точки
+    записано отдельным полем.
+    """
+    if not device_ids:
+        return
+    marks = ",".join("?" for _ in device_ids)
+    params = list(device_ids)
+    for table in ("alert_state", "traffic_watch", "traffic_counters",
+                  "traffic_samples"):
+        execute(f"DELETE FROM {table} WHERE device_id IN ({marks})", params)
+
+
+def cleanup_orphan_rows() -> int:
+    """
+    Подчистить строки, оставшиеся от точек, которых уже нет.
+
+    Страховка на случай, если удаление прошло мимо `forget_device_traces`:
+    например точку убрали прямо в базе или при переносе со старой версии.
+    """
+    removed = 0
+    for table in ("alert_state", "traffic_watch", "traffic_counters",
+                  "traffic_samples"):
+        removed += execute_changes(
+            f"DELETE FROM {table} WHERE device_id NOT IN (SELECT id FROM devices)")
+    return removed
+
+
 def cleanup_old_jobs() -> None:
     """Удалить историю задач старше JOB_RETENTION_DAYS (0 — не удалять)."""
     days = settings.job_retention_days
@@ -928,6 +969,10 @@ def cleanup_old_jobs() -> None:
             "DELETE FROM clients WHERE label = '' AND last_seen < datetime('now', ?)",
             (f"-{client_days} days",),
         )
+
+    orphans = cleanup_orphan_rows()
+    if orphans:
+        _audit_log.info("Убрано строк от удалённых устройств: %s", orphans)
 
     event_days = settings.monitor_event_retention_days
     if event_days > 0:

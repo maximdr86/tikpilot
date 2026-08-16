@@ -9528,3 +9528,54 @@ def test_webhook_is_gone(client):
                                       "secret": "1:2"})
     saved = [c for c in notify.channels() if c["id"] == channel_id][0]
     assert saved["kind"] == "telegram"
+
+
+def test_deleting_a_device_clears_its_thresholds_and_traffic(client, router):
+    """
+    Удалённая точка не остаётся гореть в счётчике меню.
+
+    Паспорт и клиенты уходят каскадом, у порогов и трафика внешнего ключа
+    нет, и добавить его задним числом SQLite не даёт. Пока строки не
+    убирали, страница показывала одну сработку, а счётчик в меню два:
+    список соединяется с устройствами, счётчик считал строки состояния.
+    """
+    from app import alerts, traffic
+    from app.database import execute_changes, query_one as one
+
+    device_id = _add_device(client, router, "alert-gone")
+    execute_changes("UPDATE devices SET temperature = '90' WHERE id = ?", (device_id,))
+    rule_id = alerts.save_rule({
+        "metric": "temperature", "comparison": "above", "value": 60,
+        "hold_minutes": 0, "scope_kind": "device", "scope_id": device_id,
+    }, "admin")
+    traffic.set_watch(device_id, "ether2", True)
+    alerts.evaluate()
+    assert len([r for r in alerts.active() if r["rule_id"] == rule_id]) == 1
+
+    client.post(f"/api/devices/{device_id}/delete")
+
+    left = one("SELECT COUNT(*) AS c FROM alert_state WHERE device_id = ?", (device_id,))
+    assert left["c"] == 0
+    assert traffic.watched(device_id) == set()
+
+    # Ни в «сейчас за порогом», ни в счётчике меню её больше нет.
+    # В ленте срабатываний имя остаётся: это история, там оно записано
+    # отдельным полем и после удаления точки не врёт
+    assert [r for r in alerts.active() if r["device_id"] == device_id] == []
+    counted = one("SELECT COUNT(*) AS c FROM alert_state s"
+                  " JOIN devices d ON d.id = s.device_id WHERE s.firing = 1")
+    assert counted["c"] == len(alerts.active())
+
+
+def test_housekeeping_sweeps_orphan_rows(client, router):
+    """Строки от точек, удалённых мимо панели, подчищает ночная уборка."""
+    from app.database import cleanup_orphan_rows, execute, utcnow
+
+    execute("INSERT INTO alert_state (rule_id, device_id, since, firing,"
+            " last_value, updated_at) VALUES (?,?,?,?,?,?)",
+            (999999, 999999, utcnow(), 1, 1.0, utcnow()))
+    execute("INSERT INTO traffic_counters (device_id, interface, ts, rx_bytes,"
+            " tx_bytes) VALUES (?,?,?,?,?)", (999999, "ether1", utcnow(), 1, 1))
+
+    assert cleanup_orphan_rows() >= 2
+    assert cleanup_orphan_rows() == 0
