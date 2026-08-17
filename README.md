@@ -659,14 +659,6 @@ All of this is off until you turn it on (`NOTIFY_ENABLED=1`): the panel promises
 to work in a network with no internet, and a request to api.telegram.org nobody
 asked for would break that promise.
 
-### Liveness signal
-
-The panel cannot report its own death: a dead program sends nothing. So it does
-the opposite - every few minutes it pings the address you set (`HEARTBEAT_URL`),
-and whoever stops receiving the ping raises the alarm. healthchecks.io, your own
-script or a cron job on another machine will all do. The watchdog should wait
-noticeably longer than the interval, otherwise it fires on every restart.
-
 ---
 
 ## Upgrading RouterOS
