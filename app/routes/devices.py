@@ -203,13 +203,19 @@ def _device_charts(device_id: int, hours: int, lang: str = "ru") -> dict[str, st
     )]
 
     return {
-        "rtt": charts.line_chart(rtt_series, unit=" мс", empty_text=empty)
+        "rtt": charts.line_chart(rtt_series, unit=" мс", empty_text=empty, peak=True)
                 if rtt_series else charts.line_chart([], empty_text=empty),
         "rtt_legend": charts.legend(rtt_series) if rtt_series else "",
         "loss": charts.line_chart(loss_series, unit=" %", y_min=0, empty_text=empty)
                  if loss_series else "",
-        "cpu": charts.line_chart(cpu_series, unit=" %", y_min=0, y_max=100, empty_text=empty),
-        "memory": charts.line_chart(memory_series, unit=" МиБ", y_min=0, empty_text=empty),
+        # Загрузка и память стоят по двое в ряд: рисуем в их настоящую
+        # ширину, иначе подписи ужимаются вдвое вместе с картинкой
+        "cpu": charts.line_chart(cpu_series, unit=" %", y_min=0, y_max=100,
+                                 width=charts.HALF_WIDTH, height=charts.HALF_HEIGHT,
+                                 empty_text=empty),
+        "memory": charts.line_chart(memory_series, unit=" МиБ", y_min=0,
+                                    width=charts.HALF_WIDTH, height=charts.HALF_HEIGHT,
+                                    empty_text=empty),
         "has_latency": bool(latency),
         "has_metrics": bool(metrics),
     }
@@ -274,7 +280,8 @@ def _traffic_panel(device: dict, hours: int, lang: str) -> dict:
     # Единица выбирается по самому большому значению на графике. На парке,
     # где аплинки отдают десятки килобит, шкала в мегабитах давала три
     # одинаковых «0.0» вместо подписей
-    series_data = {name: traffic.history(device_id, name, hours) for name in sorted(latest)}
+    series_data = {name: traffic.bucketed(traffic.history(device_id, name, hours), hours)
+                   for name in sorted(latest)}
     peak = max((max((r["rx_bps"] or 0, r["tx_bps"] or 0)) for rows_ in series_data.values()
                 for r in rows_), default=0)
     divisor, unit = (1_000_000, " Мбит/с") if peak >= 1_000_000 else (1_000, " Кбит/с")
@@ -299,10 +306,14 @@ def _traffic_panel(device: dict, hours: int, lang: str) -> dict:
         "interfaces": rows,
         "has_data": bool(rx_series),
         "counters": int(counted["c"]) if counted else 0,
-        "rx": charts.line_chart(rx_series, unit=i18n.translate_text(unit.strip(), lang),
-                                y_min=0, empty_text=empty) if rx_series else "",
-        "tx": charts.line_chart(tx_series, unit=i18n.translate_text(unit.strip(), lang),
-                                y_min=0, empty_text=empty) if tx_series else "",
+        # Заливка и отметка пика: на трафике первым делом ищут глазами,
+        # когда было больше всего, и подписанный максимум отвечает сразу
+        "rx": charts.line_chart(rx_series, unit=" " + i18n.translate_text(unit.strip(), lang),
+                                y_min=0, empty_text=empty, fill=True,
+                                peak=True) if rx_series else "",
+        "tx": charts.line_chart(tx_series, unit=" " + i18n.translate_text(unit.strip(), lang),
+                                y_min=0, empty_text=empty, fill=True,
+                                peak=True) if tx_series else "",
         "legend": charts.legend(rx_series) if rx_series else "",
         "uplink": uplink,
     }

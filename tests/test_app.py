@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import contextlib
+import datetime as _dt
 import os
 import re
 import sys
@@ -9635,3 +9636,93 @@ def test_public_operator_toggle_needs_permission(client, router):
     _make_user(client, "groupless", ["clients.view"])
     with _as("groupless") as limited:
         assert limited.post(f"/api/groups/{group_id}/public-operator").status_code == 403
+
+
+def test_chart_marks_time_and_the_peak(client, router):
+    """
+    На графике видно, когда было больше всего.
+
+    Двух подписей по краям для этого мало: на суточном графике всплеск
+    можно только угадать. Проверяем, что появились промежуточные отметки
+    времени, вертикальная сетка и подписанный максимум.
+    """
+    from app import charts
+
+    points = [(f"2026-08-16 {hour:02d}:00:00", float(hour)) for hour in range(24)]
+    svg = charts.line_chart([charts.Series("ether1", points, charts.COLORS[0])],
+                            unit=" Мбит/с", fill=True, peak=True)
+
+    # Подписей времени больше двух, и они не только по краям
+    assert svg.count('<text') >= 6, svg[:400]
+    # Пик подписан значением
+    assert "23" in svg
+    # Заливка под линией
+    assert 'fill-opacity="0.14"' in svg
+    # Пропорции не ломаются: подписи больше не растягивает по ширине
+    assert 'preserveAspectRatio="none"' not in svg
+
+    # При наведении браузер показывает время и значение: над каждой точкой
+    # стоит прозрачный столбец с <title>, скрипты для этого не нужны
+    assert svg.count('class="chart-hit"') == len(points)
+    assert "<title>" in svg
+    assert "16.08 12:00" in svg or "16.08 05:00" in svg
+
+
+def test_traffic_samples_are_averaged_into_even_buckets(client, router):
+    """
+    Пила на графике это разная длина интервалов, а не трафик.
+
+    Обходы идут не строго по часам, поэтому соседние замеры считаются
+    за разные промежутки. Корзины одинаковой длины убирают пилу, а
+    пустые остаются пустыми: линия должна рваться, а не соединять два
+    далёких значения прямой.
+    """
+    from app import traffic
+
+    now = _dt.datetime.now(_dt.timezone.utc)
+    rows = []
+    for minutes, rx in ((5, 1_000_000), (7, 3_000_000), (100, 500_000)):
+        moment = now - _dt.timedelta(minutes=minutes)
+        rows.append({"ts": moment.strftime("%Y-%m-%d %H:%M:%S"),
+                     "rx_bps": rx, "tx_bps": 0})
+
+    buckets = traffic.bucketed(rows, hours=6, target=36)
+    assert len(buckets) >= 30
+
+    filled = [b for b in buckets if b["rx_bps"] is not None]
+    # Два свежих замера попали в одну корзину и усреднились
+    assert any(abs(b["rx_bps"] - 2_000_000) < 1 for b in filled), filled
+    # Старый замер остался отдельно, а между ними дыра
+    assert any(abs(b["rx_bps"] - 500_000) < 1 for b in filled), filled
+    assert any(b["rx_bps"] is None for b in buckets)
+
+
+def test_axis_labels_do_not_collide_or_get_clipped():
+    """
+    Подписи оси помещаются целиком и не налезают друг на друга.
+
+    Дважды подряд ловили это глазами на живой панели: сначала «1.4 Мбит/с»
+    уезжало за левый край и оставалось «4Мбит/с», потом подпись единицы
+    легла на верхнее значение и вышло «Мбит/49.2». Проверка дешёвая,
+    а ошибка каждый раз выглядит как враньё в цифрах.
+    """
+    import re
+
+    from app import charts
+
+    points = [(f"2026-08-16 {h:02d}:00:00", 49.2 if h % 3 else 0.4) for h in range(24)]
+    svg = charts.line_chart([charts.Series("ether1", points, charts.COLORS[0])],
+                            unit=" Мбит/с", y_min=0, fill=True, peak=True)
+
+    labels = re.findall(r'<text x="([\d.]+)" y="([\d.]+)"[^>]*>([^<]+)</text>', svg)
+    unit = [(float(x), float(y)) for x, y, text in labels if text == "Мбит/с"]
+    assert unit, labels
+
+    # Ничего не уехало за левый край
+    assert all(float(x) >= 0 for x, _, _ in labels), labels
+
+    # Между подписью единицы и верхним значением оси есть просвет
+    unit_y = unit[0][1]
+    numbers = [float(y) for _, y, text in labels
+               if re.fullmatch(r"[\d.]+", text)]
+    assert min(numbers) - unit_y >= 8, (unit_y, sorted(numbers)[:3])

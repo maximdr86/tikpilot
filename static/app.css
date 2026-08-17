@@ -1031,3 +1031,9 @@ table.dt td { padding: 0 6px; vertical-align: top; border: 0; }
 /* Разделы формы «Параметры работы» */
 .pref-group { margin-bottom: 18px; }
 .pref-group .field { max-width: 520px; }
+
+/* Мишени подсказок на графиках: прозрачные столбцы во всю высоту поля.
+   Подсказку рисует сам браузер по <title>, здесь только подсветка,
+   чтобы было видно, какой именно отрезок времени под курсором. */
+.chart-hit { fill: transparent; cursor: crosshair; }
+.chart-hit:hover { fill: var(--text); fill-opacity: 0.07; }
