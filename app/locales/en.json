@@ -445,6 +445,22 @@
     [
       "^([\\d.,]+) Б$",
       "\\1 B"
+    ],
+    [
+      "^([\\d.,]+) Кбит/с$",
+      "\\1 kbit/s"
+    ],
+    [
+      "^([\\d.,]+) Мбит/с$",
+      "\\1 Mbit/s"
+    ],
+    [
+      "^([\\d.,]+) Гбит/с$",
+      "\\1 Gbit/s"
+    ],
+    [
+      "^(\\d+) бит/с$",
+      "\\1 bit/s"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
@@ -1814,5 +1830,17 @@
   "Нужен идентификатор чата": "A chat id is required",
   "Оператор виден на публичной ссылке": "The operator is visible on the public link",
   "Оператор скрыт с публичной ссылки": "The operator is hidden from the public link",
-  "показывать оператора": "show the operator"
+  "показывать оператора": "show the operator",
+  "Принято": "Received",
+  "Передано": "Sent",
+  "Объём за час": "Volume over the hour",
+  "Объём за 6 часов": "Volume over 6 hours",
+  "Объём за сутки": "Volume over the day",
+  "Объём за неделю": "Volume over the week",
+  "Замеры покрывают не весь период: пока точка была недоступна, считать было нечего. Объём в таблице занижен ровно на это время.": "The samples do not cover the whole period: while the site was unreachable there was nothing to count. The volume in the table is short by exactly that time.",
+  "с %(p0)s": "since %(p0)s",
+  "в %(p0)s": "at %(p0)s",
+  "с %(p0)s до %(p1)s, %(p2)s": "from %(p0)s to %(p1)s, %(p2)s",
+  "Началось": "Started",
+  "Длилось": "Lasted"
 }

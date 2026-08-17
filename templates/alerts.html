@@ -232,6 +232,7 @@
             <thead><tr>
                 <th class="nowrap">Время</th><th>Точка</th><th>Правило</th>
                 <th class="nowrap">Что случилось</th><th class="nowrap">Значение</th>
+                <th class="nowrap">Началось</th><th class="nowrap">Длилось</th>
             </tr></thead>
             <tbody>
             {% for e in events %}
@@ -247,6 +248,11 @@
                         {% endif %}
                     </td>
                     <td class="mono">{{ e.value_text }}</td>
+                    {# Время начала, а не срабатывания: их разделяет выдержка,
+                       и «упало в 12:17» человеку нужнее, чем «правило
+                       загорелось в 12:47». #}
+                    <td class="nowrap mono muted">{{ e.began_text }}</td>
+                    <td class="nowrap mono">{{ e.lasted_text }}</td>
                 </tr>
             {% endfor %}
             </tbody>

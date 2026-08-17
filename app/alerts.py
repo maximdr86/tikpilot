@@ -304,7 +304,7 @@ def evaluate() -> dict[str, int]:
 
             if not over:
                 if state and state["firing"]:
-                    _event(rule, device, "resolved", value, now)
+                    _event(rule, device, "resolved", value, now, state)
                     resolved += 1
                 if state:
                     execute_changes(
@@ -341,7 +341,7 @@ def evaluate() -> dict[str, int]:
                     " WHERE rule_id = ? AND device_id = ?",
                     (now, rule["id"], device["id"]),
                 )
-                _event(rule, device, "fired", value, now)
+                _event(rule, device, "fired", value, now, state)
                 fired += 1
 
     if fired or resolved:
@@ -350,14 +350,50 @@ def evaluate() -> dict[str, int]:
 
 
 def _event(rule: dict[str, Any], device: dict[str, Any], kind: str,
-           value: float | None, now: str) -> None:
+           value: float | None, now: str, state: Any = None) -> None:
     """Записать смену состояния. Отсюда потом берутся уведомления."""
     execute(
         "INSERT INTO alert_events (rule_id, rule_name, device_id, device_name,"
-        " metric, kind, value, ts, sent) VALUES (?,?,?,?,?,?,?,?,0)",
+        " metric, kind, value, ts, started_at, sent) VALUES (?,?,?,?,?,?,?,?,?,0)",
         (rule["id"], rule["name"], device["id"], device["name"],
-         rule["metric"], kind, value, now),
+         rule["metric"], kind, value, now, _began(rule, device, state, kind)),
     )
+
+
+def _began(rule: dict[str, Any], device: dict[str, Any], state: Any, kind: str) -> str:
+    """
+    Когда началось то, о чём событие.
+
+    Не то же самое, что время срабатывания. Правило «не отвечает
+    полчаса» загорается в 12:47, а точка упала в 12:17, и в сводке
+    человеку нужно второе: по нему он поймёт, попадает ли простой
+    в рабочее время и что в этот момент происходило.
+
+    Для недоступности точное время падения знает сама точка:
+    `status_changed_at` ставится в момент смены состояния, до всяких
+    порогов. Остальные метрики такой отметки не имеют, для них началом
+    считается момент, когда условие стало верным.
+
+    У выздоровления начало берётся от парного срабатывания: к этому
+    времени точка уже поднялась, и спрашивать её бесполезно.
+    """
+    if kind != "fired":
+        row = query_one(
+            "SELECT started_at FROM alert_events WHERE rule_id IS ? AND device_id IS ?"
+            " AND kind = 'fired' ORDER BY id DESC LIMIT 1",
+            (rule["id"], device["id"]),
+        )
+        if row and row["started_at"]:
+            return str(row["started_at"])
+
+    if str(rule["metric"]) == "offline" and kind == "fired":
+        when = str(device.get("status_changed_at") or "")
+        if when:
+            return when
+
+    if state is not None and state["since"]:
+        return str(state["since"])
+    return utcnow()
 
 
 # --------------------------------------------------------------------- чтение
@@ -438,11 +474,72 @@ def format_value(metric_key: Any, value: Any, lang: str = "ru") -> str:
     return f"{number:g} {unit}".strip()
 
 
+def clock(value: Any) -> str:
+    """
+    Время события по часам сервера: «13:02», а для несегодняшнего
+    «16.08 23:40».
+
+    Дата в каждой строке съедала бы место ради одного и того же числа,
+    но сводка приходит и после тихих часов, и после недоступности
+    Телеграма, поэтому у вчерашних событий она обязана быть.
+    """
+    moment = _parse(value)
+    if moment is None:
+        return ""
+    local = moment.astimezone()
+    if local.date() == datetime.now().astimezone().date():
+        return local.strftime("%H:%M")
+    return local.strftime("%d.%m %H:%M")
+
+
+def lasted(event: dict[str, Any], lang: str = "ru") -> str:
+    """
+    Сколько длилось событие: от начала до возвращения в норму.
+
+    Пусто у срабатывания: оно ещё идёт, и длительность у него будет
+    только когда закончится.
+    """
+    if str(event.get("kind")) == "fired":
+        return ""
+    began, moment = _parse(event.get("started_at")), _parse(event.get("ts"))
+    if began is None or moment is None:
+        return ""
+    return format_value("offline", max(0, int((moment - began).total_seconds() // 60)),
+                        lang)
+
+
 def describe(event: dict[str, Any], lang: str = "ru") -> str:
-    """Человеческая строка события: «Магазин 12: загрузка CPU 94 %»."""
+    """
+    Человеческая строка события со временем.
+
+    Время здесь обязательно. Сообщение приходит сводкой и может
+    задержаться на тихие часы, поэтому «точка не отвечает» без часов
+    непонятно: то ли это случилось только что, то ли в четыре утра.
+
+    У выздоровления вместо значения стоят обе отметки и длительность:
+    «0 мин» после подъёма это правда, но правда бесполезная, а вот
+    «с 12:17 до 13:02, 45 мин» отвечает на всё сразу.
+    """
     from . import i18n
 
     metric = BY_KEY.get(str(event.get("metric")))
     label = i18n.translate_text(metric.label, lang) if metric else str(event.get("metric"))
+    name = str(event.get("device_name") or "")
+    began, moment = _parse(event.get("started_at")), _parse(event.get("ts"))
+
+    if str(event.get("kind")) != "fired":
+        line = f"{name}: {label}".strip()
+        if began and moment:
+            minutes = max(0, int((moment - began).total_seconds() // 60))
+            return line + ", " + i18n.translate(
+                "с %(p0)s до %(p1)s, %(p2)s", lang, p0=clock(began), p1=clock(moment),
+                p2=format_value("offline", minutes, lang))
+        if moment:
+            return line + ", " + i18n.translate("в %(p0)s", lang, p0=clock(moment))
+        return line
+
     value = format_value(event.get("metric"), event.get("value"), lang)
-    return f"{event.get('device_name')}: {label} {value}".strip()
+    line = f"{name}: {label} {value}".strip()
+    if began:
+        return line + ", " + i18n.translate("с %(p0)s", lang, p0=clock(began))
+    return line

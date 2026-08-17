@@ -458,6 +458,42 @@
             {{ traffic.legend | safe }}
             <div class="small muted" style="margin:12px 0 2px">Передача</div>
             {{ traffic.tx | safe }}
+
+            {% if traffic.totals %}
+            {# Сумма замеров: каждый из них это средняя скорость за известное
+               число секунд, то есть та самая разница счётчиков. Пока точка
+               лежала, замеров нет, поэтому рядом стоит доля покрытия. #}
+            <div class="small muted" style="margin:16px 0 4px">{{ traffic.period }}</div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Интерфейс</th>
+                            <th class="nowrap">Принято</th>
+                            <th class="nowrap">Передано</th>
+                            <th class="nowrap">Всего</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for t in traffic.totals %}
+                        <tr>
+                            <td class="mono nowrap">{{ t.name }}</td>
+                            <td class="nowrap">{{ t.rx }}</td>
+                            <td class="nowrap">{{ t.tx }}</td>
+                            <td class="nowrap">{{ t.all }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% set gaps = traffic.totals | selectattr("share", "lt", 90) | list %}
+            {% if gaps %}
+            <div class="hint">
+                Замеры покрывают не весь период: пока точка была недоступна,
+                считать было нечего. Объём в таблице занижен ровно на это время.
+            </div>
+            {% endif %}
+            {% endif %}
         {% else %}
             {% if traffic.counters %}
             {# Счётчики сняты, а замеров нет: между обходами точка падала,
