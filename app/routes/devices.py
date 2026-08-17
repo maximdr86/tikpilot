@@ -221,6 +221,17 @@ def _device_charts(device_id: int, hours: int, lang: str = "ru") -> dict[str, st
     }
 
 
+#: Заголовок таблицы объёма. Отдельными строками, а не склейкой из слов:
+#: переводчику нужна целая фраза, иначе выходит «Объём за неделю» из
+#: трёх кусков, каждый из которых по-английски звучит иначе.
+PERIOD_TITLE = {
+    1: "Объём за час",
+    6: "Объём за 6 часов",
+    24: "Объём за сутки",
+    168: "Объём за неделю",
+}
+
+
 def _traffic_panel(device: dict, hours: int, lang: str) -> dict:
     """
     Данные для раздела «Трафик»: графики и список интерфейсов с галочками.
@@ -259,8 +270,11 @@ def _traffic_panel(device: dict, hours: int, lang: str) -> dict:
             "name": name,
             "uplink": name == uplink,
             "watched": name in watched,
-            "rx": traffic.human_rate(latest.get(name, {}).get("rx")),
-            "tx": traffic.human_rate(latest.get(name, {}).get("tx")),
+            # Единицы рождаются русскими и в шаблон приходят готовой
+            # строкой, куда автоматический перевод не заглядывает:
+            # «12,0 Мбит/с» посреди английской страницы
+            "rx": i18n.translate_text(traffic.human_rate(latest.get(name, {}).get("rx")), lang),
+            "tx": i18n.translate_text(traffic.human_rate(latest.get(name, {}).get("tx")), lang),
             "has_data": name in latest,
             "physical": bool(port.get("physical")),
             # Служебное и временное: петля, туннели клиентов, поднятые
@@ -296,6 +310,27 @@ def _traffic_panel(device: dict, hours: int, lang: str) -> dict:
         tx_series.append(charts.Series(
             name, [(r["ts"], (r["tx_bps"] or 0) / divisor) for r in history], color))
 
+    # Объём за период. График отвечает на вопрос «когда», а разговор
+    # с провайдером и с арендатором канала идёт про «сколько всего»,
+    # и складывать это глазами по картинке невозможно
+    window = max(1, hours * 3600)
+    totals = []
+    for name in series_data:
+        amount = traffic.volume(device_id, name, hours)
+        if not amount["covered"]:
+            continue
+        totals.append({
+            "name": name,
+            "rx": i18n.translate_text(traffic.human_volume(amount["rx"]), lang),
+            "tx": i18n.translate_text(traffic.human_volume(amount["tx"]), lang),
+            "all": i18n.translate_text(
+                traffic.human_volume(amount["rx"] + amount["tx"]), lang),
+            # Доля периода, за которую есть замеры. Пока точка лежала,
+            # считать было нечего, и объём получается заниженным:
+            # об этом честнее сказать прямо в строке
+            "share": min(100, int(round(100 * amount["covered"] / window))),
+        })
+
     # Счётчики сняты, а замеров нет: между обходами точка успела упасть,
     # и пара «прошлое и текущее» не сложилась. Молчаливое «замеров нет»
     # в этом случае врёт: сбор идёт, просто считать не из чего
@@ -306,6 +341,8 @@ def _traffic_panel(device: dict, hours: int, lang: str) -> dict:
         "interfaces": rows,
         "has_data": bool(rx_series),
         "counters": int(counted["c"]) if counted else 0,
+        "totals": totals,
+        "period": i18n.translate_text(PERIOD_TITLE.get(hours, PERIOD_TITLE[24]), lang),
         # Заливка и отметка пика: на трафике первым делом ищут глазами,
         # когда было больше всего, и подписанный максимум отвечает сразу
         "rx": charts.line_chart(rx_series, unit=" " + i18n.translate_text(unit.strip(), lang),

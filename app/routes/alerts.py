@@ -44,6 +44,10 @@ async def alerts_page(request: Request, user=Depends(current_user)):
     feed = alerts.events(60)
     for row in feed:
         row["value_text"] = alerts.format_value(row.get("metric"), row.get("value"), lang)
+        # У выздоровления значение всегда нормальное и потому неинтересное.
+        # Человек в ленте ищет другое: во сколько началось и сколько длилось
+        row["began_text"] = alerts.clock(row.get("started_at"))
+        row["lasted_text"] = alerts.lasted(row, lang)
 
     rows = alerts.rules()
     for rule in rows:

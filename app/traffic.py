@@ -44,7 +44,8 @@ import logging
 from typing import Any, Iterable
 
 from .config import settings
-from .database import execute, execute_changes, get_conn, query, utcnow, write_lock
+from .database import (execute, execute_changes, get_conn, query, query_one, utcnow,
+                       write_lock)
 
 log = logging.getLogger("tikpilot.traffic")
 
@@ -358,6 +359,39 @@ def bucketed(rows: list[Any], hours: int, target: int = 120) -> list[dict[str, A
     return result
 
 
+def volume(device_id: int, interface: str, hours: int = 24) -> dict[str, float]:
+    """
+    Сколько байт прошло через интерфейс за период.
+
+    Отдельного счётчика для этого не нужно. Каждый замер это средняя
+    скорость за известное число секунд, то есть ровно та разница
+    счётчиков, из которой он и получен. Сумма произведений возвращает
+    исходные байты обратно, без второй таблицы и без второго обхода.
+
+    Провалы в сборе при этом не выдумываются: пока точка лежала,
+    замеров нет, и в сумму они не попадают. Поэтому вместе с объёмом
+    возвращается `covered` - сколько секунд периода замеры покрывают.
+    Показывать «за сутки», когда за сутки собрано три часа, нечестно,
+    и решать это должен тот, кто рисует.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+    row = query_one(
+        "SELECT SUM(rx_bps * span) AS rx, SUM(tx_bps * span) AS tx,"
+        " SUM(span) AS covered FROM traffic_samples"
+        " WHERE device_id = ? AND interface = ? AND ts >= ?",
+        (device_id, interface, since),
+    )
+    if row is None or row["covered"] is None:
+        return {"rx": 0.0, "tx": 0.0, "covered": 0.0}
+    return {
+        "rx": float(row["rx"] or 0) / 8,
+        "tx": float(row["tx"] or 0) / 8,
+        "covered": float(row["covered"] or 0),
+    }
+
+
 def interfaces(device_id: int) -> list[str]:
     """Интерфейсы, по которым есть хоть один замер."""
     rows = query(
@@ -379,6 +413,24 @@ def latest(device_id: int) -> dict[str, dict[str, int]]:
         str(row["interface"]): {"rx": int(row["rx_bps"] or 0), "tx": int(row["tx_bps"] or 0)}
         for row in rows
     }
+
+
+def human_volume(size: int | float | None) -> str:
+    """
+    Объём в человеческий вид: 4,2 ГиБ.
+
+    Двоичные единицы, как и везде в панели: свободная память, место
+    на флеше и размер бэкапа тоже считаются в МиБ, и одна страница
+    не должна мерить одно и то же двумя разными способами.
+    """
+    value = float(size or 0)
+    for unit in ("Б", "КиБ", "МиБ", "ГиБ", "ТиБ"):
+        if value < 1024 or unit == "ТиБ":
+            if unit == "Б":
+                return f"{int(value)} {unit}"
+            return f"{value:.1f}".replace(".", ",") + f" {unit}"
+        value /= 1024
+    return f"{value:.1f} ТиБ"
 
 
 def human_rate(bps: int | float | None) -> str:

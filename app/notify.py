@@ -270,7 +270,7 @@ def dispatch(force: bool = False) -> dict[str, Any]:
     Ошибка не теряет события: неотправленное остаётся неотправленным
     и уедет со следующей сводкой.
     """
-    from . import alerts
+    from . import alerts, i18n
 
     if not settings.notify_enabled:
         return {"sent": 0, "failed": 0, "reason": "off"}
@@ -298,7 +298,10 @@ def dispatch(force: bool = False) -> dict[str, Any]:
         alerts.mark_sent([int(e["id"]) for e in events])
         return {"sent": 0, "failed": 0, "reason": "cooldown"}
 
-    text = compose(fresh)
+    # Язык сводки берём из настроек панели: у сообщения в чат нет
+    # пользователя, чей выбор можно было бы спросить, а на английской
+    # панели русская сводка выглядит как чужое сообщение
+    text = compose(fresh, i18n.normalize_lang(settings.default_lang))
     failed = 0
     delivered = False
     error = ""

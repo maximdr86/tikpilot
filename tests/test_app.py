@@ -2176,6 +2176,13 @@ def test_english_pages_contain_no_russian(client, router):
         "UPDATE devices SET status='offline', last_error=? WHERE id=?",
         ("Таймаут подключения", device_id),
     )
+    # Замеры трафика: без них в карточке нет ни графиков, ни таблицы
+    # объёма, а единицы там русские по рождению («4,2 ГиБ»)
+    execute(
+        "INSERT INTO traffic_samples (device_id, interface, ts, rx_bps, tx_bps, span)"
+        " VALUES (?,?, datetime('now', '-20 minutes'), ?,?,?)",
+        (device_id, "ether1", 12_000_000, 3_000_000, 900),
+    )
 
     client.get("/lang/en", follow_redirects=False)
     try:
@@ -8982,6 +8989,66 @@ def test_alert_rule_waits_for_the_hold_time(client, router):
     assert kinds[:2] == ["resolved", "fired"], kinds
 
 
+def test_alert_message_tells_when_it_fell_and_when_it_came_back(client, router):
+    """
+    В сводке стоит время падения, а не время срабатывания.
+
+    Разница между ними это выдержка правила: точка упала в 12:17,
+    «не отвечает полчаса» загорелось в 12:47. Человеку нужно первое,
+    иначе по сообщению непонятно, попадает простой в рабочее время
+    или нет.
+
+    У выздоровления вместо бессмысленного «0 мин» стоят обе отметки
+    и длительность: точка лежала от падения до подъёма, а не от
+    срабатывания правила.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app import alerts
+    from app.database import execute_changes, query_one, utcnow
+
+    device_id = _add_device(client, router, "alert-clock")
+    alerts.save_rule({
+        "metric": "offline", "comparison": "above", "value": 30,
+        "hold_minutes": 0, "scope_kind": "device", "scope_id": device_id,
+    }, "admin")
+
+    # Точка лежит сорок пять минут: это знает она сама, до всяких порогов
+    fell = (datetime.now(timezone.utc) - timedelta(minutes=45)).strftime(
+        "%Y-%m-%d %H:%M:%S")
+    execute_changes(
+        "UPDATE devices SET status = 'offline', status_changed_at = ? WHERE id = ?",
+        (fell, device_id))
+
+    assert alerts.evaluate()["fired"] == 1
+    fired = query_one("SELECT * FROM alert_events WHERE kind = 'fired' AND device_id = ?"
+                      " ORDER BY id DESC LIMIT 1", (device_id,))
+    assert fired["started_at"] == fell, dict(fired)
+
+    line = alerts.describe(dict(fired))
+    assert line.startswith("alert-clock: Точка не отвечает 45 мин, с "), line
+    assert alerts.clock(fell) in line
+
+    # Точка поднялась: считаем от падения, а не от срабатывания правила
+    execute_changes("UPDATE devices SET status = 'online', status_changed_at = ?"
+                    " WHERE id = ?", (utcnow(), device_id))
+    assert alerts.evaluate()["resolved"] == 1
+    back = query_one("SELECT * FROM alert_events WHERE kind = 'resolved'"
+                     " AND device_id = ? ORDER BY id DESC LIMIT 1", (device_id,))
+    assert back["started_at"] == fell, dict(back)
+
+    line = alerts.describe(dict(back))
+    assert f"с {alerts.clock(fell)} до {alerts.clock(back['ts'])}" in line, line
+    assert line.endswith("45 мин"), line
+    # Бессмысленного «0 мин» в строке выздоровления больше нет
+    assert "не отвечает 0 мин" not in line
+
+    # Английская сводка получает то же самое своими словами
+    english = alerts.describe(dict(back), "en")
+    assert "from" in english and " to " in english, english
+    assert "мин" not in english, english
+
+
 def test_alert_ignores_missing_values(client, router):
     """
     Нечитаемая метрика это не срабатывание и не выздоровление.
@@ -9399,6 +9466,69 @@ def test_traffic_chart_switches_to_kilobits(client, router):
     )
     panel = _traffic_panel(device, 24, "ru")
     assert "Мбит/с" in panel["rx"]
+
+
+def test_traffic_volume_is_the_sum_of_samples(client, router):
+    """
+    Объём за период считается из тех же замеров, без второй таблицы.
+
+    Замер это средняя скорость за известное число секунд, то есть ровно
+    та разница счётчиков, из которой он получен. Значит сумма
+    произведений обязана вернуть исходные байты: проверяем именно
+    арифметику, а не красивое число.
+
+    Заодно проверяем покрытие: пока точка лежала, замеров нет, и
+    выдавать неполную сумму за полные сутки нельзя.
+    """
+    from app import traffic
+    from app.database import execute
+    from app.routes.devices import _traffic_panel
+
+    device_id = _add_device(client, router, "traf-volume")
+    device = dict(query_one("SELECT * FROM devices WHERE id = ?", (device_id,)))
+
+    # Четыре замера по 900 секунд: час покрытия из суток
+    for shift in (30, 45, 60, 75):
+        execute(
+            "INSERT INTO traffic_samples (device_id, interface, ts, rx_bps, tx_bps, span)"
+            " VALUES (?,?, datetime('now', ?), ?,?,?)",
+            (device_id, "ether1", f"-{shift} minutes", 8_000_000, 800_000, 900),
+        )
+
+    amount = traffic.volume(device_id, "ether1", hours=24)
+    # 8 Мбит/с × 900 с × 4 = 28 800 000 000 бит = 3 600 000 000 байт
+    assert amount["rx"] == 3_600_000_000
+    assert amount["tx"] == 360_000_000
+    assert amount["covered"] == 3600
+
+    # Замер старше периода в сумму не попадает
+    execute(
+        "INSERT INTO traffic_samples (device_id, interface, ts, rx_bps, tx_bps, span)"
+        " VALUES (?,?, datetime('now', '-30 hours'), ?,?,?)",
+        (device_id, "ether1", 100_000_000, 100_000_000, 900),
+    )
+    assert traffic.volume(device_id, "ether1", hours=24)["rx"] == 3_600_000_000
+
+    # По интерфейсу без замеров сумма нулевая, а не отсутствующая
+    assert traffic.volume(device_id, "ether9", hours=24) == {
+        "rx": 0.0, "tx": 0.0, "covered": 0.0}
+
+    assert traffic.human_volume(3_600_000_000) == "3,4 ГиБ"
+    assert traffic.human_volume(0) == "0 Б"
+
+    panel = _traffic_panel(device, 24, "ru")
+    row = next(t for t in panel["totals"] if t["name"] == "ether1")
+    assert row["rx"] == "3,4 ГиБ"
+    assert row["tx"] == "343,3 МиБ"
+    assert row["all"] == "3,7 ГиБ"
+    # Час замеров из суток: строка обязана об этом сказать
+    assert row["share"] == 4, row["share"]
+    assert panel["period"] == "Объём за сутки"
+
+    page = client.get(f"/devices/{device_id}").text
+    assert "Объём за сутки" in page
+    assert "3,4 ГиБ" in page
+    assert "Замеры покрывают не весь период" in page
 
 
 def test_traffic_list_puts_the_uplink_first_and_hides_service_interfaces(client, router):

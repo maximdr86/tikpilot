@@ -605,6 +605,13 @@ A counter that went backwards is skipped rather than turned into a spike of
 gigabits: a reboot, a recreated interface and a 32 bit counter wrapping in
 RouterOS 6 all look the same, the new value being lower than the old one.
 
+Under the charts there is a table of volume over the selected period: how much
+each interface received and sent in total. No separate counter is kept for it;
+it comes from the same samples, since each one is an average speed over a known
+number of seconds, which is exactly the counter difference it was computed from.
+While a site was down there are no samples and nothing to count, so incomplete
+coverage of the period is stated out loud rather than passed off as a full one.
+
 Switch it off with `TRAFFIC_ENABLED=0`; watch everything with
 `TRAFFIC_ALL_INTERFACES=1` (on a box with thirty VLANs that means thirty rows in
 the database instead of one).
@@ -648,6 +655,23 @@ There are three limiters and all of them are on by default:
   up and go out in the morning, and the range may cross midnight;
 * a **pause per rule and site** (`NOTIFY_COOLDOWN_MINUTES`), so one flapping site
   does not drown out the rest.
+
+Every line carries a time. For an alert that is when it started, not when the
+rule fired: the hold time separates the two, and the first one is what a person
+needs. A recovery carries both marks and the duration:
+
+```
+Went over the threshold (1):
+  NV st. 491: Site not answering 30 min, since 12:17
+
+Back to normal (1):
+  NV st. 491: Site not answering, from 12:17 to 13:02, 45 min
+```
+
+For unreachability the exact moment of the fall is known to the site itself: it
+is recorded when the state changes, before any thresholds. The date is added
+only to events that are not from today, otherwise it takes up room in every line
+for the same number.
 
 Telegram needs a bot token (from BotFather) and a chat id (any bot like
 userinfobot will show it). The bot has to be added to the chat, otherwise it
