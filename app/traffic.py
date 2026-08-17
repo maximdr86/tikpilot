@@ -308,6 +308,56 @@ def history(device_id: int, interface: str, hours: int = 24) -> list[Any]:
     )
 
 
+def bucketed(rows: list[Any], hours: int, target: int = 120) -> list[dict[str, Any]]:
+    """
+    Свести замеры в равные корзины и усреднить.
+
+    Зачем: обходы идут не строго по часам. Полный опрос раз в пятнадцать
+    минут, между ними попадаются внеплановые проверки, и интервалы у
+    соседних замеров получаются разной длины. На графике это выглядит
+    пилой, по которой невозможно сказать, когда трафика было больше,
+    хотя данные верные.
+
+    Корзина одинаковой длины убирает пилу и оставляет то, ради чего
+    график и смотрят: форму суток. Пустые корзины остаются пустыми
+    (None), и линия в этом месте честно рвётся, а не соединяет два
+    далёких значения прямой.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    if not rows:
+        return []
+
+    span = max(1, int(hours * 3600 / max(target, 1)))
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(hours=hours)
+
+    slots: dict[int, list[tuple[float, float]]] = {}
+    for row in rows:
+        try:
+            moment = datetime.fromisoformat(str(row["ts"])).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        index = int((moment - start).total_seconds() // span)
+        slots.setdefault(index, []).append(
+            (float(row["rx_bps"] or 0), float(row["tx_bps"] or 0)))
+
+    total = int((end - start).total_seconds() // span) + 1
+    result: list[dict[str, Any]] = []
+    for index in range(total):
+        ts = (start + timedelta(seconds=span * index)).strftime("%Y-%m-%d %H:%M:%S")
+        values = slots.get(index)
+        if values:
+            result.append({
+                "ts": ts,
+                "rx_bps": sum(v[0] for v in values) / len(values),
+                "tx_bps": sum(v[1] for v in values) / len(values),
+            })
+        else:
+            result.append({"ts": ts, "rx_bps": None, "tx_bps": None})
+    return result
+
+
 def interfaces(device_id: int) -> list[str]:
     """Интерфейсы, по которым есть хоть один замер."""
     rows = query(
