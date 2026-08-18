@@ -252,6 +252,13 @@ a:hover { text-decoration: underline; }
 .panel .panel-body { padding: 13px; }
 
 .grid { display: grid; gap: 12px; }
+/* Колонка сетки по умолчанию не сжимается уже своего содержимого:
+   min-width у элемента сетки это auto. Широкая таблица внутри распирала
+   колонку, колонка страницу, и на телефоне всю страницу начинало возить
+   вбок целиком, вместе с прокруткой самой таблицы. Ноль возвращает
+   колонке право быть уже содержимого, а прокрутку оставляет там, где
+   ей место: внутри .table-wrap. */
+.grid > * { min-width: 0; }
 .grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
 .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
 .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
@@ -575,6 +582,14 @@ textarea { min-height: 110px; resize: vertical; font-family: Consolas, Menlo, mo
 .mobile-top, .tabbar, .sheet-backdrop { display: none; }
 
 @media (max-width: 720px) {
+    /* Страховка от бокового съезда: что бы ни оказалось шире экрана,
+       возить вбок будут это, а не всю страницу вместе с шапкой.
+       Именно clip, а не hidden: hidden делает из страницы отдельную
+       область прокрутки и ломает липкие шапки. Где clip не понимают,
+       остаётся прежнее поведение, а причина всё равно устранена
+       правилом min-width для колонок сетки. */
+    html, body { overflow-x: clip; }
+
     .layout { flex-direction: column; }
 
     /* Верхняя полоска. Липкая: на длинных таблицах видно, где ты. */
@@ -653,6 +668,33 @@ textarea { min-height: 110px; resize: vertical; font-family: Consolas, Menlo, mo
 
     .content { padding: 12px 10px calc(66px + env(safe-area-inset-bottom)); }
     .map-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+
+    /* Шапка блока перестаёт разъезжаться. На широком экране это строка
+       «слева название, справа пояснение», и раскладка держит их по краям.
+       На телефоне пояснение вроде «цвет слева: зелёный в сети, красный
+       не отвечает» в остаток строки не помещается, ломается по словам,
+       и название с датой начинают плавать посреди обрывков. Теперь
+       пояснение уходит целиком на свою строку под названием. */
+    .panel > h2 {
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 2px 8px;
+        padding: 8px 11px;
+    }
+    .panel > h2 .h2-extra {
+        flex: 1 0 100%;
+        justify-content: flex-start;
+        font-size: 11.5px;
+        line-height: 1.4;
+    }
+
+    /* Широкая таблица прокручивается вбок, а не ужимается до столбика
+       из букв. Порог в четыре колонки: у таблицы из двух-трёх столбцов
+       боковая прокрутка была бы наказанием без причины.
+       :has() понимают не все браузеры, и это нормально: где не понимают,
+       остаётся прежнее поведение. */
+    .table-wrap { -webkit-overflow-scrolling: touch; }
+    .table-wrap table:has(thead th:nth-child(4)) { min-width: 560px; }
 }
 
 /* ------------------------------------------------- переключатель языка */
