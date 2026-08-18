@@ -1,0 +1,322 @@
+{% extends "settings/layout.html" %}
+{% block tab_body %}
+{# Люди и права: сюда ходят чаще всего, поэтому вкладка первая. #}
+<div class="grid cols-2">
+    <!-- ------------------------------------------------------ смена пароля -->
+    <div class="panel">
+        <h2>Смена своего пароля</h2>
+        <div class="panel-body">
+        <form method="post" action="/settings/password">
+            <div class="field">
+                <label for="old">Текущий пароль</label>
+                <input type="password" id="old" name="old_password" required autocomplete="current-password">
+            </div>
+            <div class="field">
+                <label for="new1">Новый пароль</label>
+                <input type="password" id="new1" name="new_password" required autocomplete="new-password">
+            </div>
+            <div class="field">
+                <label for="new2">Повторите новый пароль</label>
+                <input type="password" id="new2" name="new_password2" required autocomplete="new-password">
+            </div>
+            <button class="btn primary" type="submit">Сменить пароль</button>
+        </form>
+        </div>
+    </div>
+
+    <!-- ------------------------------------------------- новый администратор -->
+    <div class="panel">
+        <h2>Новый администратор</h2>
+        <div class="panel-body">
+        <form method="post" action="/settings/users">
+            <div class="field">
+                <label for="nu">Логин</label>
+                <input type="text" id="nu" name="new_username" required autocomplete="off">
+            </div>
+            <div class="field">
+                <label for="np">Пароль</label>
+                <input type="password" id="np" name="password" required autocomplete="new-password">
+            </div>
+            <button class="btn primary" type="submit">Добавить</button>
+            <div class="hint" style="margin-top:8px">
+                Новая учётная запись создаётся без прав. Выдайте их кнопкой
+                «Права» в списке ниже.
+            </div>
+        </form>
+        </div>
+    </div>
+</div>
+
+<!-- ---------------------------------------------------------- приглашения -->
+{% if can("users.manage") %}
+<div class="panel" data-fold="invites">
+    <h2>Приглашения
+        <span class="h2-extra muted">человек заводит вход сам, по одноразовой ссылке</span>
+    </h2>
+
+    {% if fresh_invite %}
+        {# Свежую ссылку показываем крупно и сразу: за ней сюда и пришли #}
+        <div class="panel-body">
+            <div class="alert ok" style="word-break:break-all">
+                <span class="mono" id="fresh-invite"
+                      data-token="{{ fresh_invite }}">{{ invite_base }}/invite/{{ fresh_invite }}</span>
+                <button class="btn sm" style="margin-left:8px"
+                        onclick="copyInvite('{{ fresh_invite }}')">Скопировать</button>
+            </div>
+        </div>
+    {% endif %}
+
+    <div class="panel-body">
+        <form method="post" action="/settings/invites" class="grid cols-3">
+            <div class="field">
+                <label for="inv-note">Для кого</label>
+                <input type="text" id="inv-note" name="note" autocomplete="off"
+                       placeholder="имя или должность, чтобы не запутаться">
+            </div>
+            <div class="field">
+                <label for="inv-hours">Срок</label>
+                <select id="inv-hours" name="hours">
+                    <option value="4">4 часа</option>
+                    <option value="24">Сутки</option>
+                    <option value="48" selected>Двое суток</option>
+                    <option value="168">Неделя</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>&nbsp;</label>
+                <button class="btn primary" type="submit">Создать ссылку</button>
+            </div>
+        </form>
+    </div>
+
+    {% if invites %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+            <tr>
+                <th>Для кого</th>
+                <th class="nowrap">Состояние</th>
+                <th class="nowrap">Действует до</th>
+                <th>Кто позвал</th>
+                <th class="no-sort"></th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for inv in invites %}
+                <tr {% if inv.state != 'live' %}class="muted"{% endif %}>
+                    <td>{{ inv.note or ('без пометки' | t) }}</td>
+                    <td class="nowrap">
+                        {% if inv.state == 'live' %}
+                            <span class="badge online">действует</span>
+                        {% elif inv.state == 'used' %}
+                            <span class="badge">использовано</span>
+                            <span class="small">{{ inv.used_by }}</span>
+                        {% elif inv.state == 'revoked' %}
+                            <span class="badge unknown">отозвано</span>
+                        {% else %}
+                            <span class="badge unknown">просрочено</span>
+                        {% endif %}
+                    </td>
+                    <td class="nowrap small muted">{{ inv.expires_at | dt }}</td>
+                    <td class="small muted">{{ inv.created_by }}</td>
+                    <td class="nowrap">
+                        {% if inv.state == 'live' %}
+                            <button class="btn sm" onclick="copyInvite('{{ inv.token }}')">Скопировать</button>
+                            <form method="post" action="/settings/invites/{{ inv.id }}/revoke"
+                                  style="display:inline">
+                                <button class="btn sm danger" type="submit">Отозвать</button>
+                            </form>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <div class="panel-body">
+        <div class="hint">
+            Ссылка одноразовая: после регистрации она перестаёт работать.
+            Пароль человек задаёт себе сам, вы его не видите и не пересылаете
+            в переписке. Учётная запись создаётся без единого права, выдайте
+            их галочками в списке ниже.
+            <br>
+            Страница регистрации это обычная страница панели, поэтому
+            открыть её можно только из доверенной сети
+            (<span class="mono">ADMIN_NETWORKS</span>). Ссылка, улетевшая
+            не туда, постороннему бесполезна.
+            <br>
+            Адрес в ссылке это тот, по которому вы сейчас смотрите панель.
+            Если он не тот, что нужен человеку, задайте его явно
+            в <span class="mono">PANEL_BASE_URL</span>.
+        </div>
+    </div>
+</div>
+
+<script>
+    // Полный адрес собирается на сервере в invite_base: там учтён
+    // PUBLIC_BASE_URL, а внутренний 10.x:8080 отправлять человеку бесполезно
+    async function copyInvite(token) {
+        var link = {{ invite_base | tojson }} + '/invite/' + token;
+        await copyText(link);
+        toast(T('Ссылка скопирована: ') + link, 'ok');
+    }
+</script>
+{% endif %}
+
+<div class="panel">
+    <h2>Учётные записи
+        <span class="h2-extra muted">права выдаются по каждой возможности отдельно</span>
+    </h2>
+    <div class="panel-body">
+        {% for u in users %}
+        <div class="user-card">
+            <div class="user-head">
+                <div>
+                    <strong>{{ u.username }}</strong>
+                    {% if u.id == user.id %}<span class="badge">это вы</span>{% endif %}
+                    {% if permission_full in u.perm_set %}
+                        <span class="badge ok">полный доступ</span>
+                    {% elif not u.perm_set %}
+                        <span class="badge unknown">прав нет</span>
+                    {% else %}
+                        <span class="badge">{{ u.perm_set | length }} {{ u.perm_set | length | plural('право', 'права', 'прав') }}</span>
+                    {% endif %}
+                    {% if not u.scope_all %}
+                        <span class="badge pending">ограниченная область</span>
+                    {% endif %}
+                    <div class="small muted">создан {{ u.created_at | dt }}</div>
+                </div>
+                <div class="btn-row">
+                    {% if u.id != user.id %}
+                    <button class="btn sm" type="button" onclick="toggleUser({{ u.id }})">Права</button>
+                    {# Сброс без старого пароля: человек его как раз и не помнит.
+                       Себе так менять нельзя, для этого форма выше #}
+                    <button class="btn sm" type="button"
+                            onclick="togglePassword({{ u.id }})">Пароль</button>
+                    <form method="post" action="/settings/users/{{ u.id }}/delete"
+                          onsubmit="return confirm('{{ _("Удалить пользователя %(p0)s?", p0=(u.username)) }}')" style="display:inline">
+                        <button class="btn sm danger" type="submit">Удалить</button>
+                    </form>
+                    {% else %}
+                        <span class="small muted">свои права менять нельзя</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if u.id != user.id %}
+            <form method="post" action="/settings/users/{{ u.id }}/password"
+                  id="user-pass-{{ u.id }}" class="user-form" style="display:none">
+                <div class="field">
+                    <label for="pass-{{ u.id }}">Новый пароль для {{ u.username }}</label>
+                    <input type="password" id="pass-{{ u.id }}" name="password"
+                           autocomplete="new-password" minlength="6"
+                           placeholder="не короче 6 символов">
+                    <div class="hint">
+                        Текущий пароль не спрашивается: сброс на то и нужен, что
+                        человек его не помнит. Все прежние входы этого
+                        администратора завершатся, ему придётся войти заново.
+                        Передайте пароль лично и попросите сменить его на свой.
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn primary" type="submit">Установить пароль</button>
+                    <button class="btn" type="button" onclick="togglePassword({{ u.id }})">Отмена</button>
+                </div>
+            </form>
+
+            <form method="post" action="/settings/users/{{ u.id }}/permissions"
+                  id="user-form-{{ u.id }}" class="user-form" style="display:none">
+
+                <div class="btn-row" style="margin-bottom:10px">
+                    <span class="small muted">Быстрый набор:</span>
+                    {% for key, label in preset_labels.items() %}
+                        <button class="btn sm" type="button"
+                                onclick="applyPreset({{ u.id }}, {{ presets[key] | tojson }})">{{ label | t }}</button>
+                    {% endfor %}
+                </div>
+
+                {% set sections = permission_list | groupby(1) %}
+                <div class="perm-grid">
+                    <label class="perm full">
+                        <input type="checkbox" name="perm" value="{{ permission_full }}"
+                               {% if permission_full in u.perm_set %}checked{% endif %}>
+                        <span>
+                            <strong>Полный доступ</strong>
+                            <span class="small muted">Все возможности, включая будущие. Остальные галочки не нужны.</span>
+                        </span>
+                    </label>
+
+                    {% for section, items in sections %}
+                    <div class="perm-section">
+                        <div class="perm-title">{{ section | t }}</div>
+                        {% for key, _s, label, note in items %}
+                        <label class="perm">
+                            <input type="checkbox" name="perm" value="{{ key }}"
+                                   {% if key in u.perm_set %}checked{% endif %}>
+                            <span>
+                                {{ label | t }}
+                                {% if note %}<span class="small muted">{{ note | t }}</span>{% endif %}
+                            </span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="perm-title" style="margin-top:12px">Область видимости</div>
+                <label class="perm">
+                    <input type="radio" name="scope_all" value="1"
+                           {% if u.scope_all %}checked{% endif %}
+                           onchange="toggleScope({{ u.id }})">
+                    <span>Весь парк</span>
+                </label>
+                <label class="perm">
+                    <input type="radio" name="scope_all" value="0"
+                           {% if not u.scope_all %}checked{% endif %}
+                           onchange="toggleScope({{ u.id }})">
+                    <span>
+                        Только выбранное
+                        <span class="small muted">Устройства вне области не видны и недоступны для операций.</span>
+                    </span>
+                </label>
+
+                <div class="scope-picker" id="scope-{{ u.id }}"
+                     style="{% if u.scope_all %}display:none{% endif %}">
+                    <div class="scope-col">
+                        <div class="perm-title">Группы</div>
+                        {% for g in all_groups %}
+                        <label class="perm">
+                            <input type="checkbox" name="group" value="{{ g.id }}"
+                                   {% if g.id in u.groups %}checked{% endif %}>
+                            <span>{{ g.name }}</span>
+                        </label>
+                        {% else %}
+                        <div class="small muted">Групп пока нет</div>
+                        {% endfor %}
+                    </div>
+                    <div class="scope-col">
+                        <div class="perm-title">Отдельные устройства</div>
+                        {% for d in all_devices %}
+                        <label class="perm">
+                            <input type="checkbox" name="device" value="{{ d.id }}"
+                                   {% if d.id in u.devices %}checked{% endif %}>
+                            <span>{{ d.name }} <span class="small muted mono">{{ d.host }}</span></span>
+                        </label>
+                        {% else %}
+                        <div class="small muted">Устройств пока нет</div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="btn-row" style="margin-top:12px">
+                    <button class="btn primary" type="submit">Сохранить права</button>
+                </div>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1644,8 +1644,84 @@ def test_dashboard_shows_events_fragment(client):
 
 
 def test_monitor_settings_visible(client):
-    html = client.get("/settings").text
+    html = client.get("/settings/collect").text
     assert "Мониторинг доступности" in html
+
+
+def test_settings_are_split_into_tabs(client):
+    """
+    Настройки живут вкладками, у каждой свой адрес.
+
+    Раньше это была одна страница на шестьсот строк, где вперемешку
+    лежали люди, интервалы опроса, справочники и диагностика. Проверяем
+    не оформление, а главное: каждая вкладка открывается по своему
+    адресу, показывает своё и не тянет чужое.
+    """
+    from app.routes.auth_routes import SETTINGS_TABS, TAB_PREFS
+
+    # Адрес без вкладки уводит на первую
+    root = client.get("/settings", follow_redirects=False)
+    assert root.status_code == 303
+    assert root.headers["location"] == "/settings/access"
+
+    # Неизвестная вкладка не показывает случайную страницу
+    unknown = client.get("/settings/погода", follow_redirects=False)
+    assert unknown.status_code == 303
+
+    pages = {tab["key"]: client.get(f"/settings/{tab['key']}") for tab in SETTINGS_TABS}
+    for key, page in pages.items():
+        assert page.status_code == 200, key
+        # На каждой вкладке видна вся полоска: перейти можно в один клик
+        for tab in SETTINGS_TABS:
+            assert f'href="/settings/{tab["key"]}"' in page.text, (key, tab["key"])
+
+    assert "Смена своего пароля" in pages["access"].text
+    assert "Мониторинг доступности" in pages["collect"].text
+    assert "Правила" in pages["alerts"].text
+    assert "Производители по MAC" in pages["reference"].text
+    assert "О программе" in pages["system"].text
+
+    # Параметры разложены по вкладкам и не повторяются
+    seen: set[str] = set()
+    for key, groups in TAB_PREFS.items():
+        for group in groups:
+            assert group not in seen, group
+            seen.add(group)
+        for group in groups:
+            assert group in pages[key].text, (key, group)
+
+    # Все разделы параметров куда-то попали: забытый раздел иначе
+    # просто исчезает из интерфейса, и заметить это некому
+    from app import prefs
+
+    assert {field.group for field in prefs.FIELDS} == seen
+
+
+def test_saving_one_tab_does_not_switch_off_the_others(client):
+    """
+    Форма параметров на вкладке не трогает чужие флажки.
+
+    Невыбранный флажок браузер не отправляет вовсе, и обработчик,
+    не знающий границ формы, погасил бы всё, чего в ней нет: сохранение
+    порогов выключало бы сбор трафика.
+    """
+    from app import prefs
+    from app.config import settings
+
+    assert settings.traffic_enabled, "тест ждёт, что сбор трафика включён"
+
+    # Вкладка порогов шлёт только свой раздел
+    r = client.post("/settings/prefs", data={
+        "tab": "alerts", "pref_group": "Уведомления",
+        "NOTIFY_DIGEST_MINUTES": "7",
+    })
+    assert r.status_code == 200
+    assert settings.notify_digest_minutes == 7
+    assert settings.traffic_enabled, "чужой флажок погас"
+
+    # А форма без пометок ведёт себя как раньше, целиком
+    client.post("/settings/prefs", data={"tab": "collect", "TRAFFIC_ENABLED": "1"})
+    prefs.reset("admin")
 
 
 def test_old_database_is_migrated(tmp_path):
@@ -1841,7 +1917,7 @@ def test_settings_show_configured_targets(client):
     original = settings.latency_targets
     settings.latency_targets = ["10.0.0.1=хаб", "8.8.8.8=интернет"]
     try:
-        html = client.get("/settings").text
+        html = client.get("/settings/collect").text
         assert "Цели пинга" in html
         assert "10.0.0.1=хаб" in html
         assert "8.8.8.8=интернет" in html
@@ -1857,7 +1933,7 @@ def test_settings_warn_when_no_targets(client):
     settings.latency_targets = []
     settings.latency_ping_gateway = False
     try:
-        assert "не задано ни одной цели" in client.get("/settings").text
+        assert "не задано ни одной цели" in client.get("/settings/collect").text
     finally:
         settings.latency_targets, settings.latency_ping_gateway = original
 
@@ -4517,7 +4593,7 @@ def test_unknown_operator_can_be_named_from_settings(client, router):
     # Панель сама показывает такую строку в списке работы
     assert any(row["name"] == "RU-XYZ-20120101" and row["devices"] == 2
                for row in operator.unknown_names())
-    assert "RU-XYZ-20120101" in client.get("/settings").text
+    assert "RU-XYZ-20120101" in client.get("/settings/reference").text
 
     page = client.post("/settings/operators", data={
         "needle": "RU-XYZ", "name": "Местный", "color": "cyan"})
@@ -9099,18 +9175,30 @@ def test_alert_scope_limits_devices(client, router):
 
 
 def test_alerts_page_and_rights(client, router):
-    """Страница закрыта правом на просмотр, правка отдельным правом."""
-    page = client.get("/alerts")
+    """
+    Настройка порогов закрыта правом на просмотр, правка отдельным.
+
+    Право осталось тем же, что было у отдельной страницы: раздел
+    переехал на вкладку настроек, но доступ к нему по-прежнему даёт
+    `alerts.view`, а не право видеть настройки целиком.
+    """
+    page = client.get("/settings/alerts")
     assert page.status_code == 200
     assert "Пороги" in page.text
+
+    # Старый адрес уводит на мониторинг, где живёт горящее
+    moved = client.get("/alerts", follow_redirects=False)
+    assert moved.status_code == 303
+    assert moved.headers["location"] == "/monitoring"
 
     _make_user(client, "alertblind", ["clients.view"])
     with _as("alertblind") as blind:
         assert blind.get("/alerts").status_code == 403
+        assert blind.get("/settings/alerts").status_code == 403
 
     _make_user(client, "alertreader", ["alerts.view"])
     with _as("alertreader") as reader:
-        assert reader.get("/alerts").status_code == 200
+        assert reader.get("/settings/alerts").status_code == 200
         assert reader.post("/api/alerts/rules", json={
             "metric": "cpu", "comparison": "above", "value": 90, "hold_minutes": 5,
         }).status_code == 403
@@ -9414,7 +9502,7 @@ def test_dialogs_use_the_house_markup():
 
 def test_alerts_dialog_opens_with_the_shared_helper(client):
     """Кнопка «Новое правило» зовёт общий openModal, а не свой код."""
-    page = client.get("/alerts").text
+    page = client.get("/settings/alerts").text
     assert 'class="modal-backdrop" id="rule-modal"' in page
     assert "openModal('rule-modal')" in page
 

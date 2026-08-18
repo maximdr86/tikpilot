@@ -1,82 +1,20 @@
-{% extends "base.html" %}
-{% block title %}Пороги · Tikpilot{% endblock %}
-
-{% block content %}
-<div class="page-head">
-    <div>
-        <h1>Пороги</h1>
-        <div class="sub">
-            Правило срабатывает, когда значение держится за порогом дольше
-            указанного времени. Мгновенный всплеск событием не считается.
-        </div>
-    </div>
-    {% if can("alerts.manage") %}
-    <div class="btn-row">
-        <button class="btn primary" onclick="openRule()">Новое правило</button>
-        <button class="btn" onclick="checkNow()">Проверить сейчас</button>
-    </div>
-    {% endif %}
-</div>
-
-<!-- ------------------------------------------------------------ что горит -->
+{% extends "settings/layout.html" %}
+{% block tab_body %}
+{# Настроечная часть порогов: правила и доставка. Что горит прямо
+   сейчас, живёт на «Мониторинге»: в аварию человек идёт туда, а не
+   в настройки. #}
 <div class="panel">
-    <h2>Сейчас за порогом
-        <span class="h2-extra muted">{{ firing | length }}</span>
+    {# Счётчик держим рядом с кнопками: у заголовка блока раскладка
+       «слева и справа», и третий элемент повисал ровно по центру. #}
+    <h2>Правила
+        <span class="h2-extra">
+            <span class="muted">{{ rules | length }}</span>
+            {% if can("alerts.manage") %}
+            <button class="btn sm primary" onclick="openRule()">Новое правило</button>
+            <button class="btn sm" onclick="checkNow()">Проверить сейчас</button>
+            {% endif %}
+        </span>
     </h2>
-    {% if firing %}
-    <div class="table-wrap">
-        <table>
-            <thead><tr>
-                <th>Точка</th><th>Правило</th><th class="nowrap">Значение</th>
-                <th class="nowrap">С какого времени</th>
-            </tr></thead>
-            <tbody>
-            {% for row in firing %}
-                <tr>
-                    <td><a href="/devices/{{ row.device_id }}">{{ row.device_name }}</a></td>
-                    <td>{{ row.rule_name }}</td>
-                    <td class="mono">{{ row.value_text }}</td>
-                    <td class="nowrap">{{ row.fired_at | dt }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% else %}
-    <div class="panel-body"><div class="hint">Всё в норме.</div></div>
-    {% endif %}
-</div>
-
-{% if pending %}
-{# Показываем и то, что ещё выдерживается: иначе панель выглядит так,
-   будто она проспала, хотя она как раз считает минуты. #}
-<div class="panel">
-    <h2>Держится, но выдержка не вышла</h2>
-    <div class="table-wrap">
-        <table>
-            <thead><tr>
-                <th>Точка</th><th>Правило</th><th class="nowrap">Значение</th>
-                <th class="nowrap">Ждём с</th><th class="nowrap">Выдержка</th>
-            </tr></thead>
-            <tbody>
-            {% for row in pending %}
-                <tr>
-                    <td><a href="/devices/{{ row.device_id }}">{{ row.device_name }}</a></td>
-                    <td>{{ row.rule_name }}</td>
-                    <td class="mono">{{ row.value_text }}</td>
-                    <td class="nowrap">{{ row.since | dt }}</td>
-                    <td class="nowrap mono">{{ row.hold_minutes }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
-
-<!-- -------------------------------------------------------------- правила -->
-<div class="panel">
-    <h2>Правила <span class="h2-extra muted">{{ rules | length }}</span></h2>
     {% if rules %}
     <div class="table-wrap">
         <table>
@@ -127,6 +65,19 @@
     {% endif %}
 </div>
 
+{% if can("users.manage") %}
+<div class="panel">
+    <h2>Когда и как часто писать</h2>
+    <div class="panel-body">
+        <div class="hint">
+            Ограничители включены по умолчанию не из осторожности, а из опыта:
+            на дребезжащих каналах поток сообщений перестают читать за неделю.
+        </div>
+        {% include "partials/prefs_form.html" %}
+    </div>
+</div>
+{% endif %}
+
 <!-- ----------------------------------------------------------- уведомления -->
 {# Ограничители включены по умолчанию не из осторожности, а из опыта:
    на дребезжащих каналах поток сообщений перестают читать за неделю. #}
@@ -141,9 +92,8 @@
         <div class="alert {% if silent == 'off' %}warn{% endif %}">
             {{ silent_text }}.
             {% if silent == 'off' %}
-                Включите «Отправлять уведомления» в
-                <a href="/settings#prefs">настройках панели</a>: пока выключено,
-                панель наружу не ходит и события просто копятся здесь.
+                Включите «Отправлять уведомления» ниже на этой вкладке: пока
+                выключено, панель наружу не ходит и события просто копятся.
             {% endif %}
         </div>
     </div>
@@ -220,46 +170,6 @@
             {% endfor %}
         </ul>
     </div>
-    {% endif %}
-</div>
-
-<!-- ---------------------------------------------------------------- лента -->
-<div class="panel">
-    <h2>Что срабатывало</h2>
-    {% if events %}
-    <div class="table-wrap">
-        <table>
-            <thead><tr>
-                <th class="nowrap">Время</th><th>Точка</th><th>Правило</th>
-                <th class="nowrap">Что случилось</th><th class="nowrap">Значение</th>
-                <th class="nowrap">Началось</th><th class="nowrap">Длилось</th>
-            </tr></thead>
-            <tbody>
-            {% for e in events %}
-                <tr>
-                    <td class="nowrap">{{ e.ts | dt }}</td>
-                    <td>{% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ e.device_name }}</a>{% else %}{{ e.device_name }}{% endif %}</td>
-                    <td>{{ e.rule_name }}</td>
-                    <td class="nowrap">
-                        {% if e.kind == 'fired' %}
-                            <span class="badge offline">вышло за порог</span>
-                        {% else %}
-                            <span class="badge online">вернулось в норму</span>
-                        {% endif %}
-                    </td>
-                    <td class="mono">{{ e.value_text }}</td>
-                    {# Время начала, а не срабатывания: их разделяет выдержка,
-                       и «упало в 12:17» человеку нужнее, чем «правило
-                       загорелось в 12:47». #}
-                    <td class="nowrap mono muted">{{ e.began_text }}</td>
-                    <td class="nowrap mono">{{ e.lasted_text }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% else %}
-    <div class="panel-body"><div class="hint">Событий пока не было.</div></div>
     {% endif %}
 </div>
 

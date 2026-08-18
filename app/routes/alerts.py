@@ -1,15 +1,28 @@
-"""Раздел «Пороги»: правила, что горит сейчас и лента срабатываний."""
+"""
+Пороги: правила, что горит сейчас и лента срабатываний.
+
+Раздел разъехался по двум местам, и это не небрежность, а разделение
+по вопросу, который задаёт человек.
+
+«Что сейчас плохо» это мониторинг: горящее и лента живут там, рядом
+с упавшими точками, потому что в аварию открывают именно ту страницу.
+
+«Как это настроено» это настройки: правила, чаты и тихие часы лежат
+на вкладке «Пороги», куда ходят раз в месяц.
+
+Здесь остались обе сборки данных и весь API. Страницы их только
+показывают.
+"""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from .. import alerts, i18n, notify, permissions
 from ..config import settings
 from ..auth import Forbidden, client_ip, current_user
 from ..database import log_audit, query, query_one
-from .deps import render
 
 router = APIRouter()
 
@@ -25,16 +38,13 @@ def _scope_label(rule: dict) -> str:
     return "весь парк"
 
 
-@router.get("/alerts")
-async def alerts_page(request: Request, user=Depends(current_user)):
-    """Страница порогов. Правку закрывает отдельное право."""
-    if not permissions.has(user, "alerts.view"):
-        raise Forbidden()
+def live_context(lang: str) -> dict:
+    """
+    Что горит прямо сейчас, что ещё выдерживается и лента срабатываний.
 
-    from .deps import resolve_lang
-
-    lang = resolve_lang(request, user)
-
+    Показывается на мониторинге: это ответ на вопрос «что сейчас
+    плохо», а не на вопрос «как настроено».
+    """
     firing = alerts.active()
     waiting = alerts.pending()
     for row in firing + waiting:
@@ -49,6 +59,13 @@ async def alerts_page(request: Request, user=Depends(current_user)):
         row["began_text"] = alerts.clock(row.get("started_at"))
         row["lasted_text"] = alerts.lasted(row, lang)
 
+    # Лента под своим именем: на мониторинге уже есть `events`,
+    # и это список смен статуса, совсем про другое
+    return {"firing": firing, "pending": waiting, "alert_events": feed}
+
+
+def config_context(lang: str) -> dict:
+    """Правила и доставка: содержимое вкладки «Пороги» в настройках."""
     rows = alerts.rules()
     for rule in rows:
         rule["scope_label"] = _scope_label(rule)
@@ -56,27 +73,34 @@ async def alerts_page(request: Request, user=Depends(current_user)):
         rule["metric_label"] = metric.label if metric else str(rule["metric"])
         rule["unit"] = metric.unit if metric else ""
 
-    return render(
-        "alerts.html",
-        request,
-        user,
-        active="alerts",
-        rules=rows,
-        metrics=alerts.METRICS,
-        firing=firing,
-        pending=waiting,
-        events=feed,
-        groups=query("SELECT id, name FROM groups ORDER BY name COLLATE NOCASE"),
-        devices=query("SELECT id, name FROM devices ORDER BY name COLLATE NOCASE"),
-        channels=notify.channels(),
-        notify_log=notify.history(10),
+    return {
+        "rules": rows,
+        "metrics": alerts.METRICS,
+        "groups": query("SELECT id, name FROM groups ORDER BY name COLLATE NOCASE"),
+        "devices": query("SELECT id, name FROM devices ORDER BY name COLLATE NOCASE"),
+        "channels": notify.channels(),
+        "notify_log": notify.history(10),
         # Что мешает отправке прямо сейчас: человек должен видеть это
         # рядом с кнопкой, а не узнавать, нажав её
-        silent=notify.why_silent(),
-        silent_text=i18n.translate_text(
+        "silent": notify.why_silent(),
+        "silent_text": i18n.translate_text(
             notify.REASONS.get(notify.why_silent(), ""), lang),
-        notify_on=settings.notify_enabled,
-    )
+        "notify_on": settings.notify_enabled,
+    }
+
+
+@router.get("/alerts")
+async def alerts_page(user=Depends(current_user)):
+    """
+    Старый адрес раздела порогов.
+
+    Раздел разъехался: горящее ушло на мониторинг, настройка в
+    настройки. Уводим туда, где спрашивают чаще, а не показываем
+    страницу с выбором из двух ссылок.
+    """
+    if not permissions.has(user, "alerts.view"):
+        raise Forbidden()
+    return RedirectResponse("/monitoring", status_code=303)
 
 
 @router.post("/api/notify/channels")

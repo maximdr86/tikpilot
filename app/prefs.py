@@ -309,12 +309,20 @@ def reset(username: str = "") -> int:
     return removed
 
 
-def form() -> list[dict[str, Any]]:
-    """Поля для страницы настроек, по разделам и с текущими значениями."""
+def form(only: tuple[str, ...] | None = None) -> list[dict[str, Any]]:
+    """
+    Поля для страницы настроек, по разделам и с текущими значениями.
+
+    `only` оставляет перечисленные разделы: настройки разложены по
+    вкладкам, и на вкладке «Сбор данных» полям про уведомления делать
+    нечего. Порядок разделов сохраняется тот же, что в `FIELDS`.
+    """
     baseline()
     saved = stored()
     groups: dict[str, dict[str, Any]] = {}
     for field in FIELDS:
+        if only is not None and field.group not in only:
+            continue
         block = groups.setdefault(field.group, {"name": field.group, "fields": []})
         block["fields"].append({
             "key": field.key,

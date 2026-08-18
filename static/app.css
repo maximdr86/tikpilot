@@ -187,6 +187,31 @@ a:hover { text-decoration: underline; }
 .page-head h1 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.2px; }
 .page-head .sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
 
+/* Полоска вкладок раздела. Обычные ссылки: у каждой вкладки свой адрес,
+   и на неё можно дать ссылку или открыть в новом окне. */
+.tabs {
+    display: flex; flex-wrap: wrap; gap: 2px;
+    margin: -6px 0 14px;
+    border-bottom: 1px solid var(--border);
+}
+.tab {
+    padding: 7px 13px;
+    color: var(--muted);
+    font-size: 13px;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: var(--radius) var(--radius) 0 0;
+    margin-bottom: -1px;
+}
+.tab:hover { color: var(--text); background: var(--panel-2); text-decoration: none; }
+.tab.active {
+    color: var(--text);
+    font-weight: 600;
+    background: var(--panel);
+    border-color: var(--border);
+    border-bottom: 1px solid var(--panel);
+}
+
 /* ==================================================================== блоки */
 .panel {
     background: var(--panel);
@@ -205,7 +230,10 @@ a:hover { text-decoration: underline; }
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
 }
-.panel > h2 .h2-extra { font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.panel > h2 .h2-extra {
+    font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 12px;
+    display: flex; align-items: center; gap: 8px;
+}
 .panel .panel-body { padding: 13px; }
 
 .grid { display: grid; gap: 12px; }
@@ -1029,7 +1057,16 @@ table.dt td { padding: 0 6px; vertical-align: top; border: 0; }
 .demo-note .linklike:hover { color:var(--fg); }
 
 /* Разделы формы «Параметры работы» */
-.pref-group { margin-bottom: 18px; }
+/* Разделы параметров в колонки: на широком экране один столбец полей
+   оставлял пустой всю правую половину страницы, а прокрутки было
+   на пять экранов. Колонка не уже 320 пикселей, иначе подписи ломаются. */
+.pref-columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 0 26px;
+    align-items: start;
+}
+.pref-group { margin-bottom: 18px; break-inside: avoid; }
 .pref-group .field { max-width: 520px; }
 
 /* Мишени подсказок на графиках: прозрачные столбцы во всю высоту поля.

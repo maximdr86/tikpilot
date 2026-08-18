@@ -26,16 +26,16 @@
 
         <div class="nav-group">Обзор</div>
         <a class="nav-link {% if active == 'dashboard' %}active{% endif %}" href="/">Дашборд</a>
+        {# Пороги отдельным пунктом не стоят: горящее живёт на мониторинге,
+           а правила в настройках. Счётчик один, про упавшие точки. Второй,
+           про сработавшие пороги, тут был и оказался лишним: два числа
+           подряд читаются как одно, а объяснение пряталось в подсказке.
+           Смысл счётчика позвать на страницу, а не пересказать её: блок
+           «Сейчас за порогом» там стоит первым. #}
         <a class="nav-link {% if active == 'monitoring' %}active{% endif %}" href="/monitoring">
             Мониторинг
             {% if offline_count %}<span class="count">{{ offline_count }}</span>{% endif %}
         </a>
-        {% if can("alerts.view") %}
-        <a class="nav-link {% if active == 'alerts' %}active{% endif %}" href="/alerts">
-            Пороги
-            {% if firing_count %}<span class="count">{{ firing_count }}</span>{% endif %}
-        </a>
-        {% endif %}
 
         <div class="nav-group">Парк</div>
         <a class="nav-link {% if active == 'devices' %}active{% endif %}" href="/devices">Устройства</a>
