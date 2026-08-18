@@ -1071,6 +1071,7 @@ table.dt td { padding: 0 6px; vertical-align: top; border: 0; }
     /* Высота от экрана, а не от окна во весь рост: на телефоне
        calc(100vh - 260px) оставлял полосу в несколько строк */
     .console { height: auto; max-height: 62vh; min-height: 220px; }
+    .terminal-box { height: 58vh; min-height: 240px; }
 }
 
 /* ------------------------------------------------------------- терминал */
@@ -1086,6 +1087,32 @@ table.dt td { padding: 0 6px; vertical-align: top; border: 0; }
     border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 .terminal-box .xterm { height: 100%; }
+
+/* Состояние сессии под окном: размер, сокет, объём буфера. Пустое окно
+   не отличить от сломанного, а причин у пустоты три, и строка называет
+   виноватую сразу. */
+.term-state {
+    padding: 5px 9px;
+    border-top: 1px solid var(--border);
+    background: var(--panel-2);
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 11px;
+}
+
+/* Строка ввода под окном терминала. На большом экране печатают прямо
+   в окно, поэтому здесь она незаметна и не мешает; на телефоне это
+   единственный способ добраться до таба и до прерывания. */
+.term-input {
+    display: flex; gap: 6px; align-items: center;
+    padding: 8px;
+    border-top: 1px solid var(--border);
+    background: var(--panel-2);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.term-input input {
+    flex: 1 1 auto; min-width: 0;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
 
 /* --------------------------------------------------- паспорт устройства */
 /* Порты плитками, как на морде коробки. Цвет это скорость: взгляд ищет
