@@ -1886,5 +1886,13 @@
   "фиолетовый": "purple",
   "розовый": "pink",
   "Логи": "Logs",
-  "Ещё": "More"
+  "Ещё": "More",
+  "Ввод": "Enter",
+  "команда и Enter": "command, then Enter",
+  "сокет": "socket",
+  "строк": "lines",
+  "соединяется": "connecting",
+  "открыт": "open",
+  "закрывается": "closing",
+  "закрыт": "closed"
 }

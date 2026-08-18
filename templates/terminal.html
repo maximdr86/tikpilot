@@ -49,6 +49,25 @@
         </div>
     </div>
     <div id="terminal-box" class="terminal-box"></div>
+
+    {# Строка ввода для телефона. В само окно терминала печатать можно и там,
+       но экранная клавиатура появляется неохотно, а таба и стрелок на ней
+       нет вовсе. Обычное поле решает и то и другое: строка уходит целиком,
+       кнопки рядом шлют то, чего на клавиатуре не найти. #}
+    {# Что происходит с окном. Пустой терминал не отличить от сломанного:
+       и там и там белое поле, а причин у пустоты три - не открылся сокет,
+       не пришли данные, не посчитался размер. Строка отвечает на все три. #}
+    <div class="term-state small muted" id="t-state"></div>
+
+    <div class="term-input">
+        <input type="text" id="t-line" placeholder="команда и Enter"
+               autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"
+               onkeydown="if (event.key === 'Enter') { sendLine(); }">
+        <button class="btn sm" type="button" onclick="sendKey('\t')">Tab</button>
+        <button class="btn sm" type="button" onclick="sendKey('?')">?</button>
+        <button class="btn sm" type="button" onclick="sendKey('\u0003')">Ctrl+C</button>
+        <button class="btn sm primary" type="button" onclick="sendLine()">Ввод</button>
+    </div>
 </div>
 {% else %}
 <div class="panel">
@@ -110,6 +129,13 @@
         });
         term.open(box);
         fit();
+        fitSoon();
+
+        // Размер окна меняется не только вместе с окном браузера: на
+        // телефоне это адресная строка, клавиатура и поворот экрана
+        if (window.ResizeObserver) {
+            new ResizeObserver(() => { fit(); sendSize(); }).observe(box);
+        }
 
         const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
         socket = new WebSocket(`${scheme}://${window.location.host}/ws/terminal/${id}`);
@@ -117,8 +143,11 @@
         socket.onmessage = (event) => {
             const message = JSON.parse(event.data);
             if (message.type === 'data') {
-                term.write(message.text);
+                // Прокрутка вниз обязательна: буфер после подгонки размера
+                // может остаться показывать пустое место выше вывода
+                term.write(message.text, () => term.scrollToBottom());
             } else if (message.type === 'ready') {
+                fitSoon();
                 sendSize();
                 term.focus();
             } else if (message.type === 'error') {
@@ -141,6 +170,8 @@
 
         document.getElementById('t-connect').style.display = 'none';
         document.getElementById('t-disconnect').style.display = '';
+        showState();
+        setInterval(showState, 1000);
     }
 
     function disconnect() {
@@ -170,7 +201,64 @@
         }
     }
 
+    /**
+     * Подогнать размер несколько раз подряд.
+     *
+     * Первый замер на телефоне случается раньше, чем встали шрифт
+     * и раскладка: ширина символа выходит нулевой, `fit` уходит ни с чем,
+     * и окно остаётся пустым до первого изменения размера окна, которого
+     * на телефоне не бывает. Поэтому повторяем, пока не получится.
+     */
+    function fitSoon() {
+        [0, 120, 400, 1000, 2500].forEach((delay) => setTimeout(() => {
+            fit();
+            if (term) {
+                term.refresh(0, term.rows - 1);
+                term.scrollToBottom();
+            }
+            showState();
+        }, delay));
+    }
+
     window.addEventListener('resize', () => { fit(); sendSize(); });
+    window.addEventListener('orientationchange', () => { fitSoon(); sendSize(); });
+    // Возврат к вкладке или к приложению с домашнего экрана: пока оно было
+    // свёрнуто, размеры могли измениться, а событий об этом не приходило
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) { fitSoon(); sendSize(); }
+    });
+
+    /** Показать размер окна, состояние сокета и объём буфера. */
+    function showState() {
+        const box = document.getElementById('t-state');
+        if (!box) { return; }
+        if (!term) { box.textContent = ''; return; }
+        // Слова через T(): иначе они не попадают в словарь для браузера,
+        // и на английской панели строка состояния остаётся русской
+        const states = [T('соединяется'), T('открыт'), T('закрывается'), T('закрыт')];
+        const buffer = term.buffer.active;
+        box.textContent = term.cols + '×' + term.rows + ' · '
+            + T('сокет') + ': ' + (socket ? states[socket.readyState] : T('нет'))
+            + ' · ' + T('строк') + ': ' + buffer.length;
+    }
+
+    /** Отправить строку целиком, как будто её набрали и нажали Enter. */
+    function sendLine() {
+        const field = document.getElementById('t-line');
+        if (!field || !socket || socket.readyState !== WebSocket.OPEN) { return; }
+        socket.send(JSON.stringify({ type: 'data', text: field.value + '\r' }));
+        field.value = '';
+        field.focus();
+    }
+
+    /** Отправить один символ: таб, вопрос, прерывание. */
+    function sendKey(key) {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: 'data', text: key }));
+        }
+        const field = document.getElementById('t-line');
+        if (field) { field.focus(); }
+    }
 
     async function forgetKey() {
         const id = document.getElementById('t-device').value;
