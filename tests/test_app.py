@@ -1643,6 +1643,46 @@ def test_dashboard_shows_events_fragment(client):
     assert r.status_code == 200
 
 
+def test_panel_can_live_on_a_phone_home_screen(client):
+    """
+    Панель добавляется на домашний экран и открывается как приложение.
+
+    Проверяем не оформление, а то, без чего кнопка «На экран Домой» даёт
+    ярлык на страницу в браузере: манифест, значки нужных размеров,
+    метки для iOS и нижние вкладки в разметке.
+    """
+    from pathlib import Path
+
+    from app.config import BASE_DIR
+
+    answer = client.get("/manifest.webmanifest")
+    assert answer.status_code == 200
+    assert answer.headers["content-type"].startswith("application/manifest+json")
+
+    manifest = answer.json()
+    assert manifest["display"] == "standalone"
+    # Область действия и стартовый адрес это корень, а не папка статики:
+    # иначе приложением объявляется одна папка с картинками
+    assert manifest["start_url"] == "/" and manifest["scope"] == "/"
+
+    sizes = {icon["sizes"] for icon in manifest["icons"]}
+    assert {"192x192", "512x512"} <= sizes
+    assert any(icon.get("purpose") == "maskable" for icon in manifest["icons"])
+    for icon in manifest["icons"]:
+        assert Path(BASE_DIR, icon["src"].lstrip("/")).exists(), icon["src"]
+
+    page = client.get("/").text
+    # iOS манифест почти не читает, ему нужны свои метки
+    assert 'rel="apple-touch-icon"' in page
+    assert 'name="apple-mobile-web-app-capable"' in page
+    assert "viewport-fit=cover" in page, "без этого вырез и полоска «домой» съедят края"
+    assert Path(BASE_DIR, "static", "icon-180.png").exists()
+
+    # Нижние вкладки и лист со всеми разделами
+    assert 'class="tabbar"' in page
+    assert "toggleMenu()" in page
+
+
 def test_monitor_settings_visible(client):
     html = client.get("/settings/collect").text
     assert "Мониторинг доступности" in html
@@ -7761,6 +7801,39 @@ def test_syslog_highlighting_rules(client, router):
     assert client.post(f"/api/syslog/rules/{rule_id}/toggle").status_code == 200
     assert syslog.match_color("login failure for user admin", syslog.rules()) == "warn"
     assert client.post(f"/api/syslog/rules/{rule_id}/delete").status_code == 200
+
+
+def test_every_rule_colour_is_paintable(client, router):
+    """
+    Каждый цвет из списка доходит до ленты и до таблицы стилей.
+
+    Список цветов, класс в разметке и правило в CSS живут в трёх разных
+    местах, и добавить цвет забыв про третье слишком легко: правило
+    сохранится, а строка останется чёрной, и понять почему можно только
+    в инструментах браузера.
+    """
+    from pathlib import Path
+
+    from app import i18n, syslog
+    from app.config import BASE_DIR
+    from app.routes.syslog import COLORS
+
+    css = Path(BASE_DIR, "static", "app.css").read_text(encoding="utf-8")
+
+    for key, name in COLORS.items():
+        pattern = f"проверка цвета {key}"
+        answer = client.post("/api/syslog/rules", json={"pattern": pattern, "color": key})
+        assert answer.status_code == 200, (key, answer.text)
+        assert syslog.match_color(pattern.upper(), syslog.rules()) == key
+
+        assert f".sl-{key} " in css or f".sl-{key}\n" in css or f".sl-{key}{{" in css, key
+        assert f".c-line.sl-{key}" in css, key
+        # Название цвета человек читает в списке, значит оно переводится
+        assert i18n.translate_text(name, "en") != name, name
+
+    # Незнакомый цвет по-прежнему отвергается: список закрытый намеренно
+    assert client.post("/api/syslog/rules", json={
+        "pattern": "хаки", "color": "khaki"}).status_code == 400
 
 
 def test_hidden_lines_stay_in_the_database(client, router):

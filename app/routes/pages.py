@@ -15,6 +15,43 @@ from .deps import pager, render, render_partial, resolve_lang
 router = APIRouter()
 
 
+@router.get("/manifest.webmanifest")
+async def manifest():
+    """
+    Описание веб-приложения для кнопки «На экран Домой».
+
+    Лежит в корне, а не в статике: область действия по умолчанию
+    считается от адреса самого файла, и манифест из `/static/` объявил
+    бы приложением только эту папку.
+
+    Открытая с домашнего экрана панель показывается без адресной строки
+    и вкладок: телефон в кармане у человека, который смотрит парк
+    на ходу, а не браузер.
+    """
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        {
+            "name": "Tikpilot",
+            "short_name": "Tikpilot",
+            "description": "Панель управления парком MikroTik",
+            "start_url": "/",
+            "scope": "/",
+            "display": "standalone",
+            "orientation": "portrait-primary",
+            "background_color": "#f4f6f6",
+            "theme_color": "#0f6156",
+            "icons": [
+                {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
+                {"src": "/static/icon-maskable-512.png", "sizes": "512x512",
+                 "type": "image/png", "purpose": "maskable"},
+            ],
+        },
+        media_type="application/manifest+json",
+    )
+
+
 @router.get("/")
 async def dashboard(request: Request, user=Depends(current_user)):
     """Главная страница: сводка по парку и последние задачи."""

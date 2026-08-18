@@ -122,10 +122,16 @@ the lines next to everything else: a line is tied to its site right away, and
 you can jump from it to that device. Filters by text, site, severity and topic,
 a live feed that loads older lines as you scroll, and a text export.
 
-Rules decide what happens to a line: highlight it, hide it (still in the
-database, brought back by a checkbox), or do not store it at all. The second is
-for what irritates the eye, the third for what is not worth keeping. The panel's
-own API logins come with a ready made hide rule, switched off.
+Rules decide what happens to a line: highlight it in one of nine colours, hide
+it (still in the database, brought back by a checkbox), or do not store it at
+all. The second is for what irritates the eye, the third for what is not worth
+keeping. The panel's own API logins come with a ready made hide rule, switched
+off.
+
+**On a phone.** The panel can be added to the home screen and opens like an
+app: no address bar, its own icon, a bottom tab bar within thumb reach and
+padding around the notch. Nothing to install, it is still a web page: Safari,
+Share, Add to Home Screen.
 
 **Audit log.** Who did what and when.
 

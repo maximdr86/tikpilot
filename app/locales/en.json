@@ -1880,5 +1880,11 @@
   "Удалён порог": "Threshold deleted",
   "· <a href=\"/settings/alerts\">правила и уведомления</a>": "· <a href=\"/settings/alerts\">rules and notifications</a>",
   "Правила <span class=\"h2-extra\"> <span class=\"muted\">%(p0)s</span>": "Rules <span class=\"h2-extra\"> <span class=\"muted\">%(p0)s</span>",
-  "Сейчас за порогом <span class=\"h2-extra\"> <span class=\"muted\">%(p0)s</span>": "Over the threshold now <span class=\"h2-extra\"> <span class=\"muted\">%(p0)s</span>"
+  "Сейчас за порогом <span class=\"h2-extra\"> <span class=\"muted\">%(p0)s</span>": "Over the threshold now <span class=\"h2-extra\"> <span class=\"muted\">%(p0)s</span>",
+  "оранжевый": "orange",
+  "бирюзовый": "teal",
+  "фиолетовый": "purple",
+  "розовый": "pink",
+  "Логи": "Logs",
+  "Ещё": "More"
 }
