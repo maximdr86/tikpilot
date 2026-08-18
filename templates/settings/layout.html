@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ tab_title | t }} · Настройки · Tikpilot{% endblock %}
+
+{#
+    Общая рамка настроек: заголовок, полоска вкладок, место под сообщение.
+
+    Вкладки, а не одна длинная страница. Раньше здесь в одном полотне
+    лежали люди с правами, интервалы опроса, справочники и диагностика,
+    и найти нужное можно было только прокруткой. Разделы разные по сути
+    и по частоте посещений: в «Доступ» ходят каждую неделю, в «Систему»
+    раз в полгода.
+
+    Полоска обычные ссылки, у каждой вкладки свой адрес. Ни скриптов,
+    ни спрятанных блоков: страница, на которую нельзя дать ссылку, это
+    половина страницы.
+#}
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Настройки</h1>
+        <div class="sub">{{ tab_sub | t }}</div>
+    </div>
+</div>
+
+<div class="tabs">
+    {% for item in tabs %}
+    <a class="tab {% if item.key == tab %}active{% endif %}" href="/settings/{{ item.key }}">
+        {{ item.name | t }}
+    </a>
+    {% endfor %}
+</div>
+
+{% if message %}<div class="alert ok">{{ message | t }}</div>{% endif %}
+{% if error %}<div class="alert error">{{ error | t }}</div>{% endif %}
+
+{% block tab_body %}{% endblock %}
+{% endblock %}

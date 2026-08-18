@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 
 from ..auth import (
+    Forbidden,
     authenticate,
     clear_session_cookie,
     client_ip,
@@ -237,18 +238,133 @@ def _users_context(request: Request | None = None) -> dict[str, object]:
             str(request.base_url).rstrip("/") if request is not None else ""),
         "invite_hours": invites.DEFAULT_HOURS,
         "fresh_invite": "",
-        "pref_groups": prefs.form(),
-        "vendors": vendors.state(),
-        "unknown_operators": operator.unknown_names(),
-        "operator_colors": operator.COLORS,
     }
 
 
+#: Вкладки настроек: ключ, название, подпись под заголовком и право.
+#:
+#: Раньше это была одна страница на шестьсот строк, где вперемешку лежали
+#: люди с правами, интервалы опроса, справочники и диагностика. Разделы
+#: разные и по сути, и по частоте посещений: в «Доступ» ходят каждую
+#: неделю, в «Систему» раз в полгода.
+SETTINGS_TABS: tuple[dict[str, str], ...] = (
+    {"key": "access", "name": "Доступ", "need": "settings.view",
+     "sub": "Кто заходит в панель и что ему разрешено"},
+    {"key": "collect", "name": "Сбор данных", "need": "settings.view",
+     "sub": "Как часто панель ходит на точки и что при этом меряет"},
+    {"key": "alerts", "name": "Пороги", "need": "alerts.view",
+     "sub": "Правила и доставка. Что горит прямо сейчас, видно на мониторинге"},
+    {"key": "reference", "name": "Справочники", "need": "settings.view",
+     "sub": "Списки, по которым панель узнаёт железо и операторов"},
+    {"key": "system", "name": "Система", "need": "settings.view",
+     "sub": "Витрина, сведения о программе и советы по безопасности"},
+)
+
+#: Какие разделы параметров показывать на какой вкладке. Форма шлёт
+#: вместе со значениями названия своих разделов, поэтому чужие поля
+#: она не трогает.
+TAB_PREFS: dict[str, tuple[str, ...]] = {
+    "collect": ("Мониторинг", "Задержка и потери", "Трафик", "Операторы",
+                "Сроки хранения"),
+    "alerts": ("Уведомления",),
+    "system": ("Интерфейс",),
+}
+
+
+def _tab_allowed(user: dict, tab: dict) -> bool:
+    return permissions.has(user, tab["need"])
+
+
+def _render_tab(tab: str, request: Request, user: dict,
+                message: str | None = None, error: str | None = None, **extra):
+    """
+    Показать вкладку настроек. Данные собираются только для неё.
+
+    Список устройств для областей видимости и разбор прав нужны одной
+    вкладке из пяти, и тянуть их на каждую значит платить за то, чего
+    никто не смотрит.
+
+    Права здесь не проверяются: этим занимается обработчик адреса.
+    Свой пароль меняет кто угодно, в том числе человек без права
+    видеть настройки, и ответ на смену пароля он получить обязан.
+    """
+    known = {item["key"]: item for item in SETTINGS_TABS}
+    current = known.get(tab) or known["access"]
+
+    context: dict[str, object] = {
+        "tab": current["key"],
+        "tab_title": current["name"],
+        "tab_sub": current["sub"],
+        "tabs": [item for item in SETTINGS_TABS if _tab_allowed(user, item)],
+        "message": message,
+        "error": error,
+    }
+
+    groups = TAB_PREFS.get(current["key"])
+    if groups:
+        context["pref_groups"] = prefs.form(groups)
+
+    if current["key"] == "access":
+        # Список учётных записей видит только тот, кому положено видеть
+        # настройки: иначе ответ на смену своего пароля показал бы чужие
+        # учётки тому, кто их не видит на самой странице
+        context.update(_users_context(request) if permissions.has(user, "settings.view")
+                       else {"users": [], "permission_list": [],
+                             "permission_full": permissions.FULL, "presets": {},
+                             "preset_labels": {}, "all_groups": [], "all_devices": [],
+                             "invites": [], "fresh_invite": "", "invite_base": "",
+                             "invite_hours": invites.DEFAULT_HOURS})
+    elif current["key"] == "collect":
+        context["diag"] = _diagnostics()
+    elif current["key"] == "alerts":
+        from .alerts import config_context
+
+        context.update(config_context(resolve_lang(request, user)))
+    elif current["key"] == "reference":
+        context["vendors"] = vendors.state()
+        context["unknown_operators"] = operator.unknown_names()
+        context["operator_colors"] = operator.COLORS
+    elif current["key"] == "system":
+        context["diag"] = _diagnostics()
+
+    context.update(extra)
+    return render(f"settings/{current['key']}.html", request, user,
+                  active="settings", **context)
+
+
 @router.get("/settings")
-async def settings_page(request: Request, user=Depends(require("settings.view"))):
-    """Страница управления администраторами."""
-    return render("settings.html", request, user, active="settings",
-                  message=None, error=None, diag=_diagnostics(), **_users_context(request))
+async def settings_page(user=Depends(require("settings.view"))):
+    """Настройки без вкладки: уводим на первую доступную."""
+    for item in SETTINGS_TABS:
+        if _tab_allowed(user, item):
+            return RedirectResponse(f"/settings/{item['key']}", status_code=303)
+    raise Forbidden()
+
+
+@router.get("/settings/alerts")
+async def settings_alerts(request: Request, user=Depends(current_user)):
+    """
+    Вкладка порогов. Своё право, объявлена раньше общей.
+
+    Пороги закрыты правом `alerts.view`, а не правом видеть настройки:
+    так было, когда они жили отдельной страницей, и переезд не повод
+    отбирать доступ у того, кому его выдали.
+    """
+    if not permissions.has(user, "alerts.view"):
+        raise Forbidden()
+    return _render_tab("alerts", request, user)
+
+
+@router.get("/settings/{tab}")
+async def settings_tab(request: Request, tab: str,
+                       user=Depends(require("settings.view"))):
+    """Вкладка настроек. Каждая со своим адресом, на неё можно дать ссылку."""
+    known = {item["key"]: item for item in SETTINGS_TABS}
+    if tab not in known:
+        return RedirectResponse("/settings", status_code=303)
+    if not _tab_allowed(user, known[tab]):
+        raise Forbidden()
+    return _render_tab(tab, request, user)
 
 
 @router.post("/settings/password")
@@ -286,8 +402,7 @@ async def change_password(
         extra = {"users": [], "permission_list": [], "permission_full": permissions.FULL,
                  "presets": {}, "preset_labels": {}, "all_groups": [], "all_devices": []}
 
-    return render("settings.html", request, user, active="settings",
-                  message=message, error=error, diag=_diagnostics(), **extra)
+    return _render_tab("access", request, user, message, error)
 
 
 @router.post("/settings/users")
@@ -318,8 +433,7 @@ async def add_user(
         except Exception:  # noqa: BLE001 — почти всегда это дубликат имени
             error = "Пользователь с таким именем уже существует"
 
-    return render("settings.html", request, user, active="settings",
-                  message=message, error=error, diag=_diagnostics(), **_users_context(request))
+    return _render_tab("access", request, user, message, error)
 
 
 @router.post("/settings/invites")
@@ -333,11 +447,8 @@ async def create_invite(request: Request, note: str = Form(""),
     log_audit(user["username"], "Создано приглашение", note.strip() or "без пометки",
               f"срок {hours} ч", client_ip(request))
 
-    context = _users_context(request)
-    context["fresh_invite"] = token
-    return render("settings.html", request, user, active="settings",
-                  message="Приглашение создано, скопируйте ссылку",
-                  error=None, diag=_diagnostics(), **context)
+    return _render_tab("access", request, user,
+                       "Приглашение создано, скопируйте ссылку", fresh_invite=token)
 
 
 @router.post("/settings/invites/{invite_id}/revoke")
@@ -353,9 +464,7 @@ async def revoke_invite(request: Request, invite_id: int,
     else:
         error = "Приглашение не найдено"
 
-    return render("settings.html", request, user, active="settings",
-                  message=message, error=error, diag=_diagnostics(),
-                  **_users_context(request))
+    return _render_tab("access", request, user, message, error)
 
 
 def _invite_page(request: Request, token: str, error: str | None = None,
@@ -471,8 +580,7 @@ async def save_permissions(request: Request, user_id: int,
                       ", ".join(sorted(keys)) or "нет прав", ip=client_ip(request))
             message = f"Права пользователя {target['username']} сохранены"
 
-    return render("settings.html", request, user, active="settings",
-                  message=message, error=error, diag=_diagnostics(), **_users_context(request))
+    return _render_tab("access", request, user, message, error)
 
 
 @router.post("/settings/users/{user_id}/password")
@@ -512,8 +620,7 @@ async def reset_user_password(request: Request, user_id: int,
                   str(target["username"]), "прежние входы завершены", client_ip(request))
         message = f"Пароль пользователя {target['username']} изменён, прежние входы завершены"
 
-    return render("settings.html", request, user, active="settings",
-                  message=message, error=error, diag=_diagnostics(), **_users_context(request))
+    return _render_tab("access", request, user, message, error)
 
 
 @router.post("/settings/users/{user_id}/delete")
@@ -531,8 +638,7 @@ async def delete_user(request: Request, user_id: int,
         log_audit(user["username"], "Удалён администратор", str(user_id), ip=client_ip(request))
         message = "Пользователь удалён"
 
-    return render("settings.html", request, user, active="settings",
-                  message=message, error=error, diag=_diagnostics(), **_users_context(request))
+    return _render_tab("access", request, user, message, error)
 
 
 @router.post("/settings/operators")
@@ -559,9 +665,7 @@ async def name_operator(request: Request,
                   "", ip=client_ip(request))
         message = f"Имя для {needle.strip()} убрано"
 
-    return render("settings.html", request, user, active="settings",
-                  message=message, error=None, diag=_diagnostics(),
-                  **_users_context(request))
+    return _render_tab("reference", request, user, message)
 
 
 def _back(request: Request, target: str) -> RedirectResponse:
@@ -614,8 +718,17 @@ async def save_prefs(request: Request, user=Depends(require("users.manage"))):
     что живёт в `.env`.
     """
     form = await request.form()
+
+    # Форма стоит на нескольких вкладках и присылает названия своих
+    # разделов. Без них выключенный флажок с чужой вкладки выглядел бы
+    # как снятый: браузер невыбранный флажок не отправляет вовсе.
+    sent = set(form.getlist("pref_group"))
+    tab = str(form.get("tab") or "collect")
+
     values = {}
     for field in prefs.FIELDS:
+        if sent and field.group not in sent:
+            continue
         if field.kind == "bool":
             values[field.key] = "1" if form.get(field.key) else "0"
         elif field.key in form:
@@ -624,18 +737,15 @@ async def save_prefs(request: Request, user=Depends(require("users.manage"))):
     touched = prefs.save(values, user["username"])
     message = ("Настройки сохранены и уже действуют: %s" % ", ".join(touched)
                if touched else "Менять было нечего")
-    return render("settings.html", request, user, active="settings",
-                  message=message, error=None, diag=_diagnostics(),
-                  **_users_context(request))
+    return _render_tab(tab, request, user, message)
 
 
 @router.post("/settings/prefs/reset")
 async def reset_prefs(request: Request, user=Depends(require("users.manage"))):
     """Вернуться к тому, что написано в `.env`."""
     removed = prefs.reset(user["username"])
-    return render("settings.html", request, user, active="settings",
-                  message="Настройки снова берутся из .env, снято: %s" % removed,
-                  error=None, diag=_diagnostics(), **_users_context(request))
+    return _render_tab("system", request, user,
+                       "Настройки снова берутся из .env, снято: %s" % removed)
 
 
 @router.post("/settings/vendors")
@@ -650,12 +760,10 @@ async def update_vendors(request: Request, user=Depends(require("users.manage"))
     try:
         count = vendors.update()
     except Exception as exc:  # noqa: BLE001 - причину показываем человеку
-        return render("settings.html", request, user, active="settings",
-                      message=None, error="База вендоров не обновилась: %s" % exc,
-                      diag=_diagnostics(), **_users_context(request))
+        return _render_tab("reference", request, user, None,
+                           "База вендоров не обновилась: %s" % exc)
 
     log_audit(user["username"], "Обновлена база вендоров", "",
               "записей: %s" % count, ip=client_ip(request))
-    return render("settings.html", request, user, active="settings",
-                  message="База вендоров обновлена, записей: %s" % count,
-                  error=None, diag=_diagnostics(), **_users_context(request))
+    return _render_tab("reference", request, user,
+                       "База вендоров обновлена, записей: %s" % count)

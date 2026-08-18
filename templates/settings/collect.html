@@ -1,0 +1,105 @@
+{% extends "settings/layout.html" %}
+{% block tab_body %}
+{# Сбор данных: как часто панель ходит на точки и что при этом меряет.
+   Рядом с параметрами стоит состояние самого сборщика: раньше одно
+   лежало в свёрнутом блоке, другое таблицей внизу страницы, хотя
+   вопрос у человека один. #}
+{% if can("users.manage") %}
+<div class="panel">
+    <h2>Параметры сбора</h2>
+    <div class="panel-body">
+        <div class="hint">
+            То, что раньше правилось в <span class="mono">.env</span> с перезапуском.
+            Действует сразу после сохранения. Ключи, адреса и доверенные сети
+            остались в файле намеренно: они нужны раньше, чем панель поднимется,
+            а границы доступа не должны меняться изнутри панели.
+        </div>
+        {% include "partials/prefs_form.html" %}
+    </div>
+</div>
+{% endif %}
+
+<div class="panel">
+    <h2>Мониторинг доступности</h2>
+    <div class="table-wrap">
+        <table>
+            <tbody>
+            <tr>
+                <td class="muted" style="width:260px">Состояние</td>
+                <td>
+                    {% if diag.monitor.enabled %}
+                        <span class="badge online"><span class="led"></span>работает</span>
+                    {% else %}
+                        <span class="badge unknown">выключен</span>
+                        <span class="small muted">чтобы включить, уберите
+                        <span class="mono">MONITOR_ENABLED=0</span> из .env и перезапустите</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td class="muted">Способ проверки</td>
+                <td>
+                    {% if diag.monitor.method == 'tcp' %}
+                        открыть и закрыть порт API
+                        <span class="small" style="color:var(--warn)">на слабых устройствах вызывает
+                        предупреждения «possible SYN flooding»</span>
+                    {% else %}
+                        постоянная API-сессия
+                        <span class="small muted">один вход на устройство, дальше команды в открытом соединении</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr><td class="muted">Быстрая проверка</td><td>каждые {{ diag.monitor.interval }} с</td></tr>
+            <tr><td class="muted">Полный опрос по API</td><td>каждые {{ diag.monitor.full_interval }} с</td></tr>
+            <tr>
+                <td class="muted">Цели пинга</td>
+                <td>
+                    {% if diag.latency.enabled %}
+                        {% if diag.latency.targets %}
+                            {% for t in diag.latency.targets %}
+                                <span class="badge tag-blue mono">{{ t }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span style="color:var(--warn)">не задано ни одной цели</span>
+                        {% endif %}
+                        {% if diag.latency.ping_gateway %}
+                            <span class="badge">+ шлюз каждой точки</span>
+                        {% endif %}
+                        <div class="hint">
+                            Задаётся переменной <span class="mono">LATENCY_TARGETS</span> в .env,
+                            формат <span class="mono">адрес=подпись</span> через запятую.
+                            По {{ diag.latency.count }} пакетов на цель.
+                            {% if diag.latency.custom %}
+                                Свои цели заданы у {{ diag.latency.custom }} {{ diag.latency.custom | plural('устройства', 'устройств', 'устройств') }}.
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        <span class="muted">проверки задержки выключены</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td class="muted">Открытых сессий</td>
+                <td>{{ diag.monitor.sessions }}
+                    <span class="small muted">(входов в систему с момента запуска: {{ diag.monitor.logins }})</span>
+                </td>
+            </tr>
+            <tr><td class="muted">Порог недоступности</td><td>{{ diag.monitor.threshold }} {{ diag.monitor.threshold | plural('промах', 'промаха', 'промахов') }} подряд</td></tr>
+            <tr><td class="muted">Одновременных проверок</td><td>{{ diag.monitor.workers }}</td></tr>
+            <tr><td class="muted">Последний цикл</td>
+                <td>{{ diag.monitor.last_cycle | dt }} · {{ diag.monitor.checked }} {{ diag.monitor.checked | plural('устройство', 'устройства', 'устройств') }} за {{ diag.monitor.last_duration }} с{% if diag.monitor.skipped %}, пропущено занятых задачей: {{ diag.monitor.skipped }}{% endif %}</td></tr>
+            <tr><td class="muted">Последний полный опрос</td><td>{{ diag.monitor.last_full_cycle | dt }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="panel-body"><div class="hint">
+        Соединение с устройством держится открытым, поэтому вход в систему происходит
+        один раз, а не при каждой проверке, журнал роутера остаётся чистым.
+        Массовые действия работают в той же сессии и новых входов не требуют.
+        <br>
+        Ожидаемое число входов: примерно по одному на устройство за запуск сервера.
+        Заметный избыток означает, что связь с частью точек рвётся: посмотрите
+        «Нестабильные точки» на дашборде. Счётчик обнуляется при перезапуске.
+    </div></div>
+</div>
+{% endblock %}

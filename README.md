@@ -620,6 +620,11 @@ the database instead of one).
 
 ## Thresholds and notifications
 
+The section lives in two places, split by the question a person is asking. "What
+is wrong right now" is **Monitoring**: what is firing, what is still holding and
+the feed of events sit next to the sites that are down. "How is this set up" is
+**Settings → Thresholds**: rules, chats and quiet hours.
+
 The panel shows everything, but nobody can watch it around the clock. A rule is
 a metric, a comparison, a value and a **hold time**. The last one is what
 matters: a spike of CPU during a nightly backup is not an event, half an hour at
@@ -981,8 +986,9 @@ tar czf tikpilot-$(date +%F).tar.gz data/ .env
 
 ## Settings (the `.env` file)
 
-> Settings marked **panel** can also be changed in Settings → Working parameters,
-> without editing this file or restarting. A value set there wins over the file.
+> Settings marked **panel** can also be changed in the panel itself, without
+> editing this file or restarting: **Settings**, on the Data collection,
+> Thresholds and System tabs. A value set in the panel wins over the file.
 
 
 | Variable | Default | What it sets |

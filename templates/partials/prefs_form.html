@@ -1,0 +1,57 @@
+{#
+    Форма параметров. Показывает только те группы, что переданы во
+    `pref_groups`: одна и та же форма стоит на нескольких вкладках.
+
+    Скрытые `pref_group` перечисляют, что именно эта форма охватывает.
+    Без них выключенный флажок с чужой вкладки выглядел бы как снятый:
+    браузер невыбранный флажок не отправляет вовсе, и обработчик, не
+    зная границ формы, погасил бы всё, чего в ней нет.
+#}
+<form method="post" action="/settings/prefs">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    {% for group in pref_groups %}
+    <input type="hidden" name="pref_group" value="{{ group.name }}">
+    {% endfor %}
+
+    {# Заголовок раздела не пишем, когда раздел один: над ним уже стоит
+       заголовок блока, и «Интерфейс панели / Интерфейс» это два раза
+       одно и то же. #}
+    <div class="pref-columns">
+    {% for group in pref_groups %}
+    <div class="pref-group">
+        {% if pref_groups | length > 1 %}
+        <div class="perm-title">{{ group.name | t }}</div>
+        {% endif %}
+        {% for item in group.fields %}
+        <div class="field">
+            {% if item.kind == "bool" %}
+            <label class="check">
+                <input type="checkbox" name="{{ item.key }}"
+                       {% if item.checked %}checked{% endif %}>
+                <span>{{ item.label | t }}</span>
+            </label>
+            {% else %}
+            <label for="p-{{ item.key }}">{{ item.label | t }}</label>
+            {% if item.kind == "int" %}
+            <input type="number" id="p-{{ item.key }}" name="{{ item.key }}"
+                   value="{{ item.value }}" min="{{ item.low }}" max="{{ item.high }}">
+            {% else %}
+            <input type="text" id="p-{{ item.key }}" name="{{ item.key }}"
+                   value="{{ item.value }}">
+            {% endif %}
+            {% endif %}
+            <div class="hint">
+                {{ item.hint | t }}
+                <span class="mono">{{ item.key }}</span>
+                {% if not item.from_env %}
+                · <span class="badge tag-amber">задано в панели</span>
+                в файле: <span class="mono">{{ item.default }}</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+    </div>
+    <button class="btn primary" type="submit">Сохранить параметры</button>
+</form>

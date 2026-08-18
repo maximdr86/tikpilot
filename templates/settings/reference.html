@@ -1,0 +1,73 @@
+{% extends "settings/layout.html" %}
+{% block tab_body %}
+{# Справочники: списки, по которым панель узнаёт железо и операторов.
+   Меняются редко и сами по себе, поэтому живут отдельно от параметров. #}
+{% if can("users.manage") %}
+<div class="panel">
+    <h2>Производители по MAC</h2>
+    <div class="panel-body">
+        <div class="hint">
+            Панель знает {{ vendors.total }} префиксов.
+            {% if vendors.downloaded_at %}
+            Реестры IEEE скачаны {{ vendors.downloaded_at | dt }}.
+            {% else %}
+            Пока только встроенный короткий список: частое железо узнаётся,
+            мелкие производители нет.
+            {% endif %}
+        </div>
+        <div class="hint">
+            Обновление идёт на standards-oui.ieee.org и занимает до минуты.
+            Скачанное лежит рядом с базой данных и переживает обновление панели.
+        </div>
+        <form method="post" action="/settings/vendors">
+            <button class="btn{% if vendors.stale %} primary{% endif %}" type="submit">
+                Обновить базу вендоров
+            </button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% if unknown_operators and can("devices.edit") %}
+<div class="panel" data-fold="operators">
+    <h2>Имена операторов
+        <span class="badge tag-slate">{{ unknown_operators | length }}</span>
+    </h2>
+    <div class="panel-body">
+        <div class="hint">
+            Реестр адресов отдаёт служебные строки вроде <span class="mono">RU-DANCER-20120101</span>.
+            Знакомые панель называет сама, а вот эти не узнала. Впишите имя один раз,
+            и все точки этого провайдера будут подписаны им.
+            Правило хранится в данных панели, обновление его не затирает.
+        </div>
+        <table class="table">
+            <thead>
+                <tr><th>Строка реестра</th><th>Точек</th><th>Имя</th><th>Цвет</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for row in unknown_operators %}
+                <tr>
+                    <form method="post" action="/settings/operators">
+                        <td class="mono">{{ row.name }}</td>
+                        <td>{{ row.devices }}</td>
+                        <td>
+                            <input type="hidden" name="needle" value="{{ row.name }}">
+                            <input type="text" name="name" placeholder="например, Данцер" required>
+                        </td>
+                        <td>
+                            <select name="color">
+                                {% for c in operator_colors %}
+                                <option value="{{ c }}">{{ c }}</option>
+                                {% endfor %}
+                            </select>
+                        </td>
+                        <td><button class="btn" type="submit">Назвать</button></td>
+                    </form>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

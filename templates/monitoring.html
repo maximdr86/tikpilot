@@ -55,6 +55,72 @@
     </div>
 </div>
 
+{% if can("alerts.view") %}
+{# Пороги живут здесь, а не отдельной страницей: вопрос «что сейчас
+   плохо» один, и ответ на него должен быть в одном месте. Правила
+   и чаты переехали в настройки, сюда осталось только горящее. #}
+<!-- ------------------------------------------------------------ что горит -->
+<div class="panel">
+    <h2>Сейчас за порогом
+        <span class="h2-extra">
+            <span class="muted">{{ firing | length }}</span>
+            {% if can("alerts.manage") %}
+            · <a href="/settings/alerts">правила и уведомления</a>
+            {% endif %}
+        </span>
+    </h2>
+    {% if firing %}
+    <div class="table-wrap">
+        <table>
+            <thead><tr>
+                <th>Точка</th><th>Правило</th><th class="nowrap">Значение</th>
+                <th class="nowrap">С какого времени</th>
+            </tr></thead>
+            <tbody>
+            {% for row in firing %}
+                <tr>
+                    <td><a href="/devices/{{ row.device_id }}">{{ row.device_name }}</a></td>
+                    <td>{{ row.rule_name }}</td>
+                    <td class="mono">{{ row.value_text }}</td>
+                    <td class="nowrap">{{ row.fired_at | dt }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="panel-body"><div class="hint">Всё в норме.</div></div>
+    {% endif %}
+</div>
+
+{% if pending %}
+{# Показываем и то, что ещё выдерживается: иначе панель выглядит так,
+   будто она проспала, хотя она как раз считает минуты. #}
+<div class="panel">
+    <h2>Держится, но выдержка не вышла</h2>
+    <div class="table-wrap">
+        <table>
+            <thead><tr>
+                <th>Точка</th><th>Правило</th><th class="nowrap">Значение</th>
+                <th class="nowrap">Ждём с</th><th class="nowrap">Выдержка</th>
+            </tr></thead>
+            <tbody>
+            {% for row in pending %}
+                <tr>
+                    <td><a href="/devices/{{ row.device_id }}">{{ row.device_name }}</a></td>
+                    <td>{{ row.rule_name }}</td>
+                    <td class="mono">{{ row.value_text }}</td>
+                    <td class="nowrap">{{ row.since | dt }}</td>
+                    <td class="nowrap mono">{{ row.hold_minutes }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
 <!-- --------------------------------------------------------- карта статусов -->
 <div class="panel" data-fold="map">
     <h2>
@@ -210,6 +276,52 @@
             {% endfor %}
         </div>
     </div>
+</div>
+{% endif %}
+
+{% if can("alerts.view") %}
+<!-- ---------------------------------------------------------------- лента -->
+<div class="panel" data-fold="alert-events">
+    <h2>Что срабатывало
+        <span class="h2-extra muted">пороги</span>
+    </h2>
+    {% if alert_events %}
+    <div class="table-wrap">
+        <table>
+            <thead><tr>
+                <th class="nowrap">Время</th><th>Точка</th><th>Правило</th>
+                <th class="nowrap">Что случилось</th><th class="nowrap">Значение</th>
+                <th class="nowrap">Началось</th><th class="nowrap">Длилось</th>
+            </tr></thead>
+            <tbody>
+            {% for e in alert_events %}
+                <tr>
+                    <td class="nowrap">{{ e.ts | dt }}</td>
+                    <td>{% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ e.device_name }}</a>{% else %}{{ e.device_name }}{% endif %}</td>
+                    <td>{{ e.rule_name }}</td>
+                    <td class="nowrap">
+                        {% if e.kind == 'fired' %}
+                            <span class="badge offline">вышло за порог</span>
+                        {% else %}
+                            <span class="badge online">вернулось в норму</span>
+                        {% endif %}
+                    </td>
+                    {# У выздоровления значение всегда нормальное: «0 мин»
+                       после подъёма это правда, но правда бесполезная #}
+                    <td class="mono">{% if e.kind == 'fired' %}{{ e.value_text }}{% endif %}</td>
+                    {# Время начала, а не срабатывания: их разделяет выдержка,
+                       и «упало в 12:17» человеку нужнее, чем «правило
+                       загорелось в 12:47». #}
+                    <td class="nowrap mono muted">{{ e.began_text }}</td>
+                    <td class="nowrap mono">{{ e.lasted_text }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="panel-body"><div class="hint">Событий пока не было.</div></div>
+    {% endif %}
 </div>
 {% endif %}
 

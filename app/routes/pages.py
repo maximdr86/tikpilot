@@ -10,7 +10,7 @@ from ..auth import client_ip, current_user, require
 from ..config import settings
 from ..database import log_audit, query, query_one, utcnow
 from .. import permissions
-from .deps import pager, render, render_partial
+from .deps import pager, render, render_partial, resolve_lang
 
 router = APIRouter()
 
@@ -469,6 +469,7 @@ async def monitoring(request: Request, hours: int = 24, user=Depends(current_use
     """
     scope = permissions.scope_sql(user)
     from .. import monitor
+    from . import alerts as alerts_page
 
     hours = hours if hours in (1, 24, 168, 720) else 24
     rows = monitor.availability(hours, scope)
@@ -501,6 +502,11 @@ async def monitoring(request: Request, hours: int = 24, user=Depends(current_use
         flapping=monitor.flapping_devices(scope=scope),
         monitor_state=monitor.state,
         hours=hours,
+        # Пороги показываем здесь же: вопрос «что сейчас плохо» один,
+        # и ответ на него не должен лежать на двух страницах
+        **(alerts_page.live_context(resolve_lang(request, user))
+           if permissions.has(user, "alerts.view")
+           else {"firing": [], "pending": [], "alert_events": []}),
     )
 
 

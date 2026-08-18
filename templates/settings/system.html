@@ -1,0 +1,117 @@
+{% extends "settings/layout.html" %}
+{% block tab_body %}
+{# Система: то, куда заходят раз в полгода. Витрина, версия, советы. #}
+{% if can("users.manage") %}
+<div class="panel">
+    <h2>Интерфейс панели</h2>
+    <div class="panel-body">
+        {% include "partials/prefs_form.html" %}
+
+        {# Сброс здесь, а не рядом с каждой формой: он снимает всё
+           заданное в панели разом, по всем вкладкам, и такому месту
+           положено быть одно. #}
+        <form method="post" action="/settings/prefs/reset" style="margin-top:14px">
+            <button class="btn" type="submit">Вернуть все параметры из .env</button>
+            <div class="hint">
+                Снимает всё, что задано в панели, на всех вкладках. Значения
+                снова берутся из файла.
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% if can("users.manage") %}
+<div class="panel">
+    <h2>Режим витрины</h2>
+    <div class="panel-body">
+        <div class="hint">
+            Для скриншотов и показа панели на экране. Названия точек и групп,
+            адреса, имена устройств за роутером, MAC и учётные записи заменяются
+            вымышленными: адреса берутся из диапазонов, отведённых под примеры,
+            а MAC собираются так, что не принадлежат ни одному производителю.
+            Подмена живёт только в ответе браузеру, база не меняется.
+            Режим включается для вашего браузера и держится {{ demo_hours }} ч:
+            остальные в это время видят настоящие данные.
+        </div>
+        <div class="hint">
+            Это удобство, а не защита. Тот, кто уже вошёл в панель,
+            видит настоящие данные в любой момент.
+        </div>
+        {% if demo_on %}
+        <form method="post" action="/demo/off">
+            <input type="hidden" name="next" value="/settings">
+            <button class="btn" type="submit">Выключить режим витрины</button>
+        </form>
+        {% else %}
+        <form method="post" action="/demo/on">
+            <input type="hidden" name="next" value="/settings">
+            <button class="btn" type="submit">Включить режим витрины</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<div class="panel">
+    <h2>О программе</h2>
+    <div class="panel-body">
+    {% if diag.missing_methods %}
+    <div class="alert error">
+        <strong>Запущен несогласованный код.</strong>
+        В загруженном модуле нет методов: <span class="mono">{{ diag.missing_methods | join(', ') }}</span>.
+        Почти всегда это означает, что сервер поднят из старой папки или не был перезапущен
+        после обновления файлов. Остановите его (Ctrl+C) и запустите заново из каталога,
+        указанного ниже.
+    </div>
+    {% endif %}
+
+    <div class="table-wrap">
+        <table>
+            <tbody>
+            <tr><td class="muted" style="width:220px">Версия Tikpilot</td><td class="mono">{{ diag.version }}</td></tr>
+            <tr><td class="muted">Каталог программы</td><td class="mono">{{ diag.base_dir }}</td></tr>
+            <tr><td class="muted">Файл базы данных</td><td class="mono">{{ diag.db_path }}</td></tr>
+            <tr><td class="muted">Python</td><td class="mono small">{{ diag.python }}</td></tr>
+            <tr>
+                <td class="muted">Доступные действия</td>
+                <td class="small">{% for a in diag.actions %}{{ a | t }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="hint">
+        Если каталог программы не тот, из которого вы ожидаете работу, значит сервер запущен
+        не из той папки. Именно там он читает код и хранит базу.
+    </div>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>Рекомендации по безопасности</h2>
+    <div class="panel-body">
+    <div class="hint" style="margin-bottom:9px">
+        Доступ к панели:
+        {% if diag.admin_networks %}
+            только из сетей <span class="mono">{{ diag.admin_networks }}</span>.
+            Публичный лист состояния при этом открыт всем, как и задумано.
+        {% else %}
+            <strong>откуда угодно</strong>. Если порт проброшен наружу ради
+            публичной ссылки, укажите свои сети в
+            <span class="mono">ADMIN_NETWORKS</span>: тогда снаружи останется
+            доступен только лист состояния.
+        {% endif %}
+    </div>
+    <ul class="muted small" style="margin:0;padding-left:18px;line-height:1.9">
+        <li>Заведите на MikroTik отдельного пользователя для Tikpilot с минимальными политиками
+            (<span class="mono">api, read, write, test, ftp</span>, плюс <span class="mono">reboot</span>,
+            если нужны перезагрузки) и ограничьте ему <span class="mono">allowed-address</span> адресом сервера.</li>
+        <li>Пароли устройств хранятся в базе зашифрованными (Fernet). Ключ лежит в
+            <span class="mono">data/fernet.key</span>, сделайте его резервную копию и ограничьте доступ.</li>
+        <li>Публикуйте интерфейс только через HTTPS-реверс-прокси и включите
+            <span class="mono">COOKIE_SECURE=1</span> в <span class="mono">.env</span>.</li>
+        <li>Смените пароль администратора по умолчанию сразу после первого входа.</li>
+    </ul>
+    </div>
+</div>
+{% endblock %}
