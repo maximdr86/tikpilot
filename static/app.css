@@ -50,6 +50,15 @@
     --log-src:       #0f6156;
     --log-topic:     #64756f;
 
+    /* Цвета правил подсветки. Отдельно от цветов состояния: те означают
+       «хорошо, тревожно, плохо», а эти просто различают сюжеты в ленте,
+       и подбирались по читаемости на фоне журнала. */
+    --hl-orange:     #b25a12;
+    --hl-teal:       #0b6f80;
+    --hl-blue:       #1257a8;
+    --hl-purple:     #6c3fb5;
+    --hl-pink:       #b3246e;
+
     --radius:        4px;
     --radius-lg:     6px;
     --shadow:        0 2px 8px rgba(20, 40, 36, .08);
@@ -95,6 +104,12 @@ html[data-theme="dark"] {
     --log-time:      #5c7b75;
     --log-src:       #7fb3a8;
     --log-topic:     #7f8f8b;
+
+    --hl-orange:     #e2954f;
+    --hl-teal:       #4fc3d6;
+    --hl-blue:       #7fb0ee;
+    --hl-purple:     #b699f2;
+    --hl-pink:       #f091bf;
 
     --shadow:        0 2px 10px rgba(0, 0, 0, .40);
     --shadow-lg:     0 10px 30px rgba(0, 0, 0, .55);
@@ -543,18 +558,100 @@ textarea { min-height: 110px; resize: vertical; font-family: Consolas, Menlo, mo
     .grid.cols-4, .grid.cols-5 { grid-template-columns: repeat(2, 1fr); }
     .grid.cols-3, .grid.cols-2 { grid-template-columns: 1fr; }
 }
+/* ============================================================== телефон */
+/* Панель добавляют на домашний экран, и открывается она без адресной
+   строки и вкладок. Значит верх и низ экрана панель обязана обставить
+   сама, иначе получается страница, потерявшая браузер.
+
+   Устройство раскладки такое же, как в мобильных приложениях: сверху
+   тонкая полоска с названием, снизу пять вкладок под большой палец,
+   остальные разделы в выдвигающемся снизу листе. Меню из четырнадцати
+   ссылок в шапке, которое было раньше, на телефоне занимало пол-экрана
+   и всё равно требовало прицеливаться.
+
+   Отступы под вырез и полоску «домой» раздаёт env(safe-area-inset-*):
+   в браузере они нулевые, поэтому одна и та же вёрстка годится и там
+   и там. */
+.mobile-top, .tabbar, .sheet-backdrop { display: none; }
+
 @media (max-width: 720px) {
     .layout { flex-direction: column; }
-    .sidebar {
-        width: 100%; flex: none; height: auto; position: static;
-        flex-direction: row; flex-wrap: wrap; padding: 0 0 6px;
+
+    /* Верхняя полоска. Липкая: на длинных таблицах видно, где ты. */
+    .mobile-top {
+        display: flex; align-items: center; gap: 8px;
+        position: sticky; top: 0; z-index: 30;
+        padding: 8px 12px;
+        padding-top: calc(8px + env(safe-area-inset-top));
+        background: var(--nav-bg);
+        border-bottom: 1px solid var(--nav-border);
+        color: var(--accent); font-weight: 600; font-size: 15px;
     }
-    .brand { width: 100%; margin-bottom: 4px; }
-    .nav-group { display: none; }
-    .nav-link { flex: 1 1 auto; justify-content: center; padding: 7px 10px; border-left: none; border-bottom: 3px solid transparent; }
-    .nav-link.active { border-left: none; border-bottom-color: var(--accent); }
-    .nav-spacer, .nav-foot { display: none; }
-    .content { padding: 12px 10px 36px; }
+    .mobile-top .count {
+        margin-left: auto;
+        background: var(--err); color: #fff;
+        border-radius: 9px; padding: 0 7px;
+        font-size: 11px; font-weight: 700; line-height: 17px;
+    }
+
+    /* Боковое меню превращается в лист, выезжающий снизу */
+    .sidebar {
+        position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+        width: auto; flex: none; height: auto; max-height: 82vh;
+        overflow-y: auto;
+        transform: translateY(101%);
+        transition: transform .2s ease;
+        z-index: 60;
+        border-right: none;
+        border-top: 1px solid var(--nav-border);
+        border-radius: 14px 14px 0 0;
+        box-shadow: var(--shadow-lg);
+        padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    }
+    body.menu-open .sidebar { transform: none; }
+    body.menu-open { overflow: hidden; }
+    .brand { border-radius: 14px 14px 0 0; }
+    .nav-link { min-height: 44px; }   /* палец, а не курсор */
+    .nav-spacer { display: none; }
+
+    .sheet-backdrop {
+        display: block; position: fixed; inset: 0; z-index: 50;
+        background: rgba(0, 0, 0, .4);
+        opacity: 0; pointer-events: none; transition: opacity .2s ease;
+    }
+    body.menu-open .sheet-backdrop { opacity: 1; pointer-events: auto; }
+
+    /* Нижние вкладки */
+    .tabbar {
+        display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;
+        background: var(--nav-bg);
+        border-top: 1px solid var(--nav-border);
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+    .tab-item {
+        position: relative;
+        flex: 1 1 0; min-width: 0;
+        display: flex; flex-direction: column; align-items: center; gap: 3px;
+        padding: 7px 2px 7px;
+        background: none; border: none; cursor: pointer;
+        font: inherit; font-size: 10.5px; line-height: 1.2;
+        color: var(--muted); text-decoration: none;
+    }
+    .tab-item span {
+        max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .tab-item svg { width: 22px; height: 22px; }
+    .tab-item.active { color: var(--accent); }
+    .tab-item:hover { text-decoration: none; }
+    /* Счётчик поверх значка, как значок непрочитанного в приложении */
+    .tab-item .dot {
+        position: absolute; transform: translate(11px, -4px);
+        background: var(--err); color: #fff;
+        border-radius: 9px; padding: 0 5px;
+        font-size: 10px; font-weight: 700; line-height: 15px;
+    }
+
+    .content { padding: 12px 10px calc(66px + env(safe-area-inset-bottom)); }
     .map-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
 }
 
@@ -870,12 +967,19 @@ table.dt td { padding: 0 6px; vertical-align: top; border: 0; }
 /* ------------------------------------------------------- журнал устройств */
 /* Подсветка строк по правилам: цвет несёт смысл, поэтому меняется текст,
    а не фон. Полосатый журнал читать невозможно. */
-.sl-err   { color: var(--err); }
-.sl-warn  { color: var(--warn); }
-.sl-ok    { color: var(--ok); }
-.sl-info  { color: var(--accent); }
-.sl-muted { color: var(--muted); }
-.sl-err td, .sl-warn td, .sl-ok td, .sl-info td, .sl-muted td { color: inherit; }
+.sl-err    { color: var(--err); }
+.sl-warn   { color: var(--warn); }
+.sl-orange { color: var(--hl-orange); }
+.sl-ok     { color: var(--ok); }
+.sl-teal   { color: var(--hl-teal); }
+/* Синий это синий: раньше он брал цвет темы, а тема зелёная, и правило
+   «синий» красило строку в тот же цвет, что и «бирюзовый» */
+.sl-info   { color: var(--hl-blue); }
+.sl-purple { color: var(--hl-purple); }
+.sl-pink   { color: var(--hl-pink); }
+.sl-muted  { color: var(--muted); }
+.sl-err td, .sl-warn td, .sl-orange td, .sl-ok td, .sl-teal td,
+.sl-info td, .sl-purple td, .sl-pink td, .sl-muted td { color: inherit; }
 
 /* Уровень важности: слева от строки, чтобы взгляд цеплялся за красное */
 .badge.sev-emerg, .badge.sev-alert, .badge.sev-crit, .badge.sev-error {
@@ -891,11 +995,15 @@ table.dt td { padding: 0 6px; vertical-align: top; border: 0; }
 .c-topic { color: var(--log-topic); flex: 0 0 175px; overflow: hidden; text-overflow: ellipsis; }
 .c-src a { color: inherit; text-decoration: none; }
 .c-src a:hover { text-decoration: underline; }
-.c-line.sl-err   .c-text { color: var(--err); }
-.c-line.sl-warn  .c-text { color: var(--warn); }
-.c-line.sl-ok    .c-text { color: var(--ok); }
-.c-line.sl-info  .c-text { color: var(--accent); }
-.c-line.sl-muted .c-text { color: var(--muted); }
+.c-line.sl-err    .c-text { color: var(--err); }
+.c-line.sl-warn   .c-text { color: var(--warn); }
+.c-line.sl-orange .c-text { color: var(--hl-orange); }
+.c-line.sl-ok     .c-text { color: var(--ok); }
+.c-line.sl-teal   .c-text { color: var(--hl-teal); }
+.c-line.sl-info   .c-text { color: var(--hl-blue); }
+.c-line.sl-purple .c-text { color: var(--hl-purple); }
+.c-line.sl-pink   .c-text { color: var(--hl-pink); }
+.c-line.sl-muted  .c-text { color: var(--muted); }
 
 /* Колонки ленты логов держат ширину: имя точки в одну строку с многоточием,
    иначе длинное название переносится и ломает выравнивание всей ленты. */

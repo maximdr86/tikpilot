@@ -2,10 +2,25 @@
 <html lang="{{ lang }}" data-theme="light">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {# viewport-fit=cover нужен вырезу и полоске «домой» на iPhone: без него
+       система сама оставляет поля, и панель, добавленная на домашний экран,
+       выглядит страницей в рамке, а не приложением. Отступы под вырез
+       раздаёт CSS через env(safe-area-inset-*). #}
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>{% block title %}Tikpilot{% endblock %}</title>
     <link rel="stylesheet" href="/static/app.css">
     <link rel="icon" href="/static/logo.svg">
+
+    {# Панель на домашнем экране телефона: без адресной строки и вкладок.
+       iOS манифест почти не читает, ему нужны свои метки, поэтому здесь
+       и то и другое. #}
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/static/icon-180.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Tikpilot">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="theme-color" content="#0f6156">
     {# Тема применяется до отрисовки, иначе страница мигнёт светлым #}
     <script>
         try {
@@ -18,6 +33,14 @@
     {% block head %}{% endblock %}
 </head>
 <body>
+{# Верхняя полоска, только на телефоне. Панель, добавленную на домашний
+   экран, система открывает без адресной строки, и без неё непонятно,
+   что вообще открыто. #}
+<header class="mobile-top">
+    <img class="mark" src="/static/logo.svg" alt="" width="22" height="22"> Tikpilot
+    {% if offline_count %}<span class="count">{{ offline_count }}</span>{% endif %}
+</header>
+
 <div class="layout">
 
     <!-- ------------------------------------------------------ боковое меню -->
@@ -103,6 +126,60 @@
         {% block content %}{% endblock %}
     </main>
 </div>
+
+{# ------------------------------------------------------- нижние вкладки #}
+{# Только на телефоне. Пять разделов, до которых дотягивается большой
+   палец; всё остальное в листе, который выезжает по кнопке «Ещё».
+   Значки рисуются здесь же: своих иконок в панели нет, а тянуть ради
+   пяти картинок чужой набор значило бы нарушить обещание работать
+   без интернета. #}
+<div class="sheet-backdrop" onclick="closeMenu()"></div>
+<nav class="tabbar">
+    <a class="tab-item {% if active == 'dashboard' %}active{% endif %}" href="/">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="8" rx="1.5"/>
+            <rect x="14" y="3" width="7" height="5" rx="1.5"/>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="11" width="7" height="10" rx="1.5"/>
+        </svg>
+        <span>{{ _('Дашборд') }}</span>
+    </a>
+    <a class="tab-item {% if active == 'monitoring' %}active{% endif %}" href="/monitoring">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>
+        </svg>
+        <span>{{ _('Мониторинг') }}</span>
+        {% if offline_count %}<span class="dot">{{ offline_count }}</span>{% endif %}
+    </a>
+    <a class="tab-item {% if active == 'devices' %}active{% endif %}" href="/devices">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2.5" y="13" width="19" height="7" rx="2"/>
+            <path d="M7 16.5h.01M11 16.5h.01"/>
+            <path d="M12 10V4M12 4l-3 3M12 4l3 3"/>
+        </svg>
+        <span>{{ _('Устройства') }}</span>
+    </a>
+    {% if can("syslog.view") or can("console.view") or can("visits.view") %}
+    <a class="tab-item {% if active in ('syslog', 'console', 'visits') %}active{% endif %}"
+       href="{% if can('syslog.view') %}/syslog{% elif can('console.view') %}/console{% else %}/logs/visits{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 6h16M4 11h11M4 16h16M4 21h8"/>
+        </svg>
+        <span>{{ _('Логи') }}</span>
+    </a>
+    {% endif %}
+    <button class="tab-item" type="button" onclick="toggleMenu()" aria-label="{{ _('Ещё') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16"/>
+        </svg>
+        <span>{{ _('Ещё') }}</span>
+    </button>
+</nav>
 
 {# Модальное окно массового действия доступно на всех страницах #}
 {% include "partials/action_modal.html" %}
