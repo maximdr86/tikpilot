@@ -7616,6 +7616,142 @@ def test_syslog_receives_over_real_sockets(client, router):
         syslog.stop()
 
 
+def test_syslog_survives_a_failing_write(client, router):
+    """
+    Ошибка записи не гасит приём журнала навсегда.
+
+    Так и случилось на живой панели: запись упала, поток записи умер,
+    приём продолжал набивать очередь, очередь переполнилась, и сутки
+    строки уходили в никуда. Панель при этом выглядела здоровой, помог
+    только перезапуск службы.
+
+    Проверяем то самое: после неудачной пачки поток жив, ошибка видна
+    в состоянии, а следующие строки доезжают до базы.
+    """
+    from app import syslog
+    from app.config import settings
+
+    device_id = _add_device(client, router, "syslog-writer")
+
+    syslog.stop()
+    settings.syslog_enabled = True
+    settings.syslog_udp_port = 0          # сокеты тут не нужны
+    settings.syslog_tcp_port = 15573
+    syslog.state["write_errors"] = 0
+    syslog.start()
+
+    real_save = syslog.save
+    calls = {"n": 0}
+
+    def broken_save(rows):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("database is locked")
+        return real_save(rows)
+
+    try:
+        syslog._sources.refresh(force=True)
+        syslog.save = broken_save
+
+        syslog.receive_for_tests(
+            "<134>Aug  7 10:15:00 rtr system,info first line", "127.0.0.1")
+        deadline = time.time() + 10
+        while time.time() < deadline and syslog.state["write_errors"] == 0:
+            time.sleep(0.2)
+        assert syslog.state["write_errors"] == 1, "ошибка записи не замечена"
+        assert "locked" in syslog.state["last_error"]
+
+        # Главное: поток записи пережил ошибку и работает дальше
+        assert syslog.alive(), "поток записи умер вместе с ошибкой"
+
+        syslog.receive_for_tests(
+            "<134>Aug  7 10:15:01 rtr system,info second line", "127.0.0.1")
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            rows = query("SELECT message FROM syslog WHERE device_id = ?", (device_id,))
+            if any("second line" in str(r["message"]) for r in rows):
+                break
+            time.sleep(0.2)
+
+        messages = {str(r["message"]) for r in
+                    query("SELECT message FROM syslog WHERE device_id = ?", (device_id,))}
+        assert "second line" in messages, "после ошибки запись не возобновилась"
+    finally:
+        syslog.save = real_save
+        syslog.stop()
+
+
+def test_syslog_survives_a_device_deleted_mid_flight(client, router):
+    """
+    Удаление точки не роняет приём журнала.
+
+    Это и случилось на живой панели: строки точки стояли в очереди,
+    точку удалили, и вся пачка отлетела по внешнему ключу. Поток записи
+    умер, очередь забилась, и сутки журнал не собирался.
+
+    Строка при этом ценна и без ссылки на карточку: в ней есть адрес,
+    имя на момент приёма и сам текст. Проверяем, что она доезжает
+    до базы, а ссылка снимается.
+    """
+    from app import syslog
+    from app.database import execute_changes, forget_device_traces
+
+    device_id = _add_device(client, router, "syslog-doomed")
+    syslog._sources.refresh(force=True)
+
+    # Строка принята, пока точка ещё есть
+    syslog.receive_for_tests(
+        "<134>Aug  7 10:15:00 rtr system,info line from a doomed site", "127.0.0.1")
+
+    # ...и записывается уже после удаления
+    forget_device_traces([device_id])
+    execute_changes("DELETE FROM devices WHERE id = ?", (device_id,))
+
+    written = syslog.flush()
+    assert written >= 1, "пачка не записалась вовсе"
+
+    row = query_one(
+        "SELECT device_id, device_name, source, message FROM syslog"
+        " WHERE message = 'line from a doomed site'")
+    assert row is not None, "строка потеряна вместе с удалённой точкой"
+    assert row["device_id"] is None, "ссылка на удалённую точку осталась"
+    assert row["device_name"] == "syslog-doomed", "имя на момент приёма стёрлось"
+    assert row["source"] == "127.0.0.1"
+
+
+def test_syslog_watchdog_notices_a_dead_thread(client, router):
+    """
+    Сторож поднимает приём, если поток остановился.
+
+    Умерший поток никого не извещает: панель работает, страницы
+    открываются, а журнал пуст. Сторож раз в полминуты сверяет список
+    потоков, и здесь мы проверяем саму сверку и подъём, не дожидаясь
+    его круга.
+    """
+    from app import syslog
+    from app.config import settings
+
+    syslog.stop()
+    settings.syslog_enabled = True
+    settings.syslog_udp_port = 0
+    settings.syslog_tcp_port = 15574
+    syslog.start()
+    try:
+        assert syslog.alive()
+
+        # Останавливаем приём наполовину, как это делает умерший поток
+        syslog._stop.set()
+        deadline = time.time() + 5
+        while time.time() < deadline and syslog.alive():
+            time.sleep(0.1)
+        assert not syslog.alive(), "потоки не остановились, проверять нечего"
+
+        syslog.restart()
+        assert syslog.alive(), "приём не поднялся заново"
+    finally:
+        syslog.stop()
+
+
 def test_syslog_keeps_the_original_line(client, router):
     """
     Исходная строка сохраняется целиком, рядом с разобранными полями.
