@@ -43,6 +43,7 @@ import logging
 import queue
 import re
 import socket
+import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
@@ -95,7 +96,14 @@ state: dict[str, Any] = {
     "error": "",       # почему приём не поднялся
     "tcp_clients": 0,  # открытых соединений TCP прямо сейчас
     "refused": 0,      # соединений отклонено: упёрлись в предел
+    "write_errors": 0, # пачек, которые не удалось записать
+    "last_error": "",  # что сказала последняя неудачная запись
+    "restarts": 0,     # сколько раз сторож поднимал приём заново
 }
+
+#: Как часто сторож проверяет, живы ли слушатели. Полминуты: приём,
+#: умерший в обед, не должен ждать до вечера, а частить незачем.
+WATCH_SECONDS = 30
 
 #: Предел одновременных соединений TCP. Полсотни точек плюс запас на
 #: переподключения; всё сверх этого либо чей-то сканер, либо наши же
@@ -456,6 +464,22 @@ def _accept(raw: str, address: str) -> None:
         state["dropped"] += 1
 
 
+def _safe_accept(line: str, address: str) -> None:
+    """
+    Принять строку, не роняя слушателя.
+
+    Одна кривая строка не повод остановить приём со всего парка:
+    слушатель это поток, и любое исключение в нём означает тишину
+    до перезапуска панели.
+    """
+    try:
+        _accept(line, address)
+    except Exception as exc:  # noqa: BLE001 - строка испорчена, приём продолжается
+        state["write_errors"] += 1
+        state["last_error"] = str(exc)[:200]
+        log.exception("Строка журнала не разобралась: %s", exc)
+
+
 def _udp_loop(sock: socket.socket) -> None:
     """Слушать UDP до остановки."""
     sock.settimeout(0.5)
@@ -468,7 +492,7 @@ def _udp_loop(sock: socket.socket) -> None:
             break
         # Один датаграмм это одно сообщение, но некоторые шлют пачкой
         for line in data.decode("utf-8", "replace").splitlines():
-            _accept(line, addr[0])
+            _safe_accept(line, addr[0])
     sock.close()
 
 
@@ -521,7 +545,7 @@ def _tcp_client(conn: socket.socket, address: str) -> None:
                 line, buffer = buffer.split(b"\n", 1)
             else:
                 break
-            _accept(line.decode("utf-8", "replace"), address)
+            _safe_accept(line.decode("utf-8", "replace"), address)
 
         if len(buffer) > 65536:      # мусор без переводов строки
             buffer = b""
@@ -584,8 +608,22 @@ def _writer_loop() -> None:
             pass
 
         if batch and (len(batch) >= BATCH_SIZE or time.monotonic() >= deadline):
-            save(batch)
-            batch = []
+            # Ошибка записи не должна убивать поток. Раньше её было некому
+            # ловить: одна занятая база или полный диск гасили запись
+            # навсегда, приём продолжал набивать очередь, очередь
+            # переполнялась, и панель молча переставала собирать журнал
+            # до перезапуска. Пачку пробуем ещё раз со следующим кругом,
+            # а совсем разросшуюся бросаем: свежие строки нужнее старых.
+            try:
+                save(batch)
+                batch = []
+            except Exception as exc:  # noqa: BLE001 - причину видно в состоянии
+                state["write_errors"] += 1
+                state["last_error"] = str(exc)[:200]
+                log.exception("Пачка строк журнала не записалась: %s", exc)
+                if len(batch) > BATCH_SIZE * 4:
+                    batch = batch[-BATCH_SIZE:]
+                time.sleep(1.0)
             deadline = time.monotonic() + BATCH_SECONDS
 
     if batch:
@@ -603,6 +641,25 @@ def save(rows: list[dict[str, Any]]) -> int:
          r.get("stamp", ""), r.get("message", ""), r.get("raw", ""))
         for r in rows
     ]
+    try:
+        _insert(values)
+    except sqlite3.IntegrityError:
+        # Точку удалили, пока её строки стояли в очереди. Ссылка ведёт
+        # в никуда, и вся пачка отлетает по внешнему ключу - именно так
+        # приём и умер однажды на сутки, сразу после удаления устройства.
+        #
+        # Строки при этом целые: в них есть адрес, имя на момент приёма
+        # и сам текст. Теряем только ссылку на карточку, которой больше
+        # нет, и записываем.
+        values = _without_dead_devices(values)
+        _insert(values)
+
+    state["stored"] += len(values)
+    return len(values)
+
+
+def _insert(values: list[tuple[Any, ...]]) -> None:
+    """Одна транзакция на пачку."""
     with write_lock:
         conn = get_conn()
         conn.execute("BEGIN")
@@ -617,8 +674,25 @@ def save(rows: list[dict[str, Any]]) -> int:
         except Exception:
             conn.execute("ROLLBACK")
             raise
-    state["stored"] += len(values)
-    return len(values)
+
+
+def _without_dead_devices(values: list[tuple[Any, ...]]) -> list[tuple[Any, ...]]:
+    """Убрать ссылки на устройства, которых уже нет в базе."""
+    wanted = {row[1] for row in values if row[1]}
+    if not wanted:
+        return values
+
+    marks = ",".join("?" for _ in wanted)
+    alive = {r["id"] for r in query(
+        f"SELECT id FROM devices WHERE id IN ({marks})", tuple(wanted))}
+    gone = wanted - alive
+    if not gone:
+        return values
+
+    log.warning("Строки журнала от удалённых точек (%s): ссылка снята, текст сохранён",
+                ", ".join(str(i) for i in sorted(gone)))
+    _sources.refresh(force=True)
+    return [row if row[1] not in gone else (row[0], None, *row[2:]) for row in values]
 
 
 # ------------------------------------------------------------------ чистка
@@ -872,8 +946,47 @@ def start() -> None:
     writer = threading.Thread(target=_writer_loop, name="syslog-writer", daemon=True)
     writer.start()
     _threads.append(writer)
+
+    guard = threading.Thread(target=_watchdog_loop, name="syslog-watchdog", daemon=True)
+    guard.start()
+
     state["enabled"] = True
     log.info("Приём журнала запущен: %s", ", ".join(started))
+
+
+def alive() -> bool:
+    """Живы ли все потоки приёма. Пусто значит приём не запускали."""
+    return bool(_threads) and all(thread.is_alive() for thread in _threads)
+
+
+def _watchdog_loop() -> None:
+    """
+    Сторож приёма журнала.
+
+    Поток, который умер, никого об этом не извещает: панель работает,
+    страницы открываются, а журнал молча пуст до перезапуска службы.
+    Именно так и вышло: запись упала на ошибке базы, очередь заполнилась,
+    и сутки строки уходили в никуда.
+
+    Сторож раз в полминуты смотрит, все ли на месте, и поднимает приём
+    заново. Себя он в этот список не включает и после перезапуска
+    заканчивается: новый сторож уже поднят внутри `start`.
+    """
+    while not _stop.wait(WATCH_SECONDS):
+        dead = [thread.name for thread in _threads if not thread.is_alive()]
+        if not dead:
+            continue
+        state["restarts"] += 1
+        log.error("Приём журнала: поток остановился (%s). Поднимаю заново",
+                  ", ".join(dead))
+        restart()
+        return
+
+
+def restart() -> None:
+    """Остановить приём и поднять заново. Возвращает управление после запуска."""
+    stop()
+    start()
 
 
 def stop() -> None:

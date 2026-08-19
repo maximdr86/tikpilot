@@ -23,6 +23,7 @@
                 {% if state.refused %} · отклонено соединений: {{ state.refused }}{% endif %}
                 · хранится {{ total }}
                 {% if skipped %} · скрыто правилами в этом окне: {{ skipped }}{% endif %}
+                {% if state.last_at %} · последняя строка {{ state.last_at | dt_short }}{% endif %}
             {% elif state.error %}
                 <span class="badge offline">приём не поднялся</span>
                 <span class="mono small">{{ state.error }}</span>
@@ -220,6 +221,30 @@
         </div>
     </div>
 </div>
+
+{# Приём, который встал, ничем себя не выдаёт: страницы открываются,
+   лента просто пуста. Поэтому о сбоях записи и о перезапусках приёма
+   панель говорит вслух, а не прячет их в состояние. #}
+{% if state.enabled and (state.write_errors or state.restarts or state.dropped) %}
+<div class="panel">
+    <div class="panel-body">
+        <div class="alert warn">
+            {% if state.write_errors %}
+                Пачек, которые не записались: {{ state.write_errors }}.
+                <span class="mono small">{{ state.last_error }}</span>
+            {% endif %}
+            {% if state.restarts %}
+                Приём поднимался заново сторожем: {{ state.restarts }} раз.
+            {% endif %}
+            {% if state.dropped %}
+                Строк отброшено: {{ state.dropped }}. Это либо чужой адрес,
+                либо очередь записи не успевала.
+            {% endif %}
+            Счётчики считаются с запуска панели.
+        </div>
+    </div>
+</div>
+{% endif %}
 
 {% if state.rejected %}
 <div class="alert warn">

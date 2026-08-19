@@ -1894,5 +1894,10 @@
   "соединяется": "connecting",
   "открыт": "open",
   "закрывается": "closing",
-  "закрыт": "closed"
+  "закрыт": "closed",
+  "· последняя строка %(p0)s": "· last line %(p0)s",
+  "Пачек, которые не записались: %(p0)s. <span class=\"mono small\">%(p1)s</span>": "Batches that failed to save: %(p0)s. <span class=\"mono small\">%(p1)s</span>",
+  "Приём поднимался заново сторожем: %(p0)s раз.": "The watchdog restarted reception %(p0)s time(s).",
+  "Строк отброшено: %(p0)s. Это либо чужой адрес, либо очередь записи не успевала.": "Lines dropped: %(p0)s. Either an address that may not write, or the write queue could not keep up.",
+  "Счётчики считаются с запуска панели.": "The counters are since the panel started."
 }

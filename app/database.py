@@ -943,6 +943,17 @@ def forget_device_traces(device_ids: Sequence[int]) -> None:
                   "traffic_samples"):
         execute(f"DELETE FROM {table} WHERE device_id IN ({marks})", params)
 
+    # Приёмник журнала держит соответствие «адрес - точка» в памяти
+    # и обновляет его раз в минуту. Без этого он ещё минуту привязывал бы
+    # приходящие строки к удалённой точке, и каждая такая строка ломала
+    # запись целой пачки по внешнему ключу.
+    try:
+        from . import syslog
+
+        syslog._sources.refresh(force=True)
+    except Exception:  # noqa: BLE001 - удаление важнее кэша приёмника
+        pass
+
 
 def cleanup_orphan_rows() -> int:
     """
