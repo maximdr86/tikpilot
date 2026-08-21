@@ -130,6 +130,11 @@ class Settings:
         # жив ли хост вообще. Пинг делается только для неответивших.
         self.icmp_check_enabled: bool = os.getenv(
             "ICMP_CHECK_ENABLED", "1") not in ("0", "false", "no")
+        # Сколько ждать соединения, приветствия и авторизации по SSH.
+        # Десяти секунд не хватало: RouterOS на слабой плате обменивается
+        # ключами долго, а на канале с потерями рукопожатие срывается,
+        # и paramiko отвечает загадочным «No existing session».
+        self.ssh_timeout: int = _int_env("SSH_TIMEOUT", 20)
         # Полный опрос с версией, uptime и CPU — реже, требует авторизации
         self.monitor_full_interval: int = _int_env("MONITOR_FULL_INTERVAL", 900)
         # Сколько промахов подряд нужно, чтобы признать устройство недоступным.

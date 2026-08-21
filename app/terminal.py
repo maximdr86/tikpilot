@@ -45,15 +45,49 @@ import logging
 import re
 import socket
 import threading
+import time
 from typing import Any, Callable
 
+from .config import settings
 from .crypto import decrypt
 from .database import execute, log_audit, query_one, utcnow
 
 log = logging.getLogger("tikpilot.terminal")
 
-#: Сколько ждать соединения и авторизации.
+#: Сколько ждать соединения, приветствия и авторизации.
+#:
+#: Десяти секунд не хватало. RouterOS на слабой плате делает обмен
+#: ключами долго, а на канале с задержкой в двести миллисекунд и
+#: потерями рукопожатие не укладывается и подавно. Paramiko в этом
+#: случае бросает `No existing session` - сообщение, по которому
+#: невозможно догадаться, что дело во времени.
 CONNECT_TIMEOUT = 10
+
+
+def _timeout() -> int:
+    """Сколько ждать. Настройка живёт в панели, умолчание здесь."""
+    return max(5, int(getattr(settings, "ssh_timeout", 0) or CONNECT_TIMEOUT))
+
+
+def _explain(exc: Exception) -> str:
+    """
+    Человеческий текст вместо загадок библиотеки.
+
+    `No existing session` означает, что соединение установилось, а
+    рукопожатие SSH не доехало: роутер не успел прислать приветствие
+    или обменяться ключами. На парке это самая частая причина неудачи
+    массовой команды, и она лечится временем ожидания, а не поездкой.
+    """
+    text = str(exc).strip()
+    lowered = text.lower()
+    if "no existing session" in lowered or "banner" in lowered or not text:
+        return (
+            "роутер не завершил рукопожатие SSH за %d с. Так бывает на слабой"
+            " плате и на канале с потерями, особенно когда команда идёт"
+            " на весь парк сразу. Увеличьте ожидание в настройках"
+            " или запускайте группами поменьше" % _timeout()
+        )
+    return text
 
 #: Размер окна по умолчанию, пока браузер не сообщил свой.
 DEFAULT_COLS, DEFAULT_ROWS = 120, 30
@@ -133,29 +167,43 @@ def connect(device: dict[str, Any]) -> Any:
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(_Policy())
+    wait = _timeout()
 
-    try:
-        client.connect(
-            hostname=host,
-            port=port,
-            username=str(device["username"]),
-            password=decrypt(device["password_enc"]),
-            timeout=CONNECT_TIMEOUT,
-            auth_timeout=CONNECT_TIMEOUT,
-            banner_timeout=CONNECT_TIMEOUT,
-            allow_agent=False,
-            look_for_keys=False,
-        )
-    except TerminalError:
-        raise
-    except paramiko.AuthenticationException as exc:
-        raise TerminalError(
-            "Устройство не приняло логин или пароль. Для входа по SSH "
-            "у пользователя RouterOS должна быть политика «ssh»: панели "
-            "хватает «api», а терминалу нет."
-        ) from exc
-    except (paramiko.SSHException, socket.error, OSError) as exc:
-        raise TerminalError(f"Не удалось подключиться по SSH: {exc}") from exc
+    # Одна повторная попытка. Сорванное рукопожатие это почти всегда
+    # случайность канала, и со второго раза оно проходит; гонять человека
+    # обратно в список за галочками ради этого незачем.
+    last: Exception | None = None
+    for attempt in (1, 2):
+        try:
+            client.connect(
+                hostname=host,
+                port=port,
+                username=str(device["username"]),
+                password=decrypt(device["password_enc"]),
+                timeout=wait,
+                auth_timeout=wait,
+                banner_timeout=wait,
+                allow_agent=False,
+                look_for_keys=False,
+            )
+            last = None
+            break
+        except TerminalError:
+            raise
+        except paramiko.AuthenticationException as exc:
+            raise TerminalError(
+                "Устройство не приняло логин или пароль. Для входа по SSH "
+                "у пользователя RouterOS должна быть политика «ssh»: панели "
+                "хватает «api», а терминалу нет."
+            ) from exc
+        except (paramiko.SSHException, socket.error, OSError) as exc:
+            last = exc
+            log.debug("SSH к %s не удался (попытка %s): %s", host, attempt, exc)
+            if attempt == 1:
+                time.sleep(1.0)
+
+    if last is not None:
+        raise TerminalError("Не удалось подключиться по SSH: %s" % _explain(last)) from last
 
     if seen.get("fingerprint") and not known:
         remember_fingerprint(device_id, seen["fingerprint"])

@@ -8371,6 +8371,48 @@ def test_terminal_talks_to_a_real_ssh_server(client, router):
         ssh.stop()
 
 
+def test_ssh_handshake_failure_says_what_happened(client, router):
+    """
+    «No existing session» превращается в объяснение и вторую попытку.
+
+    Так падала массовая команда на половине парка: соединение по TCP
+    устанавливалось, а рукопожатие SSH не доезжало, и человек получал
+    строку, по которой невозможно догадаться, что дело во времени.
+
+    Проверяем оба лекарства: понятный текст и одну повторную попытку
+    (сорванное рукопожатие обычно проходит со второго раза).
+    """
+    import paramiko
+
+    from app import terminal
+
+    device_id = _add_device(client, router, "ssh-handshake")
+    device = dict(query_one("SELECT * FROM devices WHERE id = ?", (device_id,)))
+
+    tries = {"n": 0}
+
+    def flaky(self, **kwargs):  # noqa: ANN001 - подменяем метод paramiko
+        tries["n"] += 1
+        raise paramiko.SSHException("No existing session")
+
+    real_connect = paramiko.SSHClient.connect
+    try:
+        paramiko.SSHClient.connect = flaky
+        try:
+            terminal.connect(device)
+        except terminal.TerminalError as exc:
+            text = str(exc)
+        else:
+            raise AssertionError("подключение должно было не удаться")
+
+        assert tries["n"] == 2, "повторной попытки не было"
+        assert "No existing session" not in text, text
+        assert "рукопожатие SSH" in text, text
+        assert "группами поменьше" in text, text
+    finally:
+        paramiko.SSHClient.connect = real_connect
+
+
 def test_terminal_refuses_when_the_host_key_changed(client, router):
     """
     Смена ключа устройства останавливает подключение.

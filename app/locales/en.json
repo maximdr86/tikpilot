@@ -465,6 +465,10 @@
     [
       "^(.+) · но отвечает на ping$",
       "\\1 · but answers ping"
+    ],
+    [
+      "^Не удалось подключиться по SSH: роутер не завершил рукопожатие SSH за (\\d+) с\\. Так бывает на слабой плате и на канале с потерями, особенно когда команда идёт на весь парк сразу\\. Увеличьте ожидание в настройках или запускайте группами поменьше$",
+      "SSH connection failed: the router did not finish the SSH handshake within \\1 s. That happens on a weak board and a lossy link, especially when the command goes to the whole fleet at once. Raise the wait in the settings or run in smaller groups"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
@@ -1932,5 +1936,7 @@
   "Управление по API": "Control over the API",
   "без API</span>": "no API</span>",
   "как и сама точка": "same as the site itself",
-  "точка на связи, но команды до неё не доходят: канал, туннель или сервис на роутере": "the site is up, but commands do not reach it: the link, the tunnel or a service on the router"
+  "точка на связи, но команды до неё не доходят: канал, туннель или сервис на роутере": "the site is up, but commands do not reach it: the link, the tunnel or a service on the router",
+  "Ждать рукопожатия SSH, секунд": "Wait for the SSH handshake, seconds",
+  "Столько панель ждёт приветствия и входа по SSH. На слабой плате и на канале с потерями рукопожатие не укладывается в десять секунд, и массовая команда падает с «No existing session».": "How long the panel waits for the SSH banner and login. On a weak board and a lossy link the handshake does not fit into ten seconds, and a fleet-wide command fails with “No existing session”."
 }
