@@ -297,7 +297,11 @@
             {% for e in alert_events %}
                 <tr>
                     <td class="nowrap">{{ e.ts | dt }}</td>
-                    <td>{% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ e.device_name }}</a>{% else %}{{ e.device_name }}{% endif %}</td>
+                    {# Через перевод: обычные имена точек в словаре не лежат
+                       и проходят как есть, а событие про саму панель
+                       подписано «Панель», и на английской странице оно
+                       должно быть по-английски. #}
+                    <td>{% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ e.device_name }}</a>{% else %}{{ e.device_name | t }}{% endif %}</td>
                     <td>{{ e.rule_name }}</td>
                     <td class="nowrap">
                         {% if e.kind == 'fired' %}
