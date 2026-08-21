@@ -45,6 +45,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, NamedTuple
 
+from .config import settings
 from .database import execute, execute_changes, query, query_one, utcnow
 
 log = logging.getLogger("tikpilot.alerts")
@@ -158,6 +159,14 @@ METRICS: tuple[Metric, ...] = (
 
 BY_KEY = {m.key: m for m in METRICS}
 
+#: Место на диске самой панели. В список правил не входит намеренно:
+#: это не свойство точки, и правило «весь парк» размножило бы одно
+#: событие на полсотни одинаковых. Проверка своя, ниже, а здесь запись
+#: нужна только чтобы событие красиво называлось и считалось в процентах.
+PANEL_DISK = Metric("panel_disk", "Свободно на диске панели", "%", "below",
+                    lambda device: None)
+BY_KEY[PANEL_DISK.key] = PANEL_DISK
+
 
 def _parse(value: Any) -> datetime | None:
     if not value:
@@ -186,7 +195,9 @@ def save_rule(data: dict[str, Any], username: str = "") -> int:
     и не из браузера, а негодный порог хуже отсутствующего.
     """
     metric = str(data.get("metric") or "")
-    if metric not in BY_KEY:
+    # Именно METRICS, а не BY_KEY: в последнем есть ещё диск самой панели,
+    # и правило по нему завести нельзя - он не свойство точки
+    if metric not in {item.key for item in METRICS}:
         raise ValueError("Неизвестная метрика")
 
     comparison = "below" if str(data.get("comparison")) == "below" else "above"
@@ -347,6 +358,56 @@ def evaluate() -> dict[str, int]:
     if fired or resolved:
         log.info("Пороги: сработало %d, погасло %d", fired, resolved)
     return {"fired": fired, "resolved": resolved}
+
+
+def check_panel_disk() -> str:
+    """
+    Посмотреть, не кончается ли место на диске панели.
+
+    Возвращает, что случилось: «fired», «resolved» или пусто.
+
+    Почему отдельно от правил. Пороги описывают точки, а это про сам
+    сервер: правило с областью «весь парк» породило бы полсотни
+    одинаковых событий об одном и том же диске. Событие поэтому пишется
+    без устройства, а дальше живёт как все: попадает в ленту, уходит
+    в сводку, слушается тихих часов и паузы.
+
+    Ради чего всё: кончившееся место останавливает панель целиком.
+    SQLite перестаёт писать, приём журнала встаёт, отметки об отправке
+    не сохраняются. Место при этом кончается неделями, и предупредить
+    о нём можно заранее.
+    """
+    from . import disk
+
+    if settings.disk_min_free_percent <= 0:
+        return ""
+
+    space = disk.free_space()
+    if not space["total"]:
+        return ""
+
+    percent = round(space["free"] * 100 / space["total"], 1)
+    low = percent < settings.disk_min_free_percent
+
+    row = query_one(
+        "SELECT kind FROM alert_events WHERE metric = ? ORDER BY id DESC LIMIT 1",
+        (PANEL_DISK.key,))
+    was_firing = bool(row and str(row["kind"]) == "fired")
+    if low == was_firing:
+        return ""
+
+    now = utcnow()
+    execute(
+        "INSERT INTO alert_events (rule_id, rule_name, device_id, device_name,"
+        " metric, kind, value, ts, started_at, sent) VALUES (?,?,?,?,?,?,?,?,?,0)",
+        (None, "Место на диске", None, "Панель", PANEL_DISK.key,
+         "fired" if low else "resolved", percent, now, now),
+    )
+    if low:
+        log.warning("Мало места на диске панели: свободно %.1f%%", percent)
+    else:
+        log.info("Место на диске панели вернулось в норму: свободно %.1f%%", percent)
+    return "fired" if low else "resolved"
 
 
 def _event(rule: dict[str, Any], device: dict[str, Any], kind: str,

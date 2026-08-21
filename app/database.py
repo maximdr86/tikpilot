@@ -998,6 +998,18 @@ def cleanup_old_jobs() -> None:
     if orphans:
         _audit_log.info("Убрано строк от удалённых устройств: %s", orphans)
 
+    # Строка про место на диске раз в сутки. Рост видно заранее, а не
+    # по факту падения: место кончается неделями, и запись «свободно
+    # 12%» в ночном журнале это последнее предупреждение перед тем,
+    # как SQLite перестанет писать вовсе.
+    try:
+        from . import disk
+
+        disk.forget()
+        _audit_log.info("%s", disk.report())
+    except Exception:  # noqa: BLE001 - уборка важнее отчёта о ней
+        pass
+
     event_days = settings.monitor_event_retention_days
     if event_days > 0:
         execute(

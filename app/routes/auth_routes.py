@@ -168,10 +168,23 @@ def _diagnostics() -> dict[str, object]:
     required = ("update_info", "wait_until_back", "routerboard_info")
     missing = [name for name in required if not hasattr(MikroTik, name)]
 
-    from .. import monitor
+    from .. import disk, monitor
+
+    space = disk.free_space()
+    parts = disk.sizes()
 
     return {
         "version": __version__,
+        # Место на диске самой панели. Кончится - встанет всё: SQLite
+        # перестанет писать, приём журнала замолчит, бэкапы не сохранятся
+        "disk": {
+            "free": disk.human(space["free"]),
+            "total": disk.human(space["total"]),
+            "percent": disk.percent_free(),
+            "db": disk.human(parts["db"]),
+            "backups": disk.human(parts["backups"]),
+            "low": disk.low(),
+        },
         "base_dir": str(BASE_DIR),
         "db_path": str(settings.db_path),
         "python": f"{platform.python_version()} ({sys.executable})",

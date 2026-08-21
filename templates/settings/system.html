@@ -72,6 +72,21 @@
             <tr><td class="muted" style="width:220px">Версия Tikpilot</td><td class="mono">{{ diag.version }}</td></tr>
             <tr><td class="muted">Каталог программы</td><td class="mono">{{ diag.base_dir }}</td></tr>
             <tr><td class="muted">Файл базы данных</td><td class="mono">{{ diag.db_path }}</td></tr>
+            {# Место на диске видно всегда, а не только когда его мало:
+               плашка на дашборде это тревога, а здесь просто факт,
+               по которому видно, как оно расходуется. #}
+            <tr>
+                <td class="muted">Диск панели</td>
+                <td>
+                    <span class="mono {% if diag.disk.low %}text-bad{% endif %}">
+                        свободно {{ diag.disk.free }} из {{ diag.disk.total }}
+                        ({{ diag.disk.percent }}%)
+                    </span>
+                    <span class="small muted">
+                        · база {{ diag.disk.db }} · бэкапы {{ diag.disk.backups }}
+                    </span>
+                </td>
+            </tr>
             <tr><td class="muted">Python</td><td class="mono small">{{ diag.python }}</td></tr>
             <tr>
                 <td class="muted">Доступные действия</td>

@@ -102,11 +102,24 @@ async def dashboard(request: Request, user=Depends(current_user)):
     # забыть про них нельзя, точка сама откатится и перезагрузится
     rollback.sweep()
 
+    # Место на диске самой панели. Считается дёшево (кэш на пять минут),
+    # а увидеть кончающийся диск надо раньше, чем он кончится
+    from .. import disk
+
+    space = disk.free_space()
+    parts = disk.sizes()
+
     return render(
         "dashboard.html",
         request,
         user,
         active="dashboard",
+        disk_low=disk.low(),
+        disk_free=disk.human(space["free"]),
+        disk_total=disk.human(space["total"]),
+        disk_percent=disk.percent_free(),
+        disk_db=disk.human(parts["db"]),
+        disk_backups=disk.human(parts["backups"]),
         armed_rollbacks=rollback.armed(scope),
         stats=stats,
         groups=groups,

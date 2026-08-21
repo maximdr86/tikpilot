@@ -9274,6 +9274,74 @@ def test_alert_rule_waits_for_the_hold_time(client, router):
     assert kinds[:2] == ["resolved", "fired"], kinds
 
 
+def test_panel_warns_about_its_own_disk(client, router):
+    """
+    Кончающееся место на диске панели становится событием и плашкой.
+
+    Панель следила за полусотней роутеров и не следила за собой: диск
+    сервера кончился, SQLite перестала писать, приём журнала встал,
+    а сводка ушла шестьдесят раз подряд, потому что отметку об отправке
+    тоже некуда было записать. Место при этом кончалось неделями.
+
+    Проверяем всё, чего тогда не хватило: событие пишется один раз,
+    гаснет само, попадает в сводку и видно на первой странице.
+    """
+    from app import alerts, disk
+    from app.config import settings
+    from app.database import execute_changes
+
+    execute_changes("DELETE FROM alert_events WHERE metric = 'panel_disk'")
+    old_limit = settings.disk_min_free_percent
+    real_space = disk.free_space
+
+    try:
+        # Диск почти полон: свободно 2%
+        disk.free_space = lambda: {"total": 100, "used": 98, "free": 2}
+        settings.disk_min_free_percent = 15
+
+        assert alerts.check_panel_disk() == "fired"
+        # Второй раз молчит: событие уже записано, а не повторяется каждую минуту
+        assert alerts.check_panel_disk() == ""
+
+        event = query_one(
+            "SELECT * FROM alert_events WHERE metric = 'panel_disk' ORDER BY id DESC")
+        assert event["kind"] == "fired"
+        assert event["device_id"] is None, "диск это не свойство точки"
+        assert event["value"] == 2.0
+
+        # В сводку попадает человеческой строкой, а не «panel_disk 2»
+        line = alerts.describe(dict(event))
+        assert "Свободно на диске панели" in line, line
+        assert "2 %" in line, line
+
+        # И висит на дашборде, пока места мало
+        assert disk.low() is True
+        page = client.get("/").text
+        assert "Мало места на диске" in page
+
+        # Место вернулось: гаснет само, тоже один раз
+        disk.free_space = lambda: {"total": 100, "used": 50, "free": 50}
+        assert alerts.check_panel_disk() == "resolved"
+        assert alerts.check_panel_disk() == ""
+        assert disk.low() is False
+        assert "Мало места на диске" not in client.get("/").text
+
+        # Проверку можно выключить совсем
+        disk.free_space = lambda: {"total": 100, "used": 99, "free": 1}
+        settings.disk_min_free_percent = 0
+        assert alerts.check_panel_disk() == ""
+        assert disk.low() is False
+
+        # Правило по этой метрике завести нельзя: она не про точку,
+        # и «весь парк» размножил бы одно событие на полсотни
+        assert client.post("/api/alerts/rules", json={
+            "metric": "panel_disk", "comparison": "below", "value": 10,
+        }).status_code == 400
+    finally:
+        disk.free_space = real_space
+        settings.disk_min_free_percent = old_limit
+
+
 def test_alert_message_tells_when_it_fell_and_when_it_came_back(client, router):
     """
     В сводке стоит время падения, а не время срабатывания.
