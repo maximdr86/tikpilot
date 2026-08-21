@@ -9274,6 +9274,73 @@ def test_alert_rule_waits_for_the_hold_time(client, router):
     assert kinds[:2] == ["resolved", "fired"], kinds
 
 
+def test_status_is_about_the_site_and_api_is_separate(client, router):
+    """
+    Статус отвечает на вопрос «работает ли площадка», а не «отвечает ли API».
+
+    Жалоба была такая: точка висит «не в сети», а в WinBox она открыта
+    и работает. Панель не врала, она правда не могла подключиться, но
+    отвечала не на тот вопрос: человеку в первую очередь важно, жива ли
+    точка, и только потом, дотягивается ли до неё панель.
+
+    Теперь роутер, который пингуется, остаётся «онлайн», а недоступный
+    API это отдельная отметка. Оба сразу молчат - только тогда оффлайн.
+    """
+    from app import icmp, monitor
+    from app.config import settings
+
+    device_id = _add_device(client, router, "ping-check")
+    device = dict(query_one("SELECT * FROM devices WHERE id = ?", (device_id,)))
+
+    real_alive = icmp.alive
+    old_enabled = settings.icmp_check_enabled
+    try:
+        settings.icmp_check_enabled = True
+
+        # Хост отвечает на ping, API молчит: точка на связи, но без управления
+        icmp.alive = lambda host, timeout=1: True
+        monitor.apply_result(device, False, "Таймаут подключения", threshold=1)
+
+        row = query_one("SELECT * FROM devices WHERE id = ?", (device_id,))
+        assert row["status"] == "online", "пингуется, значит площадка работает"
+        assert row["api_ok"] == 0, "но панель ею не управляет"
+        assert row["icmp_ok"] == 1 and row["icmp_at"]
+        assert row["fail_streak"] == 0, "это не промах по доступности"
+        assert "Таймаут подключения" in str(row["last_error"])
+
+        page = client.get(f"/devices/{device_id}").text
+        assert "API не отвечает" in page
+        assert "без API" in client.get("/devices").text
+
+        # Молчит и то и другое: вот теперь оффлайн
+        device = dict(row)
+        icmp.alive = lambda host, timeout=1: False
+        monitor.apply_result(device, False, "Таймаут подключения", threshold=1)
+        row = query_one("SELECT * FROM devices WHERE id = ?", (device_id,))
+        assert row["status"] == "offline"
+        assert row["icmp_ok"] == 0 and row["api_ok"] == 0
+        assert "хост молчит" in client.get(f"/devices/{device_id}").text
+
+        # API вернулся: всё в норме, отметки снимаются
+        device = dict(row)
+        monitor.apply_result(device, True, "", threshold=1)
+        row = query_one("SELECT * FROM devices WHERE id = ?", (device_id,))
+        assert row["status"] == "online" and row["api_ok"] == 1
+        assert row["api_seen"], "время последнего ответа API не записано"
+        assert row["icmp_ok"] is None, "старая отметка ping снята"
+
+        # Пинга в системе нет: ведём себя как раньше, API решает всё
+        device = dict(row)
+        icmp.alive = lambda host, timeout=1: None
+        monitor.apply_result(device, False, "Таймаут подключения", threshold=1)
+        row = query_one("SELECT * FROM devices WHERE id = ?", (device_id,))
+        assert row["status"] == "offline"
+        assert row["icmp_ok"] is None and row["icmp_at"] is None
+    finally:
+        icmp.alive = real_alive
+        settings.icmp_check_enabled = old_enabled
+
+
 def test_panel_warns_about_its_own_disk(client, router):
     """
     Кончающееся место на диске панели становится событием и плашкой.

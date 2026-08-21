@@ -93,6 +93,17 @@ visible as a separate count.
 **Link latency.** The devices ping the configured targets and their own gateway
 themselves. The graphs show a link degrading before the site actually drops.
 
+Separately, the panel pings on its own, but only the sites that did not answer
+over the API. The status answers the question "is the site working": a router
+that answers ping stays online even when the panel cannot reach its API. An
+unreachable API is a separate mark, "no API" in the list and a line on the
+card: the site is up, but commands do not reach it - the link, the tunnel or a
+service on the router. Offline means both are silent.
+
+That is the right split: driving to a site and fixing a link are different
+jobs, and downtime in a report should be about the site, not about our API.
+Switch it off with `ICMP_CHECK_ENABLED=0` and the API decides everything again.
+
 **Clients.** What is connected at the sites: name, vendor, MAC, address, port,
 VLAN and when it was last seen. Built from DHCP leases, ARP and the bridge host
 table, so it also shows boxes with hand-set addresses and which port the cable
@@ -1023,6 +1034,7 @@ tar czf tikpilot-$(date +%F).tar.gz data/ .env
 | `MONITOR_INTERVAL` | `60` | how often to check the link, seconds |
 | `MONITOR_FULL_INTERVAL` | `900` | how often to poll in detail, seconds |
 | `MONITOR_FAIL_THRESHOLD` | `3` | misses before the "unreachable" status |
+| `ICMP_CHECK_ENABLED` | `1` | **panel** · ping a site when it did not answer over the API |
 | `MONITOR_WORKERS` | `0` | concurrent checks (0 means same as `MAX_WORKERS`) |
 | `MONITOR_EVENT_RETENTION_DAYS` | `30` | how long to keep the outage history |
 | `DISK_MIN_FREE_PERCENT` | `15` | **panel** · free space threshold for the panel's own disk, 0 turns it off |

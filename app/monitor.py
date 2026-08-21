@@ -521,7 +521,15 @@ def apply_result(device: dict[str, Any], alive: bool, error: str = "",
     previous = device.get("status") or "unknown"
     now = utcnow()
 
-    if alive:
+    # Второе мнение о недоступной по API точке. Статус означает «точка
+    # доступна», а не «панель может ей управлять»: человеку в первую
+    # очередь важно, работает ли площадка. Роутер, который пингуется,
+    # но не пускает по API, это проблема связи или сервиса, а не повод
+    # объявлять точку упавшей и будить ночью.
+    ping = None if alive else _icmp_answer(device)
+    reachable = bool(alive) or ping is True
+
+    if reachable:
         new_status, streak = "online", 0
     else:
         streak = int(device.get("fail_streak") or 0) + 1
@@ -533,19 +541,52 @@ def apply_result(device: dict[str, Any], alive: bool, error: str = "",
     if alive:
         execute(
             "UPDATE devices SET status='online', fail_streak=0, last_seen=?, last_check=?, "
-            "last_error='', status_changed_at=COALESCE(?, status_changed_at), updated_at=? "
+            "last_error='', api_ok=1, api_seen=?, icmp_ok=NULL, icmp_at=NULL, "
+            "status_changed_at=COALESCE(?, status_changed_at), updated_at=? "
             "WHERE id=?",
-            (now, now, now if changed else None, now, device["id"]),
+            (now, now, now, now if changed else None, now, device["id"]),
+        )
+    elif reachable:
+        # Точка на связи, но панель ею не управляет. Это отдельное
+        # состояние, и путать его с падением нельзя: ехать никуда не надо,
+        # надо чинить канал, туннель или сервис на роутере.
+        execute(
+            "UPDATE devices SET status='online', fail_streak=0, last_seen=?, last_check=?, "
+            "last_error=?, api_ok=0, icmp_ok=1, icmp_at=?, "
+            "status_changed_at=COALESCE(?, status_changed_at), updated_at=? WHERE id=?",
+            (now, now, error[:500], now, now if changed else None, now, device["id"]),
         )
     else:
         execute(
             "UPDATE devices SET status=?, fail_streak=?, last_check=?, last_error=?, "
+            "api_ok=0, icmp_ok=?, icmp_at=?, "
             "status_changed_at=COALESCE(?, status_changed_at), updated_at=? WHERE id=?",
-            (new_status, streak, now, error[:500], now if changed else None, now, device["id"]),
+            (new_status, streak, now, error[:500],
+             None if ping is None else 0,
+             None if ping is None else now,
+             now if changed else None, now, device["id"]),
         )
 
     if changed:
         _record_event(device, new_status, error)
+
+
+def _icmp_answer(device: dict[str, Any]) -> bool | None:
+    """
+    Пингнуть точку с сервера панели. None значит «спросить не удалось».
+
+    Пинг стоит секунду и делается только для тех, кто не ответил по API,
+    то есть в обычный день не делается вовсе.
+    """
+    if not settings.icmp_check_enabled:
+        return None
+    try:
+        from . import icmp
+
+        return icmp.alive(str(device.get("host") or ""))
+    except Exception as exc:  # noqa: BLE001 - подсказка не важнее самой проверки
+        log.debug("Пинг не выполнился для %s: %s", device.get("host"), exc)
+        return None
 
 
 def _record_event(device: dict[str, Any], status: str, reason: str) -> None:

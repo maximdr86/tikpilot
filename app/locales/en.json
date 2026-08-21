@@ -461,6 +461,10 @@
     [
       "^(\\d+) бит/с$",
       "\\1 bit/s"
+    ],
+    [
+      "^(.+) · но отвечает на ping$",
+      "\\1 · but answers ping"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
@@ -1908,5 +1912,25 @@
   "Предупреждать, когда свободно меньше, %": "Warn when free space drops below, %",
   "Свободное место на диске, где лежит база. Кончилось место - панель перестаёт писать вовсе: ни журнала с устройств, ни истории, ни отметок об отправке. Ноль выключает проверку.": "Free space on the disk holding the database. Once it runs out the panel stops writing altogether: no device logs, no history, no delivery marks. Zero turns the check off.",
   "Диск панели": "Panel disk",
-  "свободно %(p0)s из %(p1)s (%(p2)s%) </span> <span class=\"small muted\"> · база %(p3)s · бэкапы %(p4)s </span>": "%(p0)s free of %(p1)s (%(p2)s%) </span> <span class=\"small muted\"> · database %(p3)s · backups %(p4)s </span>"
+  "свободно %(p0)s из %(p1)s (%(p2)s%) </span> <span class=\"small muted\"> · база %(p3)s · бэкапы %(p4)s </span>": "%(p0)s free of %(p1)s (%(p2)s%) </span> <span class=\"small muted\"> · database %(p3)s · backups %(p4)s </span>",
+  "Проверка ping": "Ping check",
+  "ping идёт</span>": "ping answers</span>",
+  "<span class=\"badge online\"><span class=\"led\"></span>хост отвечает</span> <span class=\"small muted\"> сам роутер жив, недоступен только API: канал, туннель или закрытый сервис </span>": "<span class=\"badge online\"><span class=\"led\"></span>the host answers</span> <span class=\"small muted\"> the router itself is alive, only the API is out of reach: the link, the tunnel or a closed service </span>",
+  "<span class=\"badge offline\"><span class=\"led\"></span>хост молчит</span> <span class=\"small muted\">площадка недоступна целиком</span>": "<span class=\"badge offline\"><span class=\"led\"></span>the host is silent</span> <span class=\"small muted\">the site is unreachable altogether</span>",
+  "Сам роутер отвечает на ping, недоступен только API": "The router itself answers ping, only the API is out of reach",
+  "Ждать ответа от точки, секунд": "Wait for the site to answer, seconds",
+  "Столько панель ждёт подключения и ответа по API. На канале с большой задержкой и потерями восьми секунд бывает мало, и живая точка выглядит упавшей.": "How long the panel waits for the connection and the API answer. On a link with high latency and loss eight seconds can be too few, and a live site looks like a dead one.",
+  "Пинговать точку, если API не ответил": "Ping the site when the API did not answer",
+  "Второе мнение: статус остаётся про API, но становится видно, жив ли сам роутер. Пинг делается только для неответивших, то есть в обычный день не делается вовсе.": "A second opinion: the status still means the API, but it becomes visible whether the router itself is alive. Only sites that did not answer are pinged, so on a normal day nothing is pinged at all.",
+  "Отвечает только на ping": "Answers ping only",
+  "<span class=\"badge offline\"><span class=\"led\"></span>хост молчит</span>": "<span class=\"badge offline\"><span class=\"led\"></span>the host is silent</span>",
+  "<span class=\"badge online\"><span class=\"led\"></span>панель управляет</span>": "<span class=\"badge online\"><span class=\"led\"></span>the panel is in control</span>",
+  "<span class=\"badge online\"><span class=\"led\"></span>хост отвечает</span>": "<span class=\"badge online\"><span class=\"led\"></span>the host answers</span>",
+  "<span class=\"badge pending\"><span class=\"led\"></span>API не отвечает</span> <span class=\"small muted\">": "<span class=\"badge pending\"><span class=\"led\"></span>the API does not answer</span> <span class=\"small muted\">",
+  "<span class=\"badge pending\">без API</span>": "<span class=\"badge pending\">no API</span>",
+  "<span class=\"small muted\">· последний ответ %(p0)s</span>": "<span class=\"small muted\">· last answer %(p0)s</span>",
+  "Управление по API": "Control over the API",
+  "без API</span>": "no API</span>",
+  "как и сама точка": "same as the site itself",
+  "точка на связи, но команды до неё не доходят: канал, туннель или сервис на роутере": "the site is up, but commands do not reach it: the link, the tunnel or a service on the router"
 }
