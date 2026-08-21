@@ -58,6 +58,9 @@
             {% if device.status == 'online' %}<span class="badge online"><span class="led"></span>онлайн</span>
             {% elif device.status == 'offline' %}<span class="badge offline"><span class="led"></span>оффлайн</span>
             {% else %}<span class="badge unknown"><span class="led"></span>неизвестно</span>{% endif %}
+            {% if device.status == 'online' and device.api_ok is not none and not device.api_ok %}
+                <span class="badge pending">без API</span>
+            {% endif %}
         </div>
         {# Оператор рядом со статусом: когда точка лежит, следующий вопрос
            всегда «чей канал», и ответ должен быть в том же месте, а не
@@ -154,6 +157,48 @@
             </tr>
             {% if device.last_error %}
             <tr><td class="muted">Последняя ошибка</td><td style="color:var(--err)">{{ device.last_error | t }}</td></tr>
+            {% endif %}
+            {# Статус точки отвечает на вопрос «работает ли площадка»,
+               и на него отвечает ping. Управление по API это второй,
+               отдельный вопрос: роутер может быть жив, а панель до его
+               API не дотягивается из-за канала, туннеля или закрытого
+               сервиса. Раньше эти два ответа были склеены в один, и
+               живая точка висела «оффлайн». #}
+            <tr>
+                <td class="muted">Управление по API</td>
+                <td>
+                    {% if device.api_ok %}
+                        <span class="badge online"><span class="led"></span>панель управляет</span>
+                    {% elif device.api_ok is not none %}
+                        <span class="badge pending"><span class="led"></span>API не отвечает</span>
+                        <span class="small muted">
+                            {% if device.status == 'online' %}
+                                точка на связи, но команды до неё не доходят:
+                                канал, туннель или сервис на роутере
+                            {% else %}
+                                как и сама точка
+                            {% endif %}
+                        </span>
+                    {% else %}
+                        <span class="muted">—</span>
+                    {% endif %}
+                    {% if device.api_seen %}
+                        <span class="small muted">· последний ответ {{ device.api_seen | dt_short }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% if device.icmp_at %}
+            <tr>
+                <td class="muted">Проверка ping</td>
+                <td>
+                    {% if device.icmp_ok %}
+                        <span class="badge online"><span class="led"></span>хост отвечает</span>
+                    {% else %}
+                        <span class="badge offline"><span class="led"></span>хост молчит</span>
+                    {% endif %}
+                    <span class="small muted">· {{ device.icmp_at | dt_short }}</span>
+                </td>
+            </tr>
             {% endif %}
             <tr><td class="muted">Добавлено</td><td>{{ device.created_at | dt }}</td></tr>
             </tbody>

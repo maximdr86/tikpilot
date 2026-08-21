@@ -65,6 +65,12 @@
         <td class="nowrap" data-sort="{{ d.status | status_rank }}">
             {% if d.status == 'online' %}
                 <span class="badge online"><span class="led"></span>онлайн</span>
+                {# Точка на связи, но панель ею не управляет: пинг доходит,
+                   API нет. Это не падение площадки, а проблема канала или
+                   сервиса, и в списке она должна выглядеть иначе. #}
+                {% if d.api_ok is not none and not d.api_ok %}
+                    <span class="badge pending" title="{{ d.last_error | t }}">без API</span>
+                {% endif %}
                 {# Промахи есть, но порога ещё не достигли — точка под подозрением #}
                 {% if d.fail_streak %}
                     <span class="badge pending" title="{{ d.last_error | t }}">не отвечает {{ d.fail_streak }}×</span>

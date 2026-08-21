@@ -125,6 +125,11 @@ class Settings:
         self.monitor_probe_timeout: int = _int_env("MONITOR_PROBE_TIMEOUT", 3)
         # Таймаут постоянных сессий мониторинга
         self.monitor_session_timeout: int = _int_env("MONITOR_SESSION_TIMEOUT", 8)
+        # Пинговать ли точку с сервера, когда она не ответила по API.
+        # Это второе мнение: статус остаётся про API, но становится видно,
+        # жив ли хост вообще. Пинг делается только для неответивших.
+        self.icmp_check_enabled: bool = os.getenv(
+            "ICMP_CHECK_ENABLED", "1") not in ("0", "false", "no")
         # Полный опрос с версией, uptime и CPU — реже, требует авторизации
         self.monitor_full_interval: int = _int_env("MONITOR_FULL_INTERVAL", 900)
         # Сколько промахов подряд нужно, чтобы признать устройство недоступным.
