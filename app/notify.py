@@ -309,12 +309,17 @@ def dispatch(force: bool = False) -> dict[str, Any]:
         try:
             send(channel, text)
             delivered = True
-            _log(channel, True, "")
         except Exception as exc:  # noqa: BLE001 - причину показываем человеку
             failed += 1
             error = str(exc)[:200]
-            _log(channel, False, error)
             log.warning("Уведомление не ушло в %s: %s", channel["kind"], exc)
+        # Запись в журнал попыток отдельно и молча: она полезна, но если
+        # база откажет, это не повод считать отправку неудавшейся. Иначе
+        # выходит худшее из возможного - сообщение человек получил,
+        # события остались неотмеченными, и через минуту всё то же самое
+        # уходит снова. Так и было: полный диск превращал сводку
+        # в ежеминутную рассылку одного и того же.
+        _log_quietly(channel, not failed, error)
 
     if delivered:
         alerts.mark_sent([int(e["id"]) for e in events])
@@ -344,6 +349,20 @@ def why_silent() -> str:
     if not alerts.unsent():
         return "nothing"
     return ""
+
+
+def _log_quietly(channel: dict[str, Any], ok: bool, error: str) -> None:
+    """
+    Записать попытку, не мешая доставке.
+
+    Журнал попыток нужен для отладки, но он вторичен: сообщение уже
+    ушло, и падать из-за неудачной записи в базу значит забыть об этом
+    и отправить его ещё раз.
+    """
+    try:
+        _log(channel, ok, error)
+    except Exception as exc:  # noqa: BLE001 - журнал попыток не важнее самой отправки
+        log.warning("Попытка отправки не записалась в журнал: %s", exc)
 
 
 def _log(channel: dict[str, Any], ok: bool, error: str) -> None:

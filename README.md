@@ -644,6 +644,17 @@ a single site.
 A value that cannot be read counts as neither an alert nor a recovery. On a
 board with no temperature sensor the rule "above 60" simply stays quiet.
 
+Apart from the rules, the panel watches its own disk. That is not a property of
+a site, so it is not a rule: the threshold lives in the settings
+(`DISK_MIN_FREE_PERCENT`, 15% by default), and the event is written without a
+device and then travels the usual way, into the feed and the digest. A banner
+sits on the dashboard as well, and the nightly cleanup writes down how much is
+taken and how much is left.
+
+The reason is simple: running out of space stops the panel altogether. SQLite
+stops writing, the syslog receiver stalls, delivery marks are not saved. Space
+runs out over weeks, and it can be warned about in advance.
+
 **Useful rules to start with:**
 
 | Rule | Why |
@@ -1014,6 +1025,7 @@ tar czf tikpilot-$(date +%F).tar.gz data/ .env
 | `MONITOR_FAIL_THRESHOLD` | `3` | misses before the "unreachable" status |
 | `MONITOR_WORKERS` | `0` | concurrent checks (0 means same as `MAX_WORKERS`) |
 | `MONITOR_EVENT_RETENTION_DAYS` | `30` | how long to keep the outage history |
+| `DISK_MIN_FREE_PERCENT` | `15` | **panel** · free space threshold for the panel's own disk, 0 turns it off |
 | `LATENCY_ENABLED` | `1` | latency and loss measurement |
 | `LATENCY_TARGETS` | `8.8.8.8` | shared ping targets, comma-separated |
 | `LATENCY_PING_GATEWAY` | `1` | also ping each site's gateway |

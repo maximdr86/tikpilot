@@ -1899,5 +1899,14 @@
   "Пачек, которые не записались: %(p0)s. <span class=\"mono small\">%(p1)s</span>": "Batches that failed to save: %(p0)s. <span class=\"mono small\">%(p1)s</span>",
   "Приём поднимался заново сторожем: %(p0)s раз.": "The watchdog restarted reception %(p0)s time(s).",
   "Строк отброшено: %(p0)s. Это либо чужой адрес, либо очередь записи не успевала.": "Lines dropped: %(p0)s. Either an address that may not write, or the write queue could not keep up.",
-  "Счётчики считаются с запуска панели.": "The counters are since the panel started."
+  "Счётчики считаются с запуска панели.": "The counters are since the panel started.",
+  "<strong>Мало места на диске:</strong> свободно %(p0)s из %(p1)s (%(p2)s%). База занимает %(p3)s, бэкапы %(p4)s.": "<strong>Low disk space:</strong> %(p0)s free of %(p1)s (%(p2)s%). The database takes %(p3)s, backups %(p4)s.",
+  "Когда место кончится, панель перестанет писать вовсе: ни журнала с устройств, ни истории, ни бэкапов. Порог задаётся в настройках, на вкладке «Сбор данных».": "When it runs out the panel stops writing altogether: no device logs, no history, no backups. The threshold is set on the Data collection tab in Settings.",
+  "Свободно на диске панели": "Free space on the panel disk",
+  "Место на диске": "Disk space",
+  "Панель": "The panel",
+  "Предупреждать, когда свободно меньше, %": "Warn when free space drops below, %",
+  "Свободное место на диске, где лежит база. Кончилось место - панель перестаёт писать вовсе: ни журнала с устройств, ни истории, ни отметок об отправке. Ноль выключает проверку.": "Free space on the disk holding the database. Once it runs out the panel stops writing altogether: no device logs, no history, no delivery marks. Zero turns the check off.",
+  "Диск панели": "Panel disk",
+  "свободно %(p0)s из %(p1)s (%(p2)s%) </span> <span class=\"small muted\"> · база %(p3)s · бэкапы %(p4)s </span>": "%(p0)s free of %(p1)s (%(p2)s%) </span> <span class=\"small muted\"> · database %(p3)s · backups %(p4)s </span>"
 }
