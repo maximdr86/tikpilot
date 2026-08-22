@@ -80,6 +80,16 @@ class FakeRouter:
         self.script_run_seconds = 0.0   # сколько «выполняется» скрипт
 
         # --- проверка канала ---
+        # --- тест скорости ---
+        # Сервер btest на настоящей коробке чаще выключен, и панель должна
+        # его включать сама. Здесь по умолчанию так же
+        self.btest_server = False
+        self.btest_switches: list[bool] = []       # как его дёргали
+        self.btest_runs: list[dict[str, str]] = []  # с какими параметрами мерили
+        self.btest_rx_bps = 94_000_000
+        self.btest_tx_bps = 41_000_000
+        self.btest_fails = False
+
         # --- WireGuard ---
         # Хранится как на настоящем устройстве: списки записей со своими .id.
         self.wg_interfaces: list[dict[str, str]] = [{
@@ -606,6 +616,31 @@ class FakeRouter:
             })
             self.pinged.append(address)
             return rows
+
+        # ------------------------------------------------- тест скорости
+        if cmd == "/tool/bandwidth-server/print":
+            return [{"enabled": "true" if self.btest_server else "false",
+                     "authenticate": "true", "max-sessions": "100"}]
+
+        if cmd == "/tool/bandwidth-server/set":
+            self.btest_server = attrs.get("enabled", "no") in ("yes", "true")
+            self.btest_switches.append(self.btest_server)
+            return []
+
+        if cmd == "/tool/bandwidth-test":
+            self.btest_runs.append(dict(attrs))
+            if self.btest_fails:
+                raise _Trap("connection timeout")
+            # Настоящий RouterOS шлёт строку в секунду; для теста хватит
+            # промежуточной и итоговой: разбор берёт последнюю с «done»
+            return [
+                {"status": "running", "rx-total-average": "0",
+                 "tx-total-average": "0", "duration": "1s"},
+                {"status": "done testing", "duration": attrs.get("duration", "10s"),
+                 "rx-total-average": str(self.btest_rx_bps),
+                 "tx-total-average": str(self.btest_tx_bps),
+                 "lost-packets": "0"},
+            ]
 
         if cmd == "/ip/route/print":
             rows = list(self.ip_routes)

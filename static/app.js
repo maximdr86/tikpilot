@@ -156,6 +156,13 @@ function renderActionParams() {
     if (action.dangerous) {
         html += '<div class="alert error">' + T('Потенциально опасная операция. Проверьте список устройств.') + '</div>';
     }
+    // Последовательные действия идут по одной точке. На весь парк это
+    // не минуты, а десятки минут, и знать об этом надо до нажатия
+    if (action.serial) {
+        html += '<div class="alert">' +
+            T('Точки обрабатываются по одной, иначе они мешают друг другу и результат врёт. На весь парк это долго.') +
+            '</div>';
+    }
     // Цена бездействия у страховки выше, чем у самой команды: не подтвердил,
     // и КАЖДАЯ выбранная точка перезагрузится. Сказать это надо до нажатия,
     // а не в журнале постфактум
@@ -176,6 +183,15 @@ function renderActionParams() {
             html += `<div class="field"><label for="${id}">${esc(p.label)}${p.required ? ' *' : ''}</label>
                 <textarea id="${id}" data-param="${esc(p.name)}" placeholder="${esc(p.placeholder)}">${esc(p.default)}</textarea>
                 ${p.help ? `<div class="hint">${esc(p.help)}</div>` : ''}</div>`;
+        } else if (p.type === 'device') {
+            // Список точек живёт в базе, а не в описании действия: он меняется
+            // чаще, чем перезагружается страница. Поэтому пустой список сейчас
+            // и подстановка после ответа сервера
+            html += `<div class="field"><label for="${id}">${esc(p.label)}${p.required ? ' *' : ''}</label>
+                <select id="${id}" data-param="${esc(p.name)}" data-device-list="1">
+                    <option value="">${T('Загружаю список...')}</option>
+                </select>
+                ${p.help ? `<div class="hint">${esc(p.help)}</div>` : ''}</div>`;
         } else if (p.type === 'select') {
             const opts = (p.options || []).map((o) => `<option value="${esc(o[0])}">${esc(o[1])}</option>`).join('');
             html += `<div class="field"><label for="${id}">${esc(p.label)}</label>
@@ -190,6 +206,35 @@ function renderActionParams() {
         }
     });
     box.innerHTML = html;
+    fillDeviceParams();
+}
+
+/** Кэш короткого списка точек: в одной модалке его спрашивают не раз. */
+let DEVICE_LIST_CACHE = null;
+
+/**
+ * Подставить точки в поля выбора устройства.
+ *
+ * Молча ничего не делает, если таких полей на форме нет — так вызов
+ * можно ставить безусловно после каждой перерисовки.
+ */
+async function fillDeviceParams() {
+    const fields = $$('#action-params [data-device-list]');
+    if (!fields.length) { return; }
+    try {
+        if (!DEVICE_LIST_CACHE) {
+            const data = await api('/api/devices/brief');
+            DEVICE_LIST_CACHE = data.devices || [];
+        }
+        const options = ['<option value="">' + T('выберите точку') + '</option>']
+            .concat(DEVICE_LIST_CACHE.map(
+                (d) => `<option value="${d.id}">${esc(d.name)} (${esc(d.host)})</option>`));
+        fields.forEach((field) => { field.innerHTML = options.join(''); });
+    } catch (err) {
+        fields.forEach((field) => {
+            field.innerHTML = `<option value="">${T('Не удалось получить список точек')}</option>`;
+        });
+    }
 }
 
 /** Убрать отложенный запуск — задача пойдёт сразу. */

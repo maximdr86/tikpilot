@@ -31,7 +31,7 @@
             <tr>
                 <td><a href="/jobs/{{ j.id }}"><strong>{{ j.id }}</strong></a></td>
                 <td><a href="/jobs/{{ j.id }}">{{ (j.action_label or j.action) | t }}</a></td>
-                <td class="muted">{{ j.username }}</td>
+                <td class="muted">{{ j.username | t }}</td>
                 <td>{{ j.total }}</td>
                 <td style="color:var(--ok)">{{ j.ok_count }}</td>
                 <td style="color:var(--err)">{{ j.fail_count }}</td>

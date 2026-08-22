@@ -10337,3 +10337,203 @@ def test_axis_labels_do_not_collide_or_get_clipped():
     numbers = [float(y) for _, y, text in labels
                if re.fullmatch(r"[\d.]+", text)]
     assert min(numbers) - unit_y >= 8, (unit_y, sorted(numbers)[:3])
+
+
+# ------------------------------------------------------- тест скорости
+def test_speedtest_measures_between_two_sites(client, router):
+    """
+    Замер полосы от одной точки до другой, обеими сторонами сразу.
+
+    Смысл действия в том, что панель знает пароли от обеих сторон:
+    человеку пришлось бы включить btest на цели, вспомнить её логин,
+    сходить на первую точку, померить и не забыть выключить сервер.
+    Здесь проверяется вся цепочка, включая последний шаг.
+    """
+    with FakeRouter(username="tikpilot", password="s3cret") as target_fake:
+        source = _add_device(client, router, "speed-source")
+        target = _add_device(client, target_fake, "speed-target")
+
+        job = _run_and_wait(client, "speedtest", [source], {
+            "target_id": str(target), "duration": "5",
+            "direction": "receive", "protocol": "tcp",
+        })
+        assert job["ok_count"] == 1, job
+
+        # Мерили именно тем, что просили
+        assert router.btest_runs, "тест на исходной точке не запускался"
+        run = router.btest_runs[-1]
+        assert run["duration"] == "5s"
+        assert run["direction"] == "receive"
+        assert run["user"] == "tikpilot"
+
+        # Сервер на цели включили и вернули как было
+        assert target_fake.btest_switches == [True, False], target_fake.btest_switches
+        assert target_fake.btest_server is False
+
+        text = client.get(f"/jobs/{job['id']}").text
+        # Имя цели, а не её номер; оба направления и общие единицы,
+        # чтобы полсотни строк можно было сравнить глазами
+        assert "speed-target" in text
+        assert "приём" in text and "передача" in text
+        assert "Мбит/с" in text
+        assert "бит/с," not in text.replace("Мбит/с,", "")
+
+
+def test_speedtest_closes_the_door_after_a_failure(client, router):
+    """
+    Сервер btest выключается и тогда, когда сам тест не удался.
+
+    Это важнее удачного случая: включённый сервер на удалённой точке
+    остаётся открытой дверью, а ошибку человек увидит и повторит,
+    и после третьей попытки дверей будет три.
+    """
+    with FakeRouter(username="tikpilot", password="s3cret") as target_fake:
+        source = _add_device(client, router, "speed-source-bad")
+        target = _add_device(client, target_fake, "speed-target-bad")
+        router.btest_fails = True
+        try:
+            job = _run_and_wait(client, "speedtest", [source],
+                                {"target_id": str(target), "duration": "5"})
+        finally:
+            router.btest_fails = False
+
+        assert job["fail_count"] == 1, job
+        assert target_fake.btest_switches == [True, False], target_fake.btest_switches
+
+
+def test_speedtest_refuses_to_measure_to_itself(client, router):
+    """Точка не может мерить скорость сама до себя: это не измерение."""
+    device_id = _add_device(client, router, "speed-self")
+    job = _run_and_wait(client, "speedtest", [device_id],
+                        {"target_id": str(device_id), "duration": "5"})
+    assert job["fail_count"] == 1, job
+
+
+def test_device_list_for_forms_respects_scope(client):
+    """Короткий список точек не показывает то, чего человеку не видно."""
+    data = client.get("/api/devices/brief").json()
+    assert "devices" in data
+    assert all({"id", "name", "host"} <= set(row) for row in data["devices"])
+
+
+# ------------------------------------------------------ требует внимания
+def test_attention_shows_offline_sites(client, router):
+    """Недоступная точка попадает в сводку и на дашборд."""
+    from app import attention
+    from app.database import execute
+
+    device_id = _add_device(client, router, "attn-offline")
+    execute("UPDATE devices SET status = 'offline',"
+            " status_changed_at = datetime('now', '-2 hours') WHERE id = ?",
+            (device_id,))
+
+    items = {item.key: item for item in attention.collect()}
+    assert "offline" in items
+    assert items["offline"].level == "bad"
+    # Имена в пояснении обрезаются на третьем: полный список берём из
+    # самого пункта, иначе тест ломается от порядка прогона соседей
+    assert device_id in [row["id"] for row in items["offline"].devices]
+
+    page = client.get("/").text
+    assert "Требует внимания" in page
+    assert "Не в сети" in page
+
+
+def test_attention_notices_flapping(client, router):
+    """
+    Мигающая точка отличается от упавшей.
+
+    Карточка показывает состояние на момент опроса, и точка, которая
+    падает и встаёт каждые полчаса, половину времени выглядит здоровой.
+    В сводке она должна называться своим именем.
+    """
+    from app import attention
+    from app.database import execute
+
+    device_id = _add_device(client, router, "attn-flap")
+    for index in range(attention.FLAP_CHANGES):
+        execute(
+            "INSERT INTO status_events (device_id, device_name, status, ts)"
+            " VALUES (?,?,?, datetime('now', '-1 hour'))",
+            (device_id, "attn-flap", "offline" if index % 2 else "online"),
+        )
+
+    items = {item.key: item for item in attention.collect()}
+    assert "flapping" in items, items
+    assert device_id in [row["id"] for row in items["flapping"].devices]
+
+
+def test_attention_respects_visibility_scope():
+    """Оператору с пустой областью сводка не рассказывает про чужие точки."""
+    from app import attention
+
+    keys = {item.key for item in attention.collect((" AND 0=1", []))}
+    assert "offline" not in keys
+    assert "flapping" not in keys
+
+
+def test_attention_survives_a_broken_check(monkeypatch):
+    """
+    Упавшая проверка не уносит с собой весь дашборд.
+
+    Сводка это первое, что видит человек. Одна опечатка в одном запросе
+    не должна превращать главную страницу в ошибку пятьсот.
+    """
+    from app import attention
+
+    def boom(_scope):
+        raise RuntimeError("проверка сломалась")
+
+    monkeypatch.setattr(attention, "CHECKS", (boom, attention._check_updates))
+    attention.collect()  # не должно бросить
+
+
+def test_attention_sorts_the_worst_first():
+    """Красное выше жёлтого: список читают сверху и не всегда дочитывают."""
+    from app import attention
+
+    items = [
+        attention.Item(key="a", level="info", group="security", title="и"),
+        attention.Item(key="b", level="warn", group="hygiene", title="п"),
+        attention.Item(key="c", level="bad", group="availability", title="б"),
+    ]
+    items.sort(key=lambda i: attention.LEVEL_ORDER[i.level])
+    assert [i.key for i in items] == ["c", "b", "a"]
+    assert attention.worst_level(items) == "bad"
+
+
+def test_speedtest_runs_sites_one_at_a_time(client, router):
+    """
+    Замеры не идут параллельно.
+
+    Двенадцать точек, которые одновременно меряют полосу до одной цели,
+    делят её канал между собой. Панель получает двенадцать заниженных
+    чисел, и каждое выглядит как измерение. Проверяется по заглушке:
+    одновременных тестов на ней быть не должно.
+    """
+    from app.actions import get_action
+
+    assert get_action("speedtest").serial is True
+
+    with FakeRouter(username="tikpilot", password="s3cret") as target_fake:
+        first = _add_device(client, router, "speed-serial-1")
+        second = _add_device(client, router, "speed-serial-2")
+        target = _add_device(client, target_fake, "speed-serial-target")
+
+        job = _run_and_wait(client, "speedtest", [first, second],
+                            {"target_id": str(target), "duration": "5"})
+        assert job["ok_count"] == 2, job
+        # Сервер на цели включали и гасили дважды, а не один раз на двоих:
+        # вторая точка начала после того, как первая закончила
+        assert target_fake.btest_switches == [True, False, True, False], \
+            target_fake.btest_switches
+
+
+def test_job_params_show_the_target_name(client, router):
+    """В параметрах задачи стоит имя точки, а не её номер в базе."""
+    from app.actions import describe_params, get_action
+
+    target = _add_device(client, router, "speed-named-target")
+    text = describe_params(get_action("speedtest"), {"target_id": str(target)})
+    assert "speed-named-target" in text
+    assert str(target) not in text

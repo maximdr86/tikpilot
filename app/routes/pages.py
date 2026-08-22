@@ -79,54 +79,35 @@ async def dashboard(request: Request, user=Depends(current_user)):
         tuple(scope[1]),
     )
     recent_jobs = query("SELECT * FROM jobs ORDER BY id DESC LIMIT 8")
-    offline = query(
-        "SELECT d.id, d.name, d.host, d.last_error, d.last_check FROM devices d "
-        f"WHERE d.status='offline'{scope[0]} ORDER BY d.name COLLATE NOCASE LIMIT 15",
-        tuple(scope[1]),
-    )
     versions = query(
         "SELECT d.ros_version, COUNT(*) AS c FROM devices d WHERE d.ros_version <> '' "
         f"{scope[0]} GROUP BY d.ros_version ORDER BY c DESC LIMIT 8",
         tuple(scope[1]),
     )
 
-    # Устройства, где найденная версия отличается от установленной
-    from .devices import _fetch_devices
-
-    pending = [d for d in _fetch_devices(user=user) if d["update_available"]]
-
-    from .. import monitor, rollback
+    from .. import attention, monitor, rollback
     from ..actions import list_actions
 
-    # Взведённые страховки видны на первой странице, пока их не сняли:
-    # забыть про них нельзя, точка сама откатится и перезагрузится
+    # Просроченные страховки надо закрыть до того, как считать сводку:
+    # иначе в «ждут подтверждения» попадут те, что уже сработали
     rollback.sweep()
 
-    # Место на диске самой панели. Считается дёшево (кэш на пять минут),
-    # а увидеть кончающийся диск надо раньше, чем он кончится
-    from .. import disk
-
-    space = disk.free_space()
-    parts = disk.sizes()
+    # Что требует внимания. Внутрь этого блока переехали и плашка диска,
+    # и список недоступных, и напоминание про страховки: раньше они были
+    # тремя отдельными сущностями наверху страницы и спорили за место
+    todo = attention.collect(scope)
 
     return render(
         "dashboard.html",
         request,
         user,
         active="dashboard",
-        disk_low=disk.low(),
-        disk_free=disk.human(space["free"]),
-        disk_total=disk.human(space["total"]),
-        disk_percent=disk.percent_free(),
-        disk_db=disk.human(parts["db"]),
-        disk_backups=disk.human(parts["backups"]),
-        armed_rollbacks=rollback.armed(scope),
+        attention=todo,
+        attention_level=attention.worst_level(todo),
         stats=stats,
         groups=groups,
         recent_jobs=recent_jobs,
-        offline=offline,
         versions=versions,
-        pending_updates=pending,
         monitor_state=monitor.state,
         actions=list_actions(),
     )

@@ -2,39 +2,51 @@
 {% block title %}Дашборд · Tikpilot{% endblock %}
 
 {% block content %}
-{% if disk_low %}
-{# Панель следит за парком, но однажды не уследила за собой: место
-   кончилось, SQLite перестала писать, и встало всё разом. Место
-   кончается неделями, поэтому предупреждение висит на видном месте
-   до тех пор, пока его не станет достаточно. #}
-<div class="alert error">
-    <strong>Мало места на диске:</strong> свободно {{ disk_free }} из {{ disk_total }}
-    ({{ disk_percent }}%). База занимает {{ disk_db }}, бэкапы {{ disk_backups }}.
-    <div class="small" style="margin-top:4px">
-        Когда место кончится, панель перестанет писать вовсе: ни журнала
-        с устройств, ни истории, ни бэкапов. Порог задаётся в настройках,
-        на вкладке «Сбор данных».
-    </div>
-</div>
-{% endif %}
+{# ------------------------------------------------------- требует внимания
 
-{% if armed_rollbacks %}
-{# Первое, что человек видит, открыв панель. Через несколько минут эти
-   точки сами вернутся к прежней конфигурации и перезагрузятся, и узнать
-   об этом постфактум из истории куда неприятнее. #}
-<div class="alert warn">
-    <strong>Ждут подтверждения:</strong>
-    {% for r in armed_rollbacks %}
-        <a href="/devices/{{ r.device_id }}">{{ r.device_name }}</a>
-        <span class="small muted">до {{ r.expires_at | dt_short }}</span>{% if not loop.last %} · {% endif %}
-    {% endfor %}
-    <div class="small" style="margin-top:4px">
-        Без подтверждения устройства откатят конфигурацию сами и перезагрузятся.
-    </div>
-    <div class="btn-row" style="margin-top:8px">
-        <button class="btn primary" onclick="confirmAllRollbacks(this)">
-            Подтвердить все ({{ armed_rollbacks | length }})
-        </button>
+   Один список вместо трёх плашек и двух таблиц. Раньше наверху страницы
+   по очереди жили место на диске, взведённые страховки и недоступные
+   точки, а остальное лежало по своим разделам: возраст бэкапов в
+   бэкапах, молчащий журнал в журнале, открытые сервисы в карточке.
+   Человек, открывший панель утром, спрашивает не «как дела», а «за что
+   хвататься», и ответ на это должен быть один и сверху.
+
+   Пустой блок не рисуется вовсе. Это важнее, чем кажется: «всё спокойно»
+   лучше всего выглядит как отсутствие блока, а не как зелёная плашка,
+   которую перестают замечать через неделю. #}
+{% if attention %}
+<div class="panel attention {{ attention_level }}">
+    <h2>
+        Требует внимания
+        <span class="h2-extra muted">{{ attention | length }} {{ attention | length | plural('пункт', 'пункта', 'пунктов') }}</span>
+    </h2>
+    <div class="attn-list">
+        {% for item in attention %}
+        <div class="attn-row {{ item.level }}">
+            <div class="attn-count">{{ item.count }}</div>
+            <div class="attn-body">
+                <div class="attn-title">{{ item.title | t }}</div>
+                <div class="attn-detail small muted">{{ item.detail | t }}</div>
+            </div>
+            <div class="attn-act nowrap">
+                {% if item.key == 'rollbacks' %}
+                <button class="btn sm primary" onclick="confirmAllRollbacks(this)">
+                    Подтвердить все
+                </button>
+                {% elif item.key == 'updates' %}
+                <button class="btn sm"
+                        onclick="openActionModal({device_ids: {{ item.devices | map(attribute='id') | list | tojson }}},
+                                                 '{{ _("устройства с доступным обновлением") }}',
+                                                 'upgrade_ros')">
+                    Обновить все
+                </button>
+                {% endif %}
+                {% if item.href %}
+                <a class="small" href="{{ item.href }}">{{ item.link_text | t }} →</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
     </div>
 </div>
 <script>
@@ -117,68 +129,6 @@
     </div>
 </div>
 
-<!-- --------------------------------------------------- ждут обновления -->
-{% if pending_updates %}
-<div class="panel">
-    <h2>
-        Доступны обновления RouterOS
-        <span class="h2-extra muted">{{ pending_updates | length }} {{ pending_updates | length | plural('устройство', 'устройства', 'устройств') }}</span>
-    </h2>
-    <div class="panel-body">
-        <div class="btn-row">
-            <button class="btn danger"
-                    onclick="openActionModal({device_ids: {{ pending_updates | map(attribute='id') | list | tojson }}},
-                                             '{{ _("устройства с доступным обновлением (%(p0)s шт.)", p0=(pending_updates | length)) }}',
-                                             'upgrade_ros')">
-                Обновить все, где есть обновление
-            </button>
-            <a class="btn" href="/devices?status=update">Показать списком</a>
-        </div>
-    </div>
-    <div class="table-wrap">
-        <table>
-            <thead><tr><th>Имя</th><th>Адрес</th><th class="nowrap">Установлено</th><th class="nowrap">Доступно</th><th class="nowrap">Канал</th></tr></thead>
-            <tbody>
-            {% for d in pending_updates %}
-                <tr>
-                    <td><a href="/devices/{{ d.id }}">{{ d.name }}</a></td>
-                    <td class="mono">{{ d.host }}</td>
-                    <td class="mono">{{ d.ros_version }}</td>
-                    <td class="mono" style="color:var(--warn)">{{ d.latest_version }}</td>
-                    <td class="small muted">{{ d.update_channel or '—' }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
-
-<!-- ------------------------------------------------------ недоступные -->
-{% if offline %}
-<div class="panel">
-    <h2>
-        Недоступные устройства
-        <span class="h2-extra"><a href="/monitoring">вся картина в мониторинге →</a></span>
-    </h2>
-    <div class="table-wrap">
-        <table>
-            <thead><tr><th>Имя</th><th>Адрес</th><th>Ошибка</th><th class="nowrap">Проверка</th></tr></thead>
-            <tbody>
-            {% for d in offline %}
-                <tr>
-                    <td><a href="/devices/{{ d.id }}">{{ d.name }}</a></td>
-                    <td class="mono">{{ d.host }}</td>
-                    <td class="small muted">{{ d.last_error | t }}</td>
-                    <td class="nowrap small muted">{{ d.last_check | dt_short }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endif %}
-
 <div class="grid cols-2">
     <!-- ------------------------------------------------------ по группам -->
     <div class="panel">
@@ -238,7 +188,7 @@
                 <tr>
                     <td><a href="/jobs/{{ j.id }}">{{ j.id }}</a></td>
                     <td>{{ j.action_label | t }}</td>
-                    <td class="muted">{{ j.username }}</td>
+                    <td class="muted">{{ j.username | t }}</td>
                     <td class="nowrap small">
                         {# Числа без подписей читаются как загадка: «47 / 2» может
                            быть чем угодно. Слова длиннее, зато не требуют догадок. #}
