@@ -6,8 +6,8 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 
-A web panel for managing a MikroTik fleet over the RouterOS API. Built for
-50 devices and up.
+Self-hosted central management for a MikroTik fleet: a web panel that drives
+the routers over the RouterOS API. Built for 50 devices and up.
 
 Runs on any server with Python, as a single process. No Redis, no Celery, no
 Node.js, no frontend build step. The panel itself needs no internet access:
