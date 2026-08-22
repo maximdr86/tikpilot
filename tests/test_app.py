@@ -10537,3 +10537,110 @@ def test_job_params_show_the_target_name(client, router):
     text = describe_params(get_action("speedtest"), {"target_id": str(target)})
     assert "speed-named-target" in text
     assert str(target) not in text
+
+
+def test_attention_judges_memory_as_a_share_of_the_board(client, router):
+    """
+    Мало памяти это доля, а не мегабайты.
+
+    Обидный случай с живого парка: hAP lite с 32 МиБ на борту и 11 МиБ
+    свободных попадал в список каждый день. Памяти на нём больше
+    не станет, а список, где вечно висит одно и то же, перестают читать
+    целиком. На той же плате три мегабайта свободных это уже беда,
+    и разница между двумя случаями видна только в долях.
+    """
+    from app import attention
+    from app.database import execute
+
+    small = _add_device(client, router, "attn-mem-small")
+    tight = _add_device(client, router, "attn-mem-tight")
+
+    # Обе платы на 32 МиБ: у одной свободна треть, у другой почти ничего
+    for device_id, free in ((small, 11 * 1048576), (tight, 2 * 1048576)):
+        execute("UPDATE devices SET total_memory = ? WHERE id = ?",
+                (32 * 1048576, device_id))
+        execute("INSERT INTO device_metrics (device_id, ts, cpu_load, free_memory)"
+                " VALUES (?, datetime('now', '-1 minute'), NULL, ?)",
+                (device_id, free))
+
+    items = {item.key: item for item in attention.collect()}
+    flagged = [row["id"] for row in items["memory"].devices] if "memory" in items else []
+    assert tight in flagged, "плата с двумя мегабайтами свободных должна попасть"
+    assert small not in flagged, "треть свободной памяти это не повод"
+
+
+def test_attention_falls_back_when_the_board_size_is_unknown(client, router):
+    """Пока плата не сказала свой объём, судим по-старому, абсолютным запасом."""
+    from app import attention
+    from app.database import execute
+
+    device_id = _add_device(client, router, "attn-mem-unknown")
+    execute("UPDATE devices SET total_memory = 0 WHERE id = ?", (device_id,))
+    execute("INSERT INTO device_metrics (device_id, ts, cpu_load, free_memory)"
+            " VALUES (?, datetime('now', '-1 minute'), NULL, ?)",
+            (device_id, 3 * 1048576))
+
+    items = {item.key: item for item in attention.collect()}
+    assert device_id in [row["id"] for row in items["memory"].devices]
+
+
+def test_board_memory_is_remembered_from_the_poll(client, router):
+    """Объём памяти платы записывается при обычном опросе."""
+    from app.database import query_one
+
+    device_id = _add_device(client, router, "attn-mem-poll")
+    job = _run_and_wait(client, "check", [device_id], {})
+    assert job["ok_count"] == 1, job
+
+    row = query_one("SELECT total_memory FROM devices WHERE id = ?", (device_id,))
+    assert row["total_memory"] == 2147483648
+
+
+# ------------------------------------------------------------------ /healthz
+def test_healthz_answers_without_login(client):
+    """Проверка здоровья отвечает без входа в систему."""
+    with _anon() as outside:
+        r = outside.get("/healthz")
+        assert r.status_code == 200
+        assert r.json() == {"status": "ok"}
+
+
+def test_healthz_is_open_from_untrusted_networks():
+    """
+    Проверка здоровья доступна и при включённом ограничении по сетям.
+
+    Спрашивает её обычно не человек, а установщик, systemd или внешний
+    наблюдатель, и приходят они с адреса, которого в доверенных сетях
+    нет. Из-за этого установщик пугал сообщением «интерфейс не отвечает»
+    на совершенно здоровой панели: страница входа честно отвечала 403.
+    """
+    from app.config import settings
+    from app.netguard import parse_networks
+
+    saved = settings.admin_networks
+    settings.admin_networks = parse_networks("10.0.0.0/8")
+    try:
+        with _anon() as outside:
+            assert outside.get("/login").status_code == 403
+            assert outside.get("/healthz").status_code == 200
+    finally:
+        settings.admin_networks = saved
+
+
+def test_healthz_reports_a_dead_database(client, monkeypatch):
+    """
+    База не читается - здоровье не «ok».
+
+    Процесс, который поднялся, но не может прочитать SQLite, для
+    наблюдателя ничем не лучше упавшего. Ровно это и случилось, когда
+    кончилось место на диске: служба работала, панель не открывалась.
+    """
+    from app.routes import pages
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("disk I/O error")
+
+    monkeypatch.setattr("app.database.query_one", boom)
+    r = client.get("/healthz")
+    assert r.status_code == 503
+    assert r.json()["status"] == "error"

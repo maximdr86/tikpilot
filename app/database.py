@@ -351,6 +351,8 @@ CREATE TABLE IF NOT EXISTS devices (
     uptime        TEXT NOT NULL DEFAULT '',
     cpu_load      TEXT NOT NULL DEFAULT '',
     free_memory   TEXT NOT NULL DEFAULT '',
+    -- Всего памяти на плате, байты: свободную память судим долей от неё
+    total_memory  INTEGER NOT NULL DEFAULT 0,
     architecture  TEXT NOT NULL DEFAULT '',   -- arm, mipsbe, tile, x86 ...
     latest_version TEXT NOT NULL DEFAULT '',  -- доступная версия по данным MikroTik
     update_status TEXT NOT NULL DEFAULT '',   -- ответ check-for-updates
@@ -710,6 +712,10 @@ CREATE TABLE IF NOT EXISTS backup_schedules (
 MIGRATIONS: dict[str, list[tuple[str, str]]] = {
     "devices": [
         ("architecture", "TEXT NOT NULL DEFAULT ''"),
+        # Всего памяти на плате, байты. Нужно, чтобы судить о свободной
+        # памяти долей, а не абсолютным числом: 11 МиБ это треть hAP lite
+        # и последние крохи на CCR
+        ("total_memory", "INTEGER NOT NULL DEFAULT 0"),
         ("latest_version", "TEXT NOT NULL DEFAULT ''"),
         ("update_status", "TEXT NOT NULL DEFAULT ''"),
         ("update_channel", "TEXT NOT NULL DEFAULT ''"),
@@ -857,6 +863,14 @@ def init_db() -> None:
 
 
 # ------------------------------------------------- кэш состояния устройства
+def _as_bytes(value: Any) -> int:
+    """Число байт из ответа RouterOS. Ноль, если поля не было."""
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return 0
+
+
 def save_device_info(device_id: int, info: dict[str, Any]) -> None:
     """
     Записать сведения, полученные с устройства при успешном подключении.
@@ -867,7 +881,8 @@ def save_device_info(device_id: int, info: dict[str, Any]) -> None:
     now = utcnow()
     execute(
         "UPDATE devices SET ros_version=?, board_name=?, identity=?, uptime=?, "
-        "cpu_load=?, free_memory=?, architecture=?, last_check=?, last_seen=?, "
+        "cpu_load=?, free_memory=?, total_memory=COALESCE(NULLIF(?, 0), total_memory), "
+        "architecture=?, last_check=?, last_seen=?, "
         "last_error='', fail_streak=0, updated_at=? WHERE id=?",
         (
             info.get("ros_version", ""),
@@ -876,6 +891,10 @@ def save_device_info(device_id: int, info: dict[str, Any]) -> None:
             info.get("uptime", ""),
             info.get("cpu_load", ""),
             info.get("free_memory", ""),
+            # Ноль означает «плата не сказала»: прежнее значение при этом
+            # сохраняется. Объём памяти не меняется, и терять его из-за
+            # одного неполного ответа незачем
+            _as_bytes(info.get("total_memory_bytes")),
             info.get("architecture", ""),
             now,
             now,

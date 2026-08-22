@@ -23,6 +23,14 @@ set -euo pipefail
 APP_DIR="/opt/tikpilot"
 APP_USER="tikpilot"
 SERVICE="tikpilot"
+
+# Порт берём из уже существующего .env: при обновлении файл остаётся как был,
+# и если человек однажды сменил порт, проверка в конце стучалась бы в 8080
+# и объявляла здоровую панель неотвечающей.
+PORT="${PORT:-}"
+if [ -z "$PORT" ] && [ -f "$APP_DIR/.env" ]; then
+    PORT="$(grep -E "^PORT=" "$APP_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '[:space:]')"
+fi
 PORT="${PORT:-8080}"
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -204,8 +212,16 @@ if ! systemctl is-active --quiet "$SERVICE"; then
              "Разберитесь с ошибкой выше и запустите скрипт заново.")"
 fi
 
-for _ in $(seq 1 10); do
-    if curl -fsS "http://127.0.0.1:$PORT/login" >/dev/null 2>&1; then
+# Спрашиваем /healthz, а не страницу входа. Две причины, обе выяснились
+# на живой установке. Первая: при заданном ADMIN_NETWORKS панель отвечает
+# страннику с 127.0.0.1 отказом 403, и `curl -f` считал это поломкой,
+# хотя панель работала. Вторая: страница входа рисуется и тогда, когда
+# база не читается, а /healthz в этом случае честно отвечает 503.
+#
+# Полминуты вместо десяти секунд: на большой базе первый запуск дольше,
+# и человек получал предупреждение просто за то, что база выросла.
+for _ in $(seq 1 30); do
+    if curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; then
         OK=1; break
     fi
     sleep 1
@@ -219,8 +235,11 @@ if [ "${OK:-0}" = "1" ]; then
     printf '  %s  \033[1mhttp://%s:%s\033[0m\n' \
         "$(t "Tikpilot is running:" "Tikpilot работает:")" "$IP" "$PORT"
 else
-    warn "$(t "The service is running but the UI does not answer yet, check the log." \
-             "Служба запущена, но интерфейс пока не отвечает, проверьте журнал.")"
+    warn "$(t "The service is running but did not answer on port $PORT in 30 s." \
+             "Служба запущена, но за 30 с не ответила на порту $PORT.")"
+    printf '  %s\n' "$(t \
+        "Look at the log: sudo journalctl -u $SERVICE -n 50 --no-pager" \
+        "Посмотрите журнал: sudo journalctl -u $SERVICE -n 50 --no-pager")"
 fi
 
 if [ "$FRESH_INSTALL" = "1" ] && [ -n "${ADMIN_PASS:-}" ]; then

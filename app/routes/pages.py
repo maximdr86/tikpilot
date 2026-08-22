@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -13,6 +14,41 @@ from .. import permissions
 from .deps import pager, render, render_partial, resolve_lang
 
 router = APIRouter()
+
+log = logging.getLogger("tikpilot.pages")
+
+
+@router.get("/healthz")
+async def healthz():
+    """
+    Жива ли панель. Без входа в систему и без ограничения по сетям.
+
+    Спрашивает обычно не человек: установщик сразу после запуска службы,
+    systemd, монитор контейнера, внешняя проверка вроде healthchecks.io.
+    Раньше все они стучались в `/login` и получали либо 403 от проверки
+    сетей, либо страницу входа, по которой нельзя отличить работающую
+    панель от панели с мёртвой базой. Установщик из-за этого пугал
+    сообщением «служба работает, но интерфейс не отвечает» на совершенно
+    здоровой установке.
+
+    Проверяется главное: отвечает ли база. Процесс, который поднялся,
+    но не может прочитать SQLite, для наблюдателя ничем не лучше
+    упавшего, и различать эти случаи должен он, а не человек в журнале.
+
+    Ответ намеренно скудный. Страница открыта всем, и рассказывать
+    в ней про версию, число устройств и время работы незачем.
+    """
+    from fastapi.responses import JSONResponse
+
+    from ..database import query_one
+
+    try:
+        query_one("SELECT 1 AS ok")
+    except Exception as exc:  # noqa: BLE001 — наружу уходит только «плохо»
+        log.error("Проверка здоровья не прошла: %s", exc)
+        return JSONResponse({"status": "error"}, status_code=503)
+
+    return JSONResponse({"status": "ok"})
 
 
 @router.get("/manifest.webmanifest")

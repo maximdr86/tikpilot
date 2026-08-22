@@ -69,8 +69,15 @@ SYSLOG_SILENT_HOURS = 24
 #: Загрузка процессора в среднем за полчаса.
 CPU_PERCENT = 85.0
 
-#: Свободная память. Меньше этого RouterOS начинает вести себя странно
-#: задолго до того, как что-то откажет явно.
+#: Свободная память, доля от объёма платы. Именно доля, а не мегабайты:
+#: 11 МиБ свободных это треть hAP lite с его 32 МиБ и последние крохи
+#: на CCR с гигабайтом. Абсолютный порог ругался бы на здоровую мелкую
+#: плату вечно, а памяти на ней больше не станет, и человек просто
+#: перестал бы читать весь блок.
+MEMORY_PERCENT = 15.0
+
+#: Запасной порог для точек, которые ещё не сказали, сколько у них памяти
+#: всего: старые записи до этой версии и те, кого ни разу не опросили.
 MEMORY_MIB = 16.0
 
 #: Сколько имён показывать в пояснении, прежде чем написать «и ещё N».
@@ -338,26 +345,44 @@ def _check_cpu(scope: tuple[str, list[Any]]) -> Item | None:
 
 
 def _check_memory(scope: tuple[str, list[Any]]) -> Item | None:
-    """Свободной памяти почти не осталось."""
+    """
+    Свободной памяти почти не осталось.
+
+    Считается долей от объёма платы. Абсолютный порог здесь не работает:
+    на hAP lite с его 32 МиБ свободные 11 МиБ это нормальная рабочая
+    треть, и точка попадала бы в список каждый день до конца своих дней.
+    Памяти на ней больше не станет, а список, в котором вечно висит одно
+    и то же, перестают читать целиком.
+
+    Платы, которые ещё не сообщили свой объём, судятся по-старому, по
+    абсолютному запасу: это записи, сделанные до появления столбца.
+    """
     rows = [dict(r) for r in query(
-        "SELECT d.id, d.name,"
-        "       ROUND(MIN(m.free_memory) / 1048576.0, 1) AS free_mib"
+        "SELECT d.id, d.name, d.total_memory,"
+        "       ROUND(MIN(m.free_memory) / 1048576.0, 1) AS free_mib,"
+        "       CASE WHEN d.total_memory > 0"
+        "            THEN ROUND(100.0 * MIN(m.free_memory) / d.total_memory, 1)"
+        "            END AS free_percent"
         " FROM device_metrics m JOIN devices d ON d.id = m.device_id"
         " WHERE m.ts >= datetime('now', '-30 minutes') AND m.free_memory IS NOT NULL"
         f" AND d.enabled = 1{scope[0]} GROUP BY d.id"
-        f" HAVING free_mib <= {MEMORY_MIB} ORDER BY free_mib",
+        f" HAVING (free_percent IS NOT NULL AND free_percent <= {MEMORY_PERCENT})"
+        f"     OR (free_percent IS NULL AND free_mib <= {MEMORY_MIB})"
+        " ORDER BY COALESCE(free_percent, 0), free_mib",
         tuple(scope[1]),
     )]
     if not rows:
         return None
     worst = rows[0]
+    share = (f", это {worst['free_percent']:g}% от платы"
+             if worst["free_percent"] is not None else "")
     return Item(
         key="memory",
         level="warn",
         group="resources",
         title="Мало памяти",
         detail=f"{_names(rows)} · меньше всех у {worst['name']}, "
-               f"{worst['free_mib']:g} МиБ",
+               f"{worst['free_mib']:g} МиБ{share}",
         count=len(rows),
         devices=rows,
     )
