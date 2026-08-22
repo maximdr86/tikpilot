@@ -1033,6 +1033,22 @@ server-rendered SVG used elsewhere, and the layout is plain CSS.
 
 Put your organisation name in the header with `REPORT_TITLE` in `.env`.
 
+### Report for a single site
+
+The Report button on a device card opens the same printable document about
+that site alone: uptime, downtime, the number of outages and the longest one
+in large figures, bars by day, **every** outage in the period (the fleet
+report trims the log across the whole fleet), traffic per interface, and a
+short equipment table at the bottom.
+
+Traffic is deliberately absent from the fleet report: adding up the megabytes
+of fifty sites means nothing. For one site it is the first thing the person
+renting the channel asks about.
+
+If the samples cover less than nine tenths of the period the volume is
+understated, and the document says so: while the site was down there was
+nothing to count.
+
 The same numbers are still available as CSV, from the button inside the report
 or directly at `/monitoring/report.csv`. That file opens in Excel as it is:
 semicolon separator, comma as the decimal mark, BOM at the front.

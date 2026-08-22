@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import RedirectResponse
 
 from ..auth import client_ip, current_user, require
 from ..config import settings
@@ -247,8 +248,40 @@ REPORT_FAIR = 98.0
 REPORT_OUTAGE_LIMIT = 200
 
 
+#: Ниже этого столбик красный. Отдельно от порогов таблицы, и вот почему.
+#: Столбик это не точка, а срез: час по всему парку или сутки по одной
+#: площадке. При парке в полсотни одна лежащая точка даёт ровно 98%, то
+#: есть по меркам таблицы «плохо», хотя это обычный день с одной аварией.
+#: Красили по тем же порогам, и сутки покрывались сплошной красной стеной,
+#: на которой не видно ни настоящей беды, ни спокойного дня.
+CHART_BAD = 90.0
+
+
+def _chart_color(percent: float) -> str:
+    """
+    Цвет столбика: спокойный по умолчанию, красный при настоящем провале.
+
+    График отвечает на вопрос «когда и насколько», а вердикт «хорошо или
+    плохо» дают крупные цифры сверху и цветные строки в таблице. Светофор
+    ещё и здесь только мешает: он срабатывает от арифметики, а не от беды.
+    """
+    return "var(--err)" if percent < CHART_BAD else "var(--accent)"
+
+
+def _chart_step_note(hours: int) -> str:
+    """Подпись к графику: чем измеряется один столбик."""
+    from .. import monitor
+
+    step = monitor.bucket_step(hours)
+    if step == 86400:
+        return "по дням"
+    if step == 3600:
+        return "по часам"
+    return "по пять минут"
+
+
 def _report_color(percent: float) -> str:
-    """Цвет по доступности: тот же на графике, в плитках и в таблице."""
+    """Цвет по доступности: тот же в плитках и в таблице."""
     if percent >= REPORT_GOOD:
         return "var(--ok)"
     if percent >= REPORT_FAIR:
@@ -293,6 +326,39 @@ def _report_window(hours: int, since: str, until: str) -> tuple[int, Any, str]:
 
     hours = hours if hours in (1, 24, 168, 720) else 720
     return hours, None, {1: "час", 24: "сутки", 168: "неделю", 720: "месяц"}[hours]
+
+
+#: Ступеньки нижней границы шкалы на графике доступности.
+#: Только круглые числа: «шкала с 79,5 процентов» выглядит как опечатка.
+#: И только две: обрезка ниже девяноста девяти обманывает сильнее, чем
+#: помогает. При шкале от 95 столбик в 97,6% рисуется вполовину высоты,
+#: и день, когда парк почти не падал, выглядит как день, когда полпарка
+#: лежало. Разница в два процента должна и выглядеть как два процента.
+FLOOR_LADDER = (99.5, 99.0)
+
+
+def _report_floor(percents: list[float]) -> float:
+    """
+    С какого значения начинать шкалу столбиков.
+
+    Обрезанная шкала нужна ровно в одном случае: когда всё окно между
+    девяноста девятью и сотней процентов и разница в доли процента иначе
+    не видна вовсе. Во всех остальных она врёт глазу, причём в обе
+    стороны. Один день на 79,7% опускал границу до 79,5, и его столбик
+    ложился на саму ось: «площадка не работала вовсе», хотя она работала
+    четыре пятых суток. А при границе в 95 обычный час с одной упавшей
+    точкой из полусотни рисовался вполовину высоты.
+
+    Поэтому ступенек всего две, 99 и 99,5, а во всех остальных случаях
+    шкала обычная, от нуля до ста: два процента должны и выглядеть как
+    два процента.
+    """
+    low = min(percents) if percents else 100.0
+    for step in FLOOR_LADDER:
+        # Запас нужен, чтобы худший столбик не сливался с осью
+        if low >= step + 0.05:
+            return step
+    return 0.0
 
 
 def _report_scope(user, group_id: int, devices):
@@ -351,6 +417,126 @@ def _report_scope(user, group_id: int, devices):
     return (where, params), "весь парк", []
 
 
+@router.get("/devices/{device_id}/report")
+async def device_report_page(request: Request, device_id: int, hours: int = 720,
+                             since: str = "", until: str = "",
+                             user=Depends(current_user)):
+    """
+    Отчёт по одной площадке: тот же документ, но про неё одну.
+
+    Отдельная страница, а не галочка в общем отчёте, потому что вопрос
+    другой. В отчёте по парку точка это строка из полусотни, и спрашивают
+    там «как парк». Здесь спрашивают «как работала эта площадка», и ответ
+    нужен развёрнутый: все падения за период, а не первые двадцать по
+    всему парку, и трафик, которого в общем отчёте нет вовсе.
+
+    Просят такое обычно не технари, а арендатор канала или начальник,
+    поэтому документ печатается и уходит вложением, как и парковый.
+    """
+    from .. import charts, i18n, monitor, traffic
+
+    scope = permissions.scope_sql(user)
+    device = query_one(
+        "SELECT d.*, g.name AS group_name FROM devices d"
+        " LEFT JOIN groups g ON g.id = d.group_id"
+        f" WHERE d.id = ?{scope[0]}",
+        (device_id, *scope[1]),
+    )
+    if device is None:
+        # Не «нет доступа», а «нет такой»: чужая точка не должна
+        # подтверждать своё существование даже кодом ответа
+        return RedirectResponse("/devices", status_code=303)
+
+    hours, edge, period_note = _report_window(hours, since, until)
+    one: tuple[str, list] = (" AND d.id = ?", [device_id])
+
+    rows = monitor.availability(hours, one, edge)
+    row = rows[0] if rows else {"uptime_percent": 100.0, "down_seconds": 0,
+                                "outages": 0, "status": device["status"]}
+    buckets = monitor.availability_buckets(hours, one, edge)
+    intervals = monitor.outage_intervals(hours, one, edge)
+
+    now = edge or datetime.now(timezone.utc)
+    start = now - timedelta(hours=hours)
+
+    def local(moment: datetime) -> str:
+        return moment.astimezone().strftime("%d.%m.%Y %H:%M")
+
+    outages = [{
+        "start": local(item["start"]),
+        "end": "" if item["ongoing"] else local(item["end"]),
+        "seconds": item["seconds"],
+        "ongoing": item["ongoing"],
+        "trimmed": item["trimmed"],
+    } for item in intervals]
+
+    # Трафик за тот же период. В отчёте по парку его нет и быть не может:
+    # складывать мегабайты полусотни площадок бессмысленно, а по одной
+    # это первое, о чём спрашивает арендатор канала
+    lang = resolve_lang(request, user)
+    uplink = str(device["uplink_interface"] or "").strip() \
+        if "uplink_interface" in device.keys() else ""
+    window = max(1, hours * 3600)
+    totals, covered = [], []
+    seen = query(
+        "SELECT DISTINCT interface FROM traffic_samples WHERE device_id = ?"
+        " AND ts >= datetime('now', ?)",
+        (device_id, f"-{hours} hours"),
+    )
+    for item in seen:
+        name = str(item["interface"])
+        amount = traffic.volume(device_id, name, hours)
+        if not amount["covered"]:
+            continue
+        covered.append(min(100, int(round(100 * amount["covered"] / window))))
+        totals.append({
+            "name": name,
+            "uplink": name == uplink,
+            "rx": i18n.translate_text(traffic.human_volume(amount["rx"]), lang),
+            "tx": i18n.translate_text(traffic.human_volume(amount["tx"]), lang),
+            "all": i18n.translate_text(
+                traffic.human_volume(amount["rx"] + amount["tx"]), lang),
+        })
+    totals.sort(key=lambda t: (not t["uplink"], t["name"]))
+
+    floor = _report_floor([b["percent"] for b in buckets])
+
+    log_audit(user["username"], "Открыт отчёт по точке",
+              str(device["name"]), f"{hours} ч", client_ip(request))
+
+    return render(
+        "report_device.html",
+        request,
+        user,
+        title=settings.report_title,
+        device=device,
+        hours=hours,
+        row=row,
+        color=_report_color(row["uptime_percent"]),
+        longest=max((item["seconds"] for item in intervals), default=0),
+        outages=outages,
+        totals=totals,
+        # Худшее покрытие из интерфейсов: если хоть по одному данных мало,
+        # предупредить надо про всю таблицу
+        partial=min(covered) if covered and min(covered) < 90 else 0,
+        chart=charts.bar_chart(
+            [(b["label"], b["percent"]) for b in buckets],
+            unit="%", y_min=floor, y_max=100.0, color_of=_chart_color,
+            width=880, height=210),
+        chart_floor=floor,
+        chart_floor_text=f"{floor:g}",
+        chart_step=_chart_step_note(hours),
+        period_note=period_note,
+        today=datetime.now().astimezone().strftime("%Y-%m-%d"),
+        since_param=since,
+        until_param=until,
+        since_text=local(start),
+        until_text=local(now),
+        made_at=local(now),
+        author=user["username"],
+    )
+
+
 @router.get("/monitoring/report")
 async def availability_report_page(request: Request, hours: int = 720,
                                    group_id: int = 0,
@@ -398,10 +584,7 @@ async def availability_report_page(request: Request, hours: int = 720,
         "trimmed": row["trimmed"],
     } for row in intervals[:REPORT_OUTAGE_LIMIT]]
 
-    # Нижняя граница шкалы графика: при жёстких ста процентах все столбики
-    # выглядят одинаково, и провал в полпроцента на глаз не виден
-    percents = [b["percent"] for b in buckets] or [100.0]
-    floor = min(99.0, round(min(percents) - 0.2, 1))
+    floor = _report_floor([b["percent"] for b in buckets])
 
     down_total = sum(r["down_seconds"] for r in rows)
     # Средний простой на точку, а не сумма по парку. Сумма растёт вместе
@@ -435,10 +618,11 @@ async def availability_report_page(request: Request, hours: int = 720,
         worst=[r for r in rows if r["uptime_percent"] < 100 or r["outages"]][:7],
         chart=charts.bar_chart(
             [(b["label"], b["percent"]) for b in buckets],
-            unit="%", y_min=floor, y_max=100.0, color_of=_report_color,
+            unit="%", y_min=floor, y_max=100.0, color_of=_chart_color,
             width=880, height=210),
         chart_floor=floor,
-        chart_step="по часам" if hours <= 24 else "по дням",
+        chart_floor_text=f"{floor:g}",
+        chart_step=_chart_step_note(hours),
         period_note=period_note,
         today=datetime.now().astimezone().strftime("%Y-%m-%d"),
         since_param=since,
