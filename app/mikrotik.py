@@ -240,6 +240,10 @@ class MikroTik:
             info["free_space"] = _human_bytes(r.get("free-hdd-space"))
             info["free_space_bytes"] = str(r.get("free-hdd-space", "") or "")
             info["free_memory_bytes"] = str(r.get("free-memory", "") or "")
+            # Всего памяти на плате. Без этого числа свободные 11 МиБ
+            # не значат ничего: на hAP lite с его 32 МиБ это треть,
+            # а на CCR с гигабайтом это повод ехать
+            info["total_memory_bytes"] = str(r.get("total-memory", "") or "")
         try:
             ident = self.cmd("/system/identity/print")
             if ident:

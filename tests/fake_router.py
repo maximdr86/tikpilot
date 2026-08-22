@@ -393,6 +393,7 @@ class FakeRouter:
                 "architecture-name": "arm64",
                 "cpu-load": "7",
                 "free-memory": "1073741824",
+                "total-memory": "2147483648",
                 "free-hdd-space": str(self.free_space),
             }]
 

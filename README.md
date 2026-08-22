@@ -524,6 +524,19 @@ Rechecked once a day: an operator changes approximately never.
 
 ---
 
+## Health check
+
+`GET /healthz` answers `{"status": "ok"}` with code 200 while the panel can
+read its database, and `{"status": "error"}` with 503 when it cannot. No
+login required and no trusted-network check: the caller is usually not a
+person but the installer, systemd, a container monitor or an external
+watchdog, and they arrive from an address that is not in the trusted list.
+
+The answer is deliberately thin. The page is open to everyone, so it says
+nothing about the version, the number of devices or the uptime.
+
+---
+
 ## Needs attention
 
 The first block on the dashboard. It answers the question "what should I deal
@@ -537,8 +550,8 @@ What feeds it:
 * **hygiene** - a backup older than a week or none at all; syslog gone quiet,
   meaning the site used to send it and stopped; armed rollback safety nets;
   jobs with errors in the last day;
-* **resources** - CPU above 85% averaged over half an hour; less than 16 MiB of
-  free memory; the panel's own disk filling up;
+* **resources** - CPU above 85% averaged over half an hour; less than 15% of the
+  board's memory free; the panel's own disk filling up;
 * **security** - dangerous RouterOS services reachable from any address;
   available updates.
 
