@@ -870,6 +870,21 @@ def outage_intervals(hours: int = 24, scope: Scope = NO_SCOPE,
     return result
 
 
+def bucket_step(hours: int) -> int:
+    """
+    Длина одного столбика на графике доступности, секунды.
+
+    Шаг подбирается под окно, иначе график перестаёт быть графиком.
+    Часовой отчёт с часовым шагом рисовал два столбика на всё поле,
+    между ними пустоту, и это выглядело поломкой, а не измерением.
+    """
+    if hours <= 3:
+        return 300
+    if hours <= 48:
+        return 3600
+    return 86400
+
+
 def availability_buckets(hours: int = 24, scope: Scope = NO_SCOPE,
                          until: datetime | None = None) -> list[dict[str, Any]]:
     """
@@ -894,12 +909,17 @@ def availability_buckets(hours: int = 24, scope: Scope = NO_SCOPE,
     if not devices:
         return []
 
-    step = 3600 if hours <= 24 else 86400
+    step = bucket_step(hours)
     local_now = now.astimezone()
     if step == 86400:
         edge = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    else:
+    elif step == 3600:
         edge = local_now.replace(minute=0, second=0, microsecond=0)
+    else:
+        # Пятиминутки выравниваются по своей границе, иначе подписи
+        # выглядят случайными числами: 21:19, 21:24, 21:29
+        minute = (local_now.minute // 5) * 5
+        edge = local_now.replace(minute=minute, second=0, microsecond=0)
 
     edges: list[datetime] = []
     while edge > since:
@@ -927,7 +947,7 @@ def availability_buckets(hours: int = 24, scope: Scope = NO_SCOPE,
         buckets.append({
             "start": start,
             "end": end,
-            "label": start.strftime("%H:%M" if step == 3600 else "%d.%m"),
+            "label": start.strftime("%d.%m" if step == 86400 else "%H:%M"),
             "percent": percent,
             "down_seconds": int(down),
         })

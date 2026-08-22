@@ -1,0 +1,152 @@
+{#
+   Оформление печатных документов: отчёт по парку и отчёт по точке.
+
+   Общее место, потому что документы должны выглядеть одинаково.
+   Разъехавшиеся отступы и разные оттенки в двух бумагах от одной
+   программы выглядят так, будто их делали в разных местах.
+
+   Панельные стили сюда не годятся: у документа нет тёмной темы,
+   меню и живых обновлений, зато есть поля страницы и переносы
+   при печати.
+#}
+    <style>
+        /* Свои переменные, а не панельные: документ всегда светлый.
+           Те же имена нужны потому, что SVG графика рисуется общим кодом
+           и берёт цвета именно из них. */
+        :root {
+            --ink: #1b2733;
+            --muted: #6b7a89;
+            --border: #d8e0e8;
+            --accent: #1c6ea4;
+            --ok: #2e7d32;
+            --warn: #b26a00;
+            --err: #c0392b;
+            --soft: #f4f7fa;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            padding: 24px 20px 60px;
+            background: #eef2f6;
+            color: var(--ink);
+            font: 14px/1.45 "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        .sheet {
+            max-width: 940px;
+            margin: 0 auto;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 32px 34px 38px;
+        }
+
+        /* ------------------------------------------------------------ шапка */
+        .head { border-bottom: 3px solid var(--accent); padding-bottom: 14px; margin-bottom: 22px; }
+        .head .org { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+        .head h1 { font-size: 26px; margin: 6px 0 4px; font-weight: 600; }
+        .head .period { font-size: 15px; color: var(--ink); }
+        .head .made { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+        /* ------------------------------------------------------------ плитки */
+        .tiles { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
+        .tile {
+            flex: 1 1 150px; border: 1px solid var(--border); border-top: 3px solid var(--accent);
+            border-radius: 3px; padding: 12px 14px; background: var(--soft);
+        }
+        .tile .cap { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+        .tile .num { font-size: 28px; font-weight: 600; line-height: 1.2; margin-top: 4px; }
+        .tile .note { font-size: 11px; color: var(--muted); }
+        .tile.hero { flex: 1 1 210px; }
+        .tile.hero .num { font-size: 40px; }
+
+        /* ------------------------------------------------------------ блоки */
+        section { margin-bottom: 26px; page-break-inside: auto; }
+        h2 {
+            font-size: 15px; font-weight: 600; margin: 0 0 10px;
+            padding-bottom: 6px; border-bottom: 1px solid var(--border);
+        }
+        h2 .extra { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 8px; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th {
+            text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase;
+            letter-spacing: .04em; color: var(--muted); padding: 6px 8px;
+            border-bottom: 1px solid var(--border); white-space: nowrap;
+        }
+        td { padding: 6px 8px; border-bottom: 1px solid #eef2f6; vertical-align: middle; }
+        tr:nth-child(even) td { background: #fafcfe; }
+        td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .muted { color: var(--muted); }
+        .small { font-size: 11px; }
+        .mono { font-family: Consolas, "SF Mono", Menlo, monospace; font-size: 12px; }
+
+        /* Полоса доступности прямо в строке: цифру читают, полосу видят */
+        .bar { position: relative; height: 8px; background: #e9eef3; border-radius: 4px; width: 110px; }
+        .bar > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+
+        .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+
+        .worst li { margin-bottom: 7px; }
+        .worst .name { font-weight: 600; }
+
+        .chart-note { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+        .foot { margin-top: 30px; padding-top: 10px; border-top: 1px solid var(--border);
+                font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; }
+
+        .empty { color: var(--muted); padding: 10px 0; }
+
+        /* ------------------------------------------------------------ панель кнопок */
+        .toolbar { max-width: 940px; margin: 0 auto 14px; display: flex; gap: 8px; }
+        .toolbar a, .toolbar button {
+            font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 3px;
+            border: 1px solid var(--border); background: #fff; color: var(--ink);
+            text-decoration: none; cursor: pointer;
+        }
+        .toolbar .go { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+        /* ------------------------------------------------------- выбор охвата */
+        .picker {
+            max-width: 940px; margin: 0 auto 14px; background: #fff;
+            border: 1px solid var(--border); border-radius: 4px; padding: 12px 14px;
+            font-size: 13px;
+        }
+        .picker .line { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .picker .line + .line { margin-top: 8px; }
+        .picker label { display: inline-flex; gap: 6px; align-items: center; }
+        .picker input[type=date] {
+            font: inherit; padding: 4px 6px; border: 1px solid var(--border);
+            border-radius: 3px; background: #fff; color: var(--ink);
+        }
+        .picker select, .picker button {
+            font: inherit; padding: 5px 8px; border: 1px solid var(--border);
+            border-radius: 3px; background: #fff; color: var(--ink);
+        }
+        .picker .go { background: var(--accent); border-color: var(--accent); color: #fff; cursor: pointer; }
+        .picker summary { margin-top: 10px; cursor: pointer; color: var(--accent); }
+        .picker .devices {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+            gap: 4px 14px; margin-top: 8px; max-height: 260px; overflow: auto;
+            border: 1px solid var(--border); border-radius: 3px; padding: 8px 10px;
+        }
+        .picker .devices label { font-size: 13px; }
+        .picker .muted { color: var(--muted); }
+
+        /* ------------------------------------------------------------ печать */
+        @page { size: A4; margin: 14mm; }
+        @media print {
+            body { background: #fff; padding: 0; }
+            .sheet { border: 0; border-radius: 0; padding: 0; max-width: none; }
+            .no-print { display: none !important; }
+            /* Без этого браузер выбрасывает заливки, и от цветных плиток
+               с полосами на бумаге остаются белые прямоугольники */
+            * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            section { page-break-inside: avoid; }
+            table { page-break-inside: auto; }
+            tr { page-break-inside: avoid; }
+            thead { display: table-header-group; }
+        }
+    </style>

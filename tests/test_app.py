@@ -10644,3 +10644,166 @@ def test_healthz_reports_a_dead_database(client, monkeypatch):
     r = client.get("/healthz")
     assert r.status_code == 503
     assert r.json()["status"] == "error"
+
+
+# --------------------------------------------------------- отчёт по точке
+def test_device_report_renders_for_one_site(client, router):
+    """
+    Отчёт по площадке: свои цифры, свой журнал падений, свой трафик.
+
+    Отдельный документ от отчёта по парку: там точка это строка из
+    полусотни, здесь вопрос «как работала эта площадка», и спрашивает
+    его обычно не технарь, а арендатор канала или начальник.
+    """
+    from app.database import execute
+
+    device_id = _add_device(client, router, "Отчётная точка")
+    # Одно падение внутри периода, чтобы в журнале была строка
+    execute("INSERT INTO status_events (device_id, device_name, status, ts, downtime)"
+            " VALUES (?,?,?, datetime('now','-3 hours'), NULL)",
+            (device_id, "Отчётная точка", "offline"))
+    execute("INSERT INTO status_events (device_id, device_name, status, ts, downtime)"
+            " VALUES (?,?,?, datetime('now','-2 hours'), 3600)",
+            (device_id, "Отчётная точка", "online"))
+
+    page = client.get(f"/devices/{device_id}/report?hours=720")
+    assert page.status_code == 200
+    text = page.text
+    assert "Отчётная точка" in text
+    assert "Журнал падений" in text
+    assert "Оборудование площадки" in text
+    # Документ печатается сам по себе: панельного меню в нём быть не должно
+    assert "<style>" in text
+    assert 'class="sidebar"' not in text
+
+
+def test_device_report_hides_sites_out_of_scope(client, router):
+    """
+    Чужая точка не подтверждает даже своё существование.
+
+    Ограниченный оператор, подставивший в адрес чужой номер, должен
+    получить то же самое, что и на несуществующем номере.
+    """
+    device_id = _add_device(client, router, "чужая-для-отчёта")
+    _make_user(client, "scoped-report", ["devices.view"],
+               scope_all=False, groups=(), devices=())
+
+    with _as("scoped-report") as limited:
+        r = limited.get(f"/devices/{device_id}/report", follow_redirects=False)
+        assert r.status_code == 303
+        missing = limited.get("/devices/999999/report", follow_redirects=False)
+        assert missing.status_code == r.status_code
+
+
+def test_device_report_counts_traffic_for_the_period(client, router):
+    """Объём за период считается по тем же замерам, что и в карточке."""
+    from app.database import execute
+
+    device_id = _add_device(client, router, "трафик-в-отчёте")
+    for minutes in (10, 20, 30):
+        execute(
+            "INSERT INTO traffic_samples (device_id, interface, ts, rx_bps, tx_bps, span)"
+            " VALUES (?,?, datetime('now', ?), ?, ?, ?)",
+            (device_id, "ether1", f"-{minutes} minutes", 8_000_000, 4_000_000, 600),
+        )
+
+    page = client.get(f"/devices/{device_id}/report?hours=24")
+    assert page.status_code == 200
+    assert "Трафик за период" in page.text
+    assert "ether1" in page.text
+
+
+def test_report_scale_does_not_exaggerate_a_bad_day():
+    """
+    Шкала обрезается только когда все дни хорошие.
+
+    Было так: один день на 79,7% опускал нижнюю границу до 79,5, его
+    столбик ложился на самую ось и читался как «площадка не работала
+    вовсе». Разница между «плохо» и «совсем мертво» в документе, который
+    несут начальству, стоит дорого.
+    """
+    from app.routes.pages import _report_floor
+
+    # Плохой день: шкала полная, провал виден таким, какой он есть
+    assert _report_floor([100.0, 100.0, 79.7]) == 0.0
+    assert _report_floor([88.0, 100.0]) == 0.0
+
+    # Обычный день с одной упавшей точкой из полусотни это 98%. Обрезать
+    # шкалу ради него нельзя: столбик уехал бы к середине поля, и спокойный
+    # день читался бы как «лежала половина парка»
+    assert _report_floor([97.6, 100.0]) == 0.0
+    assert _report_floor([98.9, 100.0]) == 0.0
+
+    # Всё окно между 99 и 100: вот теперь обрезка и нужна, иначе разницы
+    # не видно вовсе. Граница круглая
+    assert _report_floor([99.98, 99.91]) == 99.5
+    assert _report_floor([99.4, 100.0]) == 99.0
+
+    # Идеальный период тоже не должен схлопывать шкалу в точку
+    assert _report_floor([100.0, 100.0]) == 99.5
+    assert _report_floor([]) == 99.5
+
+
+def test_report_explains_which_scale_it_used(client, router):
+    """Подпись под графиком соответствует шкале, а не противоречит ей."""
+    from app.database import execute
+
+    device_id = _add_device(client, router, "шкала-в-отчёте")
+    execute("INSERT INTO status_events (device_id, device_name, status, ts, downtime)"
+            " VALUES (?,?,?, datetime('now','-30 hours'), NULL)",
+            (device_id, "шкала-в-отчёте", "offline"))
+    execute("INSERT INTO status_events (device_id, device_name, status, ts, downtime)"
+            " VALUES (?,?,?, datetime('now','-24 hours'), 21600)",
+            (device_id, "шкала-в-отчёте", "online"))
+
+    text = client.get(f"/devices/{device_id}/report?hours=168").text
+    assert "Шкала полная" in text
+    assert "Шкала начинается" not in text
+
+
+def test_chart_bars_are_not_a_traffic_light(client, router):
+    """
+    Столбик красный только при настоящем провале.
+
+    Пороги таблицы (99,5 и 98) годятся для точки за период, но не для
+    столбика: при парке в полсотни одна лежащая точка это ровно 98%,
+    то есть «плохо» по таблице и обычный день по жизни. Красили по тем
+    же порогам, и сутки покрывались сплошной красной стеной, на которой
+    не видно ни беды, ни спокойного дня.
+    """
+    from app.routes.pages import _chart_color
+
+    assert _chart_color(100.0) == "var(--accent)"
+    assert _chart_color(98.0) == "var(--accent)"
+    assert _chart_color(90.0) == "var(--accent)"
+    assert _chart_color(89.9) == "var(--err)"
+    assert _chart_color(12.0) == "var(--err)"
+
+
+def test_short_window_is_not_two_bars_in_an_empty_field():
+    """
+    Шаг столбика подбирается под окно.
+
+    Часовой отчёт с часовым шагом рисовал два столбика на всё поле,
+    и это выглядело поломкой, а не измерением.
+    """
+    from app import monitor
+
+    assert monitor.bucket_step(1) == 300
+    assert monitor.bucket_step(3) == 300
+    assert monitor.bucket_step(24) == 3600
+    assert monitor.bucket_step(48) == 3600
+    assert monitor.bucket_step(168) == 86400
+    assert monitor.bucket_step(720) == 86400
+
+
+def test_hour_report_has_enough_bars(client, router):
+    """За час столбиков должно быть больше двух: иначе это не график."""
+    from app import monitor
+
+    _add_device(client, router, "часовой-график")
+    buckets = monitor.availability_buckets(1)
+    assert len(buckets) >= 10, len(buckets)
+    # Подписи выровнены по пятиминуткам, а не по случайным числам
+    assert all(b["label"].endswith(("0", "5")) for b in buckets), \
+        [b["label"] for b in buckets[:5]]

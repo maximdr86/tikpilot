@@ -25,6 +25,7 @@
            «почему у них тормозит». Дальше та же модалка, что и везде. #}
         <button class="btn"
                 onclick="openActionModal({device_ids: [{{ device.id }}]}, '{{ _("устройство «%(p0)s»", p0=(device.name)) }}', 'speedtest')">Скорость</button>
+        <a class="btn" href="/devices/{{ device.id }}/report">Отчёт</a>
         <button class="btn" onclick="editDevice({{ device.id }})">Изменить</button>
         <a class="btn" href="/devices">К списку</a>
     </div>

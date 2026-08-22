@@ -1,0 +1,198 @@
+<!doctype html>
+{#
+   Отчёт по одной площадке.
+
+   Отдельный документ, а не фильтр в общем отчёте, потому что вопрос
+   другой. Общий отчёт отвечает «как парк», и точка в нём одна строка
+   из полусотни. Этот отвечает «как работала эта площадка»: те же цифры,
+   но развёрнутые, плюс трафик и полный список падений, а не первые
+   двадцать по всему парку.
+
+   Спрашивают такое обычно не технари: арендатор канала, директор
+   магазина, начальник. Поэтому крупные цифры сверху, техника внизу
+   одной строкой, и ни одного слова, которого нет в обиходе.
+#}
+<html lang="{{ lang }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ device.name }} · Отчёт · Tikpilot</title>
+    {% include "partials/report_style.html" %}
+</head>
+<body>
+
+<div class="toolbar no-print">
+    <button class="go" onclick="window.print()">Печать или PDF</button>
+    <a href="/devices/{{ device.id }}">Карточка точки</a>
+    <a href="/monitoring/report?hours={{ hours }}">Отчёт по парку</a>
+</div>
+
+<form class="picker no-print" method="get" action="/devices/{{ device.id }}/report">
+    <div class="line">
+        <label>Период
+            <select name="hours">
+                {% for value, caption in [(24, 'сутки'), (168, 'неделя'), (720, 'месяц')] %}
+                    <option value="{{ value }}" {% if hours == value %}selected{% endif %}>{{ caption | t }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Или интервал: с
+            <input type="date" name="since" value="{{ since_param }}" max="{{ today }}">
+        </label>
+        <label>по
+            <input type="date" name="until" value="{{ until_param }}" max="{{ today }}">
+        </label>
+        <button class="go" type="submit">Показать</button>
+    </div>
+</form>
+
+<div class="sheet">
+
+    <div class="head">
+        {% if title %}<div class="org">{{ title }}</div>{% endif %}
+        <h1>{{ device.name }}</h1>
+        <div class="period">
+            {% if device.group_name %}Группа: {{ device.group_name | t }}<br>{% endif %}
+            Период: {{ since_text }} до {{ until_text }}
+            <span class="muted">(за {{ period_note | t }})</span>
+        </div>
+        <div class="made">Составлен {{ made_at }} · {{ author }} · Tikpilot {{ app_version }}</div>
+    </div>
+
+    <!-- ------------------------------------------------------------ сводка -->
+    <div class="tiles">
+        <div class="tile hero" style="border-top-color:{{ color }}">
+            <div class="cap">Доступность</div>
+            <div class="num" style="color:{{ color }}">{{ row.uptime_percent }}%</div>
+            <div class="note">времени в сети за период</div>
+        </div>
+        <div class="tile">
+            <div class="cap">Простой</div>
+            <div class="num">{{ row.down_seconds | duration }}</div>
+            <div class="note">всего за период</div>
+        </div>
+        <div class="tile">
+            <div class="cap">Падений</div>
+            <div class="num">{{ row.outages }}</div>
+            <div class="note">кратковременные моргания не считаются</div>
+        </div>
+        <div class="tile">
+            <div class="cap">Самое долгое</div>
+            <div class="num">{{ longest | duration }}</div>
+            <div class="note">одно падение подряд</div>
+        </div>
+    </div>
+
+    <!-- ------------------------------------------------------------- график -->
+    <section>
+        <h2>Доступность по дням<span class="extra">{{ chart_step | t }}</span></h2>
+        {{ chart | safe }}
+        {# Пояснение про обрезанную шкалу нужно только когда она обрезана.
+           При полной шкале эта фраза сама себе противоречит, а при
+           обрезанной без неё столбик в 99,2% читается как провал #}
+        {% if chart_floor %}
+        <div class="chart-note">
+            Столбик это доля времени в сети. Шкала начинается
+            с {{ chart_floor_text }} процентов, иначе разница в доли процента
+            не видна на глаз.
+        </div>
+        {% else %}
+        <div class="chart-note">
+            Столбик это доля времени в сети за день. Шкала полная,
+            от нуля до ста процентов.
+        </div>
+        {% endif %}
+    </section>
+
+    <!-- -------------------------------------------------------------- трафик -->
+    {% if totals %}
+    <section>
+        <h2>Трафик за период<span class="extra">принято и передано площадкой</span></h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Интерфейс</th>
+                <th class="num">Принято</th>
+                <th class="num">Передано</th>
+                <th class="num">Всего</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for t in totals %}
+                <tr>
+                    <td>
+                        <strong>{{ t.name }}</strong>
+                        {% if t.uplink %}<span class="small muted">канал наружу</span>{% endif %}
+                    </td>
+                    <td class="num">{{ t.rx }}</td>
+                    <td class="num">{{ t.tx }}</td>
+                    <td class="num"><strong>{{ t.all }}</strong></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% if partial %}
+        {# Пока точка лежала, замеров не было, и сумма выходит заниженной.
+           Сказать об этом честнее, чем показать красивое круглое число #}
+        <div class="chart-note">
+            Замеры покрывают {{ partial }} процентов периода: пока площадка
+            была недоступна, считать было нечего, поэтому объём занижен.
+        </div>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    <!-- -------------------------------------------------------------- падения -->
+    <section>
+        <h2>Журнал падений<span class="extra">всего за период: {{ outages | length }}</span></h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Начало</th>
+                <th>Возврат</th>
+                <th class="num">Длилось</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for o in outages %}
+                <tr>
+                    <td>
+                        {{ o.start }}
+                        {% if o.trimmed %}<span class="small muted">началось до периода</span>{% endif %}
+                    </td>
+                    <td class="small">
+                        {% if o.ongoing %}<span style="color:var(--err)">не вернулась</span>
+                        {% else %}{{ o.end }}{% endif %}
+                    </td>
+                    <td class="num">{{ o.seconds | duration }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="3" class="empty">За период падений не было</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <!-- ------------------------------------------------------------ площадка -->
+    <section>
+        <h2>Оборудование площадки</h2>
+        <table>
+            <tbody>
+            <tr><td>Модель</td><td><strong>{{ (device.board_name or 'нет данных') | t }}</strong></td></tr>
+            <tr><td>RouterOS</td><td class="mono">{{ (device.ros_version or 'нет данных') | t }}</td></tr>
+            {% if device.operator %}
+            <tr><td>Оператор связи</td><td><strong>{{ device.operator }}</strong></td></tr>
+            {% endif %}
+            <tr><td>Непрерывная работа</td><td>{{ (device.uptime or 'нет данных') | t }}</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <div class="foot">
+        <span>Данные собраны панелью Tikpilot автоматически, по опросу устройства.</span>
+        <span>{{ made_at }}</span>
+    </div>
+
+</div>
+</body>
+</html>
