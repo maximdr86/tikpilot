@@ -789,6 +789,20 @@ class FakeRouter:
         self._next_id += 1
         return f"*{self._next_id:x}"
 
+    #: Насколько долго заглушка молчит, даже если тест попросил меньше.
+    #:
+    #: Панель замечает перезагрузку, опрашивая порт раз в секунду, и окно
+    #: длиной в ту же секунду она имеет полное право проспать: между двумя
+    #: пробами загруженная машина спит дольше, чем её просили. Локально это
+    #: не воспроизводится никогда, а в CI однажды выстрелило: тест про
+    #: «вернулась не та версия» получил вместо неё «устройство не ушло
+    #: в перезагрузку».
+    #:
+    #: Правильное лекарство не «поспать подольше в тесте», а сделать окно
+    #: заведомо шире шага проб. Тестам, которые ставят своё большое
+    #: значение (проверка таймаута), порог не мешает: берётся большее.
+    DOWN_WINDOW_FLOOR = 4.0
+
     def _go_offline(self) -> None:
         """
         Сделать устройство недоступным на reboot_seconds секунд.
@@ -798,7 +812,8 @@ class FakeRouter:
         """
         if self.reboot_seconds > 0:
             start = time.monotonic() + self.reboot_delay
-            self._unavailable_until = start + self.reboot_seconds
+            self._unavailable_until = start + max(self.reboot_seconds,
+                                                  self.DOWN_WINDOW_FLOOR)
             if self.reboot_delay > 0:
                 self._unavailable_from = start
 
