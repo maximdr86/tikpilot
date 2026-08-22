@@ -676,6 +676,28 @@ async def update_device(request: Request, device_id: int,
     return {"ok": True}
 
 
+@router.get("/api/devices/brief")
+async def devices_brief(user=Depends(current_user)):
+    """
+    Короткий список точек: номер, имя, адрес.
+
+    Нужен формам, где точка это параметр, а не цель действия: тест
+    скорости меряет от одной до другой, и вторую надо где-то выбрать.
+    Объявлен выше `/api/devices/{device_id}`, иначе адрес разбирался бы
+    как номер и отвечал бы ошибкой разбора.
+
+    Область видимости соблюдается: тот, кому доступны две группы, не
+    должен узнавать имена остальных сорока точек из выпадающего списка.
+    """
+    scope = permissions.scope_sql(user)
+    rows = query(
+        "SELECT d.id, d.name, d.host, d.status FROM devices d"
+        f" WHERE d.enabled = 1{scope[0]} ORDER BY d.name COLLATE NOCASE",
+        tuple(scope[1]),
+    )
+    return {"devices": [dict(row) for row in rows]}
+
+
 @router.get("/api/devices/{device_id}")
 async def get_device(device_id: int, user=Depends(require("devices.edit"))):
     """Данные устройства для формы редактирования (пароль не отдаём)."""

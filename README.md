@@ -76,11 +76,17 @@ load a CSV file.
   configuration unless the change is confirmed;
 * a backup (binary and export) downloaded to the server;
 * setting the identity;
-* a RouterOS upgrade.
+* a RouterOS upgrade;
+* a speed test to another site in the fleet.
 
 Everything runs in the background. You see the progress and a separate result
 for each device. A job can be cancelled, or deferred to a chosen time such as
 02:00.
+
+**Needs attention.** The first block on the dashboard: offline and flapping
+sites, packet loss, stale backups, syslog gone quiet, armed rollbacks, failed
+jobs, CPU, memory and disk pressure, open services and available updates - one
+list ordered by severity. When everything is calm, the block is not there.
 
 **Monitoring.** The panel checks availability once a minute and keeps a history
 of outages with downtime totals. It shows a fleet map, uptime percentage over a
@@ -515,6 +521,63 @@ The panel finds it on its own, in this order:
   and is never overwritten by a poll; a contract number fits nicely there too.
 
 Rechecked once a day: an operator changes approximately never.
+
+---
+
+## Needs attention
+
+The first block on the dashboard. It answers the question "what should I deal
+with", not "how are things": one list sorted by severity instead of a walk
+through six sections.
+
+What feeds it:
+
+* **availability** - sites that are offline; flapping sites, meaning four state
+  changes in six hours; packet loss measured by the site's own ping;
+* **hygiene** - a backup older than a week or none at all; syslog gone quiet,
+  meaning the site used to send it and stopped; armed rollback safety nets;
+  jobs with errors in the last day;
+* **resources** - CPU above 85% averaged over half an hour; less than 16 MiB of
+  free memory; the panel's own disk filling up;
+* **security** - dangerous RouterOS services reachable from any address;
+  available updates.
+
+Nothing extra is polled for this: every check runs over data the panel already
+has. The block deliberately has no thresholds of its own. It says "this looks
+like trouble right now", while the fine tuning with hold times lives in the
+rules on the Monitoring page.
+
+When everything is calm, the block is simply not there.
+
+---
+
+## Speed test between sites
+
+The action **"Speed test to another site"** in the action list, and the
+**Speed** button on the device card.
+
+The measurement has to start from the site: the speed from the server to the
+site and the speed of the site itself are different numbers, and the complaint
+is always about the second one.
+
+The panel does what takes ten minutes by hand: it enables the btest server on
+the target, supplies the target's own login and password, runs
+`/tool/bandwidth-test` from the source site and puts the target back the way it
+was. It does that after a failed test too, otherwise the remote site would be
+left with an open btest server.
+
+Direction (receive by default: the target sends, the site receives), duration,
+protocol and a bandwidth cap are all configurable.
+
+The test takes the whole channel. Everyone working at that site will notice,
+which is why the action is marked dangerous: set a cap, or measure after
+closing time.
+
+Sites are processed one at a time, even when the whole fleet is selected.
+Simultaneous tests towards a shared target split that target's channel between
+them, so instead of fifty measurements you get one divided by fifty. A
+fleet-wide run therefore takes minutes: count the test duration plus a few
+seconds to connect to each site.
 
 ---
 

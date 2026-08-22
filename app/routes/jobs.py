@@ -192,15 +192,25 @@ def _named_params(action_name: str, raw: dict) -> list[dict]:
     except ValueError:
         return [{"label": key, "value": value} for key, value in raw.items()]
 
+    from ..actions import _device_name
+
     known = {p.name: p for p in action.params}
     result = []
     for key, value in raw.items():
         param = known.get(key)
         text = str(value)
+        # Подпись из списка это наша же строка, её надо переводить.
+        # Всё остальное человек вписал сам, и трогать это нельзя
+        translate = False
         if param is not None and param.options:
             text = dict(param.options).get(text, text)
+            translate = True
+        elif param is not None and param.type == "device":
+            # В параметрах лежит номер точки. «Куда мерить: 51» не говорит
+            # ничего даже тому, кто эту задачу и запускал
+            text = _device_name(text) or text
         result.append({"label": param.label if param else key, "value": text,
-                       "secret": "password" in key})
+                       "translate": translate, "secret": "password" in key})
     return result
 
 

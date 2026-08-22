@@ -255,6 +255,52 @@ a:hover { text-decoration: underline; }
 }
 .panel .panel-body { padding: 13px; }
 
+/* ------------------------------------------------------- требует внимания
+
+   Блок сверху дашборда. Цвет несёт смысл только слева, узкой полосой:
+   красить строку целиком значило бы получить светофор из десяти строк,
+   в котором ничего не выделяется. Число слева крупное, потому что
+   читают в первую очередь именно его: «сколько точек лежит». */
+.panel.attention { border-color: var(--border-strong); }
+.panel.attention.bad > h2 { color: var(--err); }
+.panel.attention.warn > h2 { color: var(--warn); }
+
+.attn-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 9px 13px;
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid transparent;
+}
+.attn-list > .attn-row:last-child { border-bottom: none; }
+.attn-row.bad  { border-left-color: var(--err); }
+.attn-row.warn { border-left-color: var(--warn); }
+.attn-row.info { border-left-color: var(--muted); }
+
+.attn-count {
+    min-width: 34px; text-align: right;
+    font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.attn-row.bad  .attn-count { color: var(--err); }
+.attn-row.warn .attn-count { color: var(--warn); }
+
+.attn-body { flex: 1; min-width: 0; }
+.attn-title { font-weight: 600; font-size: 13px; }
+/* Перечисление имён может быть длинным, но строка должна оставаться
+   строкой: список из десяти пунктов, где каждый в три ряда, перестаёт
+   быть списком. Полное перечисление всегда доступно по ссылке справа. */
+.attn-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attn-act { display: flex; align-items: center; gap: 8px; }
+
+@media (max-width: 720px) {
+    /* На телефоне действие уезжает под текст: три колонки в 360 пикселей
+       не помещаются, а сжимать имена дальше уже некуда */
+    .attn-row { flex-wrap: wrap; gap: 8px; }
+    .attn-count { min-width: 26px; font-size: 17px; }
+    .attn-body { flex: 1 1 100%; order: 2; }
+    .attn-detail { white-space: normal; }
+    .attn-act { order: 3; margin-left: auto; }
+}
+
 .grid { display: grid; gap: 12px; }
 /* Колонка сетки по умолчанию не сжимается уже своего содержимого:
    min-width у элемента сетки это auto. Широкая таблица внутри распирала

@@ -591,6 +591,91 @@ class MikroTik:
         except DeviceError:
             pass
 
+    # ------------------------------------------------------- тест скорости
+    def bandwidth_server(self) -> dict[str, Any]:
+        """
+        Настройки встроенного сервера btest: включён ли он и требует ли пароль.
+
+        Нужно, чтобы вернуть цель в прежнее состояние. Сервер по умолчанию
+        включён не на всех платах и не во всех версиях, а оставлять его
+        включённым после измерения нельзя: это открытая дверь, через
+        которую любой, кто знает логин, может занять канал целиком.
+        """
+        rows = self.cmd("/tool/bandwidth-server/print")
+        return dict(rows[0]) if rows else {}
+
+    def set_bandwidth_server(self, enabled: bool, authenticate: bool = True) -> None:
+        """Включить или выключить сервер btest."""
+        self.cmd(
+            "/tool/bandwidth-server/set",
+            **{
+                "enabled": "yes" if enabled else "no",
+                "authenticate": "yes" if authenticate else "no",
+            },
+        )
+
+    def bandwidth_test(self, address: str, duration: int = 10,
+                       direction: str = "receive", user: str = "",
+                       password: str = "", protocol: str = "tcp",
+                       limit_mbps: int = 0) -> dict[str, Any]:
+        """
+        Померить скорость **с этого устройства** до указанного адреса.
+
+        Смысл тот же, что у пинга с точки: канал до площадки со стороны
+        сервера и канал самой площадки это разные вещи, и полосу надо
+        мерить оттуда, где она нужна.
+
+        Направление `receive` означает «цель шлёт, мы принимаем», то есть
+        скорость загрузки на точку. Это самое частое: жалуются обычно на
+        то, что на кассе долго открывается страница.
+
+        Возвращает словарь: rx, tx (биты в секунду, средние за тест),
+        lost, duration, status. Значений может не быть вовсе, если
+        RouterOS оборвал тест на первой же секунде.
+        """
+        seconds = max(1, min(60, int(duration)))
+        params: dict[str, str] = {
+            "address": address,
+            "duration": f"{seconds}s",
+            "direction": direction,
+            "protocol": protocol,
+        }
+        if user:
+            params["user"] = user
+            params["password"] = password
+        if limit_mbps:
+            # Ограничение ставится на обе стороны: какая из них шлёт,
+            # зависит от направления, а лишний параметр RouterOS не смущает
+            rate = str(int(limit_mbps) * 1_000_000)
+            params["local-tx-speed"] = rate
+            params["remote-tx-speed"] = rate
+
+        # Команда возвращает управление только когда тест закончился,
+        # плюс запас на установление соединения и на ответ
+        with self.extended_timeout(seconds + 20):
+            rows = self.cmd("/tool/bandwidth-test", **params)
+
+        if not rows:
+            return {"rx": None, "tx": None, "lost": None,
+                    "duration": seconds, "status": ""}
+
+        # Промежуточные строки RouterOS шлёт каждую секунду, итог в последней.
+        # Берём последнюю со статусом «done», иначе просто последнюю: тест
+        # мог оборваться, и тогда честнее показать, что успели намерить
+        final = rows[-1]
+        for row in reversed(rows):
+            if "done" in str(row.get("status") or ""):
+                final = row
+                break
+
+        return {
+            "rx": _to_float(final.get("rx-total-average")),
+            "tx": _to_float(final.get("tx-total-average")),
+            "lost": _to_int(final.get("lost-packets"), 0),
+            "duration": final.get("duration") or f"{seconds}s",
+            "status": str(final.get("status") or ""),
+        }
+
     def download_via_ftp(self, remote_name: str, local_path: Path) -> int:
         """
         Скачать файл с устройства по FTP (встроенный FTP-сервер RouterOS).

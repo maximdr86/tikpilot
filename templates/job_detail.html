@@ -6,7 +6,7 @@
     <div>
         <h1>Задача #{{ job.id }} · {{ (job.action_label or job.action) | t }}</h1>
         <div class="sub">
-            Запустил <strong>{{ job.username }}</strong> · {{ job.created_at | dt }}
+            Запустил <strong>{{ job.username | t }}</strong> · {{ job.created_at | dt }}
             {% if job.status == 'pending' and job.scheduled_at %}
                 · <span class="badge pending">ожидает {{ job.scheduled_at | dt }}</span>
             {% endif %}
@@ -53,7 +53,11 @@
             {% for p in params %}
                 <tr>
                     <td class="nowrap muted" style="width:220px">{{ p.label | t }}</td>
-                    <td class="result-cell">{% if p.secret %}••••••••{% else %}{{ p.value }}{% endif %}</td>
+                    {# Переводим только подписи из выпадающих списков: это наши
+                       строки. Введённое человеком остаётся как есть, иначе
+                       команда из библиотеки однажды совпадёт с ключом каталога
+                       и превратится на английской странице во что-то другое. #}
+                    <td class="result-cell">{% if p.secret %}••••••••{% elif p.translate %}{{ p.value | t }}{% else %}{{ p.value }}{% endif %}</td>
                 </tr>
             {% endfor %}
             </tbody>

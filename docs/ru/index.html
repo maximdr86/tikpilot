@@ -210,7 +210,7 @@ footer a { color: var(--muted); }
     "price": "0",
     "priceCurrency": "USD"
   },
-  "softwareVersion": "1.60.0",
+  "softwareVersion": "1.69.0",
   "codeRepository": "https://github.com/maximdr86/tikpilot",
   "author": {
     "@type": "Person",
@@ -305,7 +305,7 @@ docker compose up -d</code></pre>
 
     <div class="shot">
         <a class="zoom" href="../screenshots/dashboard.png">
-            <img src="../shots/hero-dashboard.png" alt="Дашборд: 49 точек, одна недоступна, разбивка по группам, версии RouterOS и последние задачи" width="1900" height="738">
+            <img src="../shots/hero-dashboard.png" alt="Дашборд: блок «требует внимания» с шестью пунктами, плитки парка, разбивка по группам и версии RouterOS" width="1900" height="738">
         </a>
         <p class="caption">
             Скриншоты сняты с живого парка из 49 роутеров при включённом режиме витрины:
@@ -317,6 +317,8 @@ docker compose up -d</code></pre>
     <p class="sub">Что происходит с парком, без обхода WinBox.</p>
 
     <ul class="plain">
+        <li>За что хвататься сегодня: не в сети, мигают, потери, старые бэкапы,
+        замолчавший журнал, нехватка памяти, открытые сервисы - одним списком.</li>
         <li>Кто на связи и с какого времени, простой за сутки, карта по группам.</li>
         <li>Задержка и потери, померенные самим роутером, а не сервером.</li>
         <li>Скорость на аплинке: средняя между обходами, а не всплеск за секунду.</li>
@@ -335,6 +337,8 @@ docker compose up -d</code></pre>
         <li>Бэкапы по расписанию, сравнение любых двух конфигураций, поиск по всем.</li>
         <li>Библиотека скриптов и ответ, где какой раскатан на самом деле.</li>
         <li>Связи WireGuard через хаб, конфигурация споука генерируется сама.</li>
+        <li>Тест скорости между двумя своими точками: панель сама поднимет btest
+        на цели, померит и погасит его обратно.</li>
         <li>Терминал RouterOS по SSH, если нужно руками.</li>
     </ul>
 
@@ -355,7 +359,7 @@ docker compose up -d</code></pre>
     <div class="pair">
         <figure>
             <a class="zoom" href="../screenshots/devices.png">
-                <img src="../shots/devices.png" alt="Список устройств: имя, адрес, группа, модель, оператор связи и версия RouterOS" loading="lazy" decoding="async" width="1400" height="803">
+                <img src="../shots/devices.png" alt="Список устройств: имя, адрес, группа, модель, оператор связи и версия RouterOS" loading="lazy" decoding="async" width="1400" height="758">
             </a>
             <figcaption>Список устройств. Оператор связи определяется сам, по нему же работает поиск.</figcaption>
         </figure>
@@ -367,9 +371,15 @@ docker compose up -d</code></pre>
         </figure>
         <figure>
             <a class="zoom" href="../screenshots/actions.png">
-                <img src="../shots/actions.png" alt="Диалог массового действия: цель - все 49 устройств, список доступных действий" loading="lazy" decoding="async" width="800" height="710">
+                <img src="../shots/actions.png" alt="Диалог массового действия: цель - все 49 устройств, список доступных действий" loading="lazy" decoding="async" width="800" height="768">
             </a>
             <figcaption>Одно действие на все 49 точек. Опасные помечены, каждый запуск попадает в задачи.</figcaption>
+        </figure>
+        <figure>
+            <a class="zoom" href="../screenshots/speedtest.png">
+                <img src="../shots/speedtest.png" alt="Задача «тест скорости»: полоса от каждой из 49 точек до одной цели, строкой на точку" loading="lazy" decoding="async" width="1400" height="758">
+            </a>
+            <figcaption>Полоса от каждой площадки до центра, померенная самими роутерами. Точки идут по одной, иначе они делят канал цели и врут.</figcaption>
         </figure>
         <figure>
             <a class="zoom" href="../screenshots/wireguard.png">

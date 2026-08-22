@@ -469,6 +469,66 @@
     [
       "^Не удалось подключиться по SSH: роутер не завершил рукопожатие SSH за (\\d+) с\\. Так бывает на слабой плате и на канале с потерями, особенно когда команда идёт на весь парк сразу\\. Увеличьте ожидание в настройках или запускайте группами поменьше$",
       "SSH connection failed: the router did not finish the SSH handshake within \\1 s. That happens on a weak board and a lossy link, especially when the command goes to the whole fleet at once. Raise the wait in the settings or run in smaller groups"
+    ],
+    [
+      "^Бэкап старше (\\d+) суток$",
+      "Backup older than \\1 days"
+    ],
+    [
+      "^(.*) · чаще всех (.+?), (\\d+) смен за (\\d+) ч$",
+      "\\1 · most often \\2, \\3 changes in \\4 h"
+    ],
+    [
+      "^(.*) · хуже всех (.+?), ([\\d.]+)%$",
+      "\\1 · worst \\2, \\3%"
+    ],
+    [
+      "^(.*) · без единого бэкапа: (\\d+)$",
+      "\\1 · never backed up: \\2"
+    ],
+    [
+      "^(.*) · слали раньше, за последние (\\d+) ч ни строки$",
+      "\\1 · used to send, not a line in the last \\2 h"
+    ],
+    [
+      "^(.*) · без подтверждения откатят конфигурацию сами и перезагрузятся$",
+      "\\1 · without confirmation they roll the configuration back themselves and reboot"
+    ],
+    [
+      "^(.*) · выше всех (.+?), ([\\d.]+)% в среднем за полчаса$",
+      "\\1 · highest \\2, \\3% averaged over half an hour"
+    ],
+    [
+      "^(.*) · меньше всех у (.+?), ([\\d.]+) МиБ$",
+      "\\1 · lowest on \\2, \\3 MiB"
+    ],
+    [
+      "^свободно (.+?) из (.+?) \\((\\d+)%\\) · база (.+?), бэкапы (.+)$",
+      "\\1 free of \\2 (\\3%) · database \\4, backups \\5"
+    ],
+    [
+      "^(.*) · (.+?) доступны с любого адреса$",
+      "\\1 · \\2 reachable from any address"
+    ],
+    [
+      "^Цель (.+?) недоступна: (.*)$",
+      "Target \\1 is unreachable: \\2"
+    ],
+    [
+      "^Тест не дал результата: (.*)$",
+      "The test produced no result: \\1"
+    ],
+    [
+      "^за сутки задач: (\\d+), точек с ошибкой: (\\d+)$",
+      "jobs in the last day: \\1, sites with errors: \\2"
+    ],
+    [
+      "^До (.+?) \\((.+?)\\): приём (.+?), передача (.+?) Мбит/с, за (.+?), потеряно пакетов (\\d+)$",
+      "To \\1 (\\2): rx \\3, tx \\4 Mbit/s, in \\5, lost packets \\6"
+    ],
+    [
+      "^До (.+?) \\((.+?)\\): приём (.+?), передача (.+?) Мбит/с, за (.+)$",
+      "To \\1 (\\2): rx \\3, tx \\4 Mbit/s, in \\5"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
@@ -1938,5 +1998,47 @@
   "как и сама точка": "same as the site itself",
   "точка на связи, но команды до неё не доходят: канал, туннель или сервис на роутере": "the site is up, but commands do not reach it: the link, the tunnel or a service on the router",
   "Ждать рукопожатия SSH, секунд": "Wait for the SSH handshake, seconds",
-  "Столько панель ждёт приветствия и входа по SSH. На слабой плате и на канале с потерями рукопожатие не укладывается в десять секунд, и массовая команда падает с «No existing session».": "How long the panel waits for the SSH banner and login. On a weak board and a lossy link the handshake does not fit into ten seconds, and a fleet-wide command fails with “No existing session”."
+  "Столько панель ждёт приветствия и входа по SSH. На слабой плате и на канале с потерями рукопожатие не укладывается в десять секунд, и массовая команда падает с «No existing session».": "How long the panel waits for the SSH banner and login. On a weak board and a lossy link the handshake does not fit into ten seconds, and a fleet-wide command fails with “No existing session”.",
+  "Обновить все": "Upgrade all",
+  "Подтвердить все": "Confirm all",
+  "устройства с доступным обновлением": "devices with an available update",
+  "Требует внимания <span class=\"h2-extra muted\">%(p0)s %(p1)s</span>": "Needs attention <span class=\"h2-extra muted\">%(p0)s %(p1)s</span>",
+  "пункт|пункта|пунктов": "item|items",
+  "Не в сети": "Offline",
+  "Мигают": "Flapping",
+  "Потери на канале": "Packet loss",
+  "Журнал замолчал": "Syslog went quiet",
+  "Ждут подтверждения": "Waiting for confirmation",
+  "Задачи с ошибками": "Jobs with errors",
+  "Загружен процессор": "CPU under load",
+  "Мало памяти": "Low memory",
+  "Мало места на диске панели": "Low disk space on the panel",
+  "Открытые сервисы": "Open services",
+  "Доступно обновление RouterOS": "RouterOS update available",
+  "бэкапы": "backups",
+  "журнал": "syslog",
+  "история задач": "job history",
+  "настройки": "settings",
+  "показать списком": "show as a list",
+  "Скорость": "Speed",
+  "Тест скорости до другой точки": "Speed test to another site",
+  "Померить полосу между этой точкой и выбранной, средствами самих роутеров": "Measure the bandwidth between this site and the selected one, using the routers themselves",
+  "Куда мерить": "Measure to",
+  "Вторая сторона теста. Панель сама включит на ней сервер btest и выключит его после измерения.": "The other end of the test. The panel enables the btest server on it and switches it back off afterwards.",
+  "Направление": "Direction",
+  "Приём: цель шлёт, точка принимает": "Receive: the target sends, the site receives",
+  "Передача: точка шлёт, цель принимает": "Transmit: the site sends, the target receives",
+  "В обе стороны одновременно": "Both directions at once",
+  "5 секунд": "5 seconds",
+  "10 секунд": "10 seconds",
+  "20 секунд": "20 seconds",
+  "30 секунд": "30 seconds",
+  "Ограничение, Мбит/с": "Limit, Mbit/s",
+  "Тест занимает канал целиком. На рабочей площадке это заметят все, кто в этот момент работает: поставьте ограничение или меряйте после закрытия.": "The test takes the whole channel. On a working site everyone who is online will notice: set a limit, or measure after closing time.",
+  "UDP показывает предельную полосу, TCP ближе к тому, что увидит человек за кассой.": "UDP shows the peak bandwidth, TCP is closer to what the person at the till will see.",
+  "Загружаю список...": "Loading the list...",
+  "Не удалось получить список точек": "Could not load the list of sites",
+  "выберите точку": "pick a site",
+  "пусто, без ограничения": "empty, no limit",
+  "Точки обрабатываются по одной, иначе они мешают друг другу и результат врёт. На весь парк это долго.": "Sites are processed one at a time: run together they get in each other's way and the result lies. Across the whole fleet this takes a while."
 }

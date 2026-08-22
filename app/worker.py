@@ -450,6 +450,14 @@ def _run_job(job_id: int) -> None:
     # обрабатываются группами с паузой, и есть время остановиться.
     batch_size = _as_int(params.get("batch_size"), 0)
     batch_pause = _as_int(params.get("batch_pause"), 0)
+
+    # Есть действия, которые нельзя выполнять одновременно на нескольких
+    # точках, даже когда все они доступны. Пример - тест скорости: двенадцать
+    # точек, меряющих полосу до одной и той же цели, делят её канал между
+    # собой, и панель получает двенадцать заниженных чисел, каждое из которых
+    # выглядит как измерение. Такие действия объявляют serial и идут по одной
+    if getattr(action, "serial", False):
+        batch_size = 1
     batches = (
         [items[i:i + batch_size] for i in range(0, len(items), batch_size)]
         if batch_size > 0 else [items]

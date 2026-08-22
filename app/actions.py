@@ -71,6 +71,11 @@ class Action:
     # Нужно ли открывать соединение с устройством (пока всегда да,
     # но флаг оставлен для будущих локальных действий)
     needs_connection: bool = True
+    # Точки обрабатываются по одной, даже когда потоков хватает на всех.
+    # Нужно там, где параллельный запуск искажает сам результат: замер
+    # полосы до общей цели, поделённый на двенадцать одновременных замеров,
+    # это не двенадцать измерений, а одно, разделённое на двенадцать.
+    serial: bool = False
     # Действие написано и покрыто тестами на заглушке, но на живом парке
     # ещё не проверялось. Честно говорим об этом в форме: заглушка ловит
     # ошибки протокола, а не различия между версиями RouterOS и не то,
@@ -134,7 +139,11 @@ def describe_params(action: Action, params: dict[str, Any]) -> str:
             parts.append(f"{name}: {text}")
             continue
 
-        if param.type == "checkbox":
+        if param.type == "device":
+            # В параметрах хранится номер точки, а в журнале должно стоять
+            # имя: «Куда мерить: 51» не говорит ничего даже автору задачи
+            text = _device_name(text) or text
+        elif param.type == "checkbox":
             text = "да" if text in ("1", "true", "yes", "on") else "нет"
         elif param.options:
             # У выпадающих списков в журнале должна стоять подпись,
@@ -393,6 +402,149 @@ def act_command(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]) ->
     kwargs = _parse_kv(params.get("arguments", ""))
     rows = mt.cmd(command, **kwargs)
     return flatten_rows(rows)
+
+
+@register(
+    name="speedtest",
+    label="Тест скорости до другой точки",
+    description="Померить полосу между этой точкой и выбранной, средствами самих роутеров",
+    icon="gauge",
+    dangerous=True,
+    serial=True,
+    params=[
+        ActionParam(
+            "target_id",
+            "Куда мерить",
+            "device",
+            required=True,
+            help="Вторая сторона теста. Панель сама включит на ней сервер btest "
+                 "и выключит его после измерения.",
+        ),
+        ActionParam(
+            "direction",
+            "Направление",
+            "select",
+            default="receive",
+            options=[
+                ("receive", "Приём: цель шлёт, точка принимает"),
+                ("transmit", "Передача: точка шлёт, цель принимает"),
+                ("both", "В обе стороны одновременно"),
+            ],
+        ),
+        ActionParam(
+            "duration",
+            "Длительность",
+            "select",
+            default="10",
+            options=[("5", "5 секунд"), ("10", "10 секунд"),
+                     ("20", "20 секунд"), ("30", "30 секунд")],
+        ),
+        ActionParam(
+            "limit",
+            "Ограничение, Мбит/с",
+            "text",
+            default="",
+            placeholder="пусто, без ограничения",
+            help="Тест занимает канал целиком. На рабочей площадке это заметят "
+                 "все, кто в этот момент работает: поставьте ограничение или "
+                 "меряйте после закрытия.",
+        ),
+        ActionParam(
+            "protocol",
+            "Протокол",
+            "select",
+            default="tcp",
+            options=[("tcp", "TCP"), ("udp", "UDP")],
+            help="UDP показывает предельную полосу, TCP ближе к тому, что "
+                 "увидит человек за кассой.",
+        ),
+    ],
+)
+def act_speedtest(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]) -> str:
+    """
+    Полоса между двумя точками парка, измеренная самими точками.
+
+    Панель здесь делает то, чего человек руками делает долго: у неё есть
+    доступ к обеим сторонам сразу. Она включает на цели сервер btest,
+    подставляет её же логин и пароль, гоняет тест с исходной точки и
+    возвращает цель в прежнее состояние, включая случай, когда тест
+    провалился.
+
+    Тест занимает канал. Поэтому действие помечено опасным, длительность
+    по умолчанию десять секунд, а ограничение полосы вынесено в форму.
+    """
+    from .crypto import decrypt
+    from .database import query_one
+
+    target_id = _as_int(params.get("target_id"), 0)
+    if not target_id:
+        raise DeviceError("Не выбрана вторая точка")
+    if target_id == int(device["id"]):
+        raise DeviceError("Точка не может мерить скорость сама до себя")
+
+    target = query_one("SELECT * FROM devices WHERE id = ?", (target_id,))
+    if target is None:
+        raise DeviceError("Вторая точка не найдена: возможно, её удалили")
+    target = dict(target)
+
+    duration = _as_int(params.get("duration"), 10)
+    limit = _as_int(params.get("limit"), 0)
+    direction = str(params.get("direction") or "receive")
+    protocol = str(params.get("protocol") or "tcp")
+
+    # Готовим цель: сервер btest может быть выключен, и тогда тест
+    # оборвётся на подключении. Прежнее состояние запоминаем, чтобы
+    # вернуть его при любом исходе
+    password = decrypt(target["password_enc"])
+    was_enabled: bool | None = None
+    try:
+        with MikroTik(target, password, timeout=settings.api_timeout) as remote:
+            state = remote.bandwidth_server()
+            was_enabled = _as_bool(state.get("enabled"))
+            if not was_enabled:
+                remote.set_bandwidth_server(True, authenticate=True)
+    except DeviceError as exc:
+        raise DeviceError(f"Цель {target['name']} недоступна: {exc}") from exc
+
+    try:
+        result = mt.bandwidth_test(
+            address=str(target["host"]),
+            duration=duration,
+            direction=direction,
+            user=str(target["username"]),
+            password=password,
+            protocol=protocol,
+            limit_mbps=limit,
+        )
+    finally:
+        # Выключаем ровно то, что сами включили. Отдельным соединением:
+        # исходная точка могла и не достучаться, а дверь на цели закрыть
+        # надо в любом случае
+        if was_enabled is False:
+            try:
+                with MikroTik(target, password, timeout=settings.api_timeout) as remote:
+                    remote.set_bandwidth_server(False, authenticate=True)
+            except DeviceError:
+                pass
+
+    if not result.get("rx") and not result.get("tx"):
+        status = result.get("status") or "нет данных"
+        raise DeviceError(f"Тест не дал результата: {status}")
+
+    # Строка результата собирается по одному образцу и в одних единицах.
+    # Оба соображения практические. Единый образец переводится одним
+    # правилом: в отличие от подписей интерфейса, результат задачи лежит
+    # в базе готовым текстом, и перевести его можно только целиком.
+    # Единые мегабиты нужны, чтобы полсотни строк можно было сравнить
+    # глазами: столбик, где рядом стоят «104 бит/с» и «61,7 Мбит/с»,
+    # заставляет пересчитывать в уме на каждой строке.
+    line = (f"До {target['name']} ({target['host']}): "
+            f"приём {_mbit(result.get('rx'))}, "
+            f"передача {_mbit(result.get('tx'))} Мбит/с, "
+            f"за {result.get('duration') or duration}")
+    if result.get("lost"):
+        line += f", потеряно пакетов {result['lost']}"
+    return line
 
 
 @register(
@@ -1221,6 +1373,31 @@ def _parse_kv(text: str) -> dict[str, str]:
     return result
 
 
+def _mbit(bps: Any) -> str:
+    """
+    Биты в секунду в мегабиты, с запятой и одним знаком.
+
+    Прочерк вместо нуля, когда измерения не было: RouterOS не сообщает
+    встречное направление, если его не мерили, и «0,0» в этом месте
+    означало бы «канал мёртв», а не «не спрашивали».
+    """
+    try:
+        return f"{float(bps) / 1_000_000:.1f}".replace(".", ",")
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _device_name(value: Any) -> str:
+    """Имя точки по её номеру. Пусто, если точки уже нет."""
+    from .database import query_one
+
+    try:
+        row = query_one("SELECT name FROM devices WHERE id = ?", (int(str(value)),))
+    except (TypeError, ValueError):
+        return ""
+    return str(row["name"]) if row else ""
+
+
 def _as_bool(value: Any) -> bool:
     """Мягкое приведение значения формы к булеву."""
     if isinstance(value, bool):
@@ -1277,6 +1454,7 @@ def action_to_dict(action: Action) -> dict[str, Any]:
         "description": action.description,
         "icon": action.icon,
         "dangerous": action.dangerous,
+        "serial": action.serial,
         "untested": action.untested,
         "params": [
             {

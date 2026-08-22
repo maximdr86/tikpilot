@@ -210,7 +210,7 @@ footer a { color: var(--muted); }
     "price": "0",
     "priceCurrency": "USD"
   },
-  "softwareVersion": "1.60.0",
+  "softwareVersion": "1.69.0",
   "codeRepository": "https://github.com/maximdr86/tikpilot",
   "author": {
     "@type": "Person",
@@ -305,7 +305,7 @@ docker compose up -d</code></pre>
 
     <div class="shot">
         <a class="zoom" href="screenshots/dashboard.png">
-            <img src="shots/hero-dashboard.png" alt="Dashboard: 49 sites, one unreachable, a breakdown by group, RouterOS versions and recent jobs" width="1900" height="738">
+            <img src="shots/hero-dashboard.png" alt="Dashboard: the needs attention block with six items, fleet tiles, a breakdown by group and RouterOS versions" width="1900" height="738">
         </a>
         <p class="caption">
             The screenshots come from a live fleet of 49 routers with screenshot mode on:
@@ -317,6 +317,8 @@ docker compose up -d</code></pre>
     <p class="sub">What the fleet is doing, without opening WinBox fifty times.</p>
 
     <ul class="plain">
+        <li>What to deal with today: offline, flapping, packet loss, stale backups,
+        syslog gone quiet, low memory, open services - in one list.</li>
         <li>Who is up and since when, downtime over the day, a map by group.</li>
         <li>Latency and loss measured by the router itself, not by the server.</li>
         <li>Uplink speed: an average between polls rather than a one second spike.</li>
@@ -335,6 +337,8 @@ docker compose up -d</code></pre>
         <li>Scheduled backups, a diff between any two configs, search across all of them.</li>
         <li>A script library and the answer to what is really deployed where.</li>
         <li>WireGuard links through a hub, with the spoke config generated for you.</li>
+        <li>A speed test between two of your own sites: the panel brings btest up
+        on the target, measures, and puts it back.</li>
         <li>A RouterOS terminal over SSH when you need to do it by hand.</li>
     </ul>
 
@@ -355,7 +359,7 @@ docker compose up -d</code></pre>
     <div class="pair">
         <figure>
             <a class="zoom" href="screenshots/devices.png">
-                <img src="shots/devices.png" alt="Device list: name, address, group, model, mobile operator and RouterOS version" loading="lazy" decoding="async" width="1400" height="803">
+                <img src="shots/devices.png" alt="Device list: name, address, group, model, mobile operator and RouterOS version" loading="lazy" decoding="async" width="1400" height="758">
             </a>
             <figcaption>Device list. The mobile operator is detected automatically and search works on it too.</figcaption>
         </figure>
@@ -367,9 +371,15 @@ docker compose up -d</code></pre>
         </figure>
         <figure>
             <a class="zoom" href="screenshots/actions.png">
-                <img src="shots/actions.png" alt="Bulk action dialog: target is all 49 devices, with the list of available actions" loading="lazy" decoding="async" width="800" height="710">
+                <img src="shots/actions.png" alt="Bulk action dialog: target is all 49 devices, with the list of available actions" loading="lazy" decoding="async" width="800" height="768">
             </a>
             <figcaption>One action across all 49 sites. The dangerous ones are marked, every run becomes a job.</figcaption>
+        </figure>
+        <figure>
+            <a class="zoom" href="screenshots/speedtest.png">
+                <img src="shots/speedtest.png" alt="A speed test job: bandwidth from each of the 49 sites to a single target, one line per site" loading="lazy" decoding="async" width="1400" height="758">
+            </a>
+            <figcaption>Bandwidth from every site to the centre, measured by the routers themselves. Sites go one at a time, otherwise they share the target's channel and lie.</figcaption>
         </figure>
         <figure>
             <a class="zoom" href="screenshots/wireguard.png">
