@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tikpilot - панель управления MikroTik: мониторинг, бэкапы, обновление RouterOS</title>
-<meta name="description" content="Управление парком роутеров MikroTik из одного окна: мониторинг с порогами и уведомлениями в Телеграм, обновление RouterOS и скрипты на весь парк, бэкапы по расписанию с диффом, syslog, WireGuard. Свой сервер, без облака, MIT.">
+<title>Tikpilot - централизованное управление MikroTik: мониторинг, бэкапы, обновление RouterOS</title>
+<meta name="description" content="Централизованное управление парком роутеров MikroTik из одного окна: мониторинг с порогами и уведомлениями в Телеграм, обновление RouterOS и скрипты на весь парк, бэкапы по расписанию с диффом, syslog, WireGuard. Свой сервер, без облака, MIT.">
 <link rel="canonical" href="https://tikpilot.ru/ru/">
 <link rel="alternate" hreflang="en" href="https://tikpilot.ru/">
 <link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/">
 <link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Tikpilot - панель управления MikroTik: мониторинг, бэкапы, обновление RouterOS">
-<meta property="og:description" content="Управление парком роутеров MikroTik из одного окна: мониторинг с порогами и уведомлениями в Телеграм, обновление RouterOS и скрипты на весь парк, бэкапы по расписанию с диффом, syslog, WireGuard. Свой сервер, без облака, MIT.">
+<meta property="og:title" content="Tikpilot - централизованное управление MikroTik: мониторинг, бэкапы, обновление RouterOS">
+<meta property="og:description" content="Централизованное управление парком роутеров MikroTik из одного окна: мониторинг с порогами и уведомлениями в Телеграм, обновление RouterOS и скрипты на весь парк, бэкапы по расписанию с диффом, syslog, WireGuard. Свой сервер, без облака, MIT.">
 <meta property="og:image" content="https://tikpilot.ru/screenshots/dashboard.png">
 <meta property="og:url" content="https://tikpilot.ru/ru/">
 <meta name="twitter:card" content="summary_large_image">
@@ -201,7 +201,7 @@ footer a { color: var(--muted); }
   "operatingSystem": "Linux, Docker",
   "url": "https://tikpilot.ru/ru/",
   "inLanguage": "ru",
-  "description": "Своя веб-панель для парка роутеров MikroTik: мониторинг с порогами и уведомлениями, массовые операции с RouterOS, бэкапы по расписанию, syslog и связи WireGuard.",
+  "description": "Централизованное управление парком роутеров MikroTik: мониторинг доступности, массовые операции RouterOS, бэкапы по расписанию, syslog и связи WireGuard.",
   "image": "https://tikpilot.ru/screenshots/dashboard.png",
   "license": "https://opensource.org/licenses/MIT",
   "isAccessibleForFree": true,
@@ -290,8 +290,9 @@ footer a { color: var(--muted); }
     <section class="hero">
         <h1>Пятьдесят роутеров в одном окне</h1>
         <p class="lead">
-            Панель для парка MikroTik: состояние, массовые операции, бэкапы
-            и оповещения. Ставится на свой сервер, наружу ничего не отдаёт.
+            Централизованное управление парком MikroTik: состояние, массовые
+            операции, бэкапы и оповещения, хоть на пятьдесят роутеров, хоть
+            на пять. Ставится на свой сервер, наружу ничего не отдаёт.
         </p>
         <pre class="hero-install"><code>git clone https://github.com/maximdr86/tikpilot
 cd tikpilot &amp;&amp; cp .env.example .env

@@ -6,8 +6,9 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 
-Веб-панель для управления парком MikroTik через RouterOS API. Рассчитана на
-50 устройств и больше.
+Централизованное управление парком MikroTik на своём сервере: веб-панель,
+которая работает с роутерами через RouterOS API. Рассчитана на 50 устройств
+и больше.
 
 Ставится на любой сервер с Python, работает одним процессом. Не нужны Redis,
 Celery, Node.js и сборка фронтенда. Интернет самой панели тоже не нужен: ничего
