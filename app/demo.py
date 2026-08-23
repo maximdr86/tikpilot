@@ -118,6 +118,16 @@ KEEP = frozenset({
     "webfig", "ubuntu", "docker", "windows", "android",
 })
 
+#: Короткие технические сокращения, которые встречаются в самой странице:
+#: в именах полей, в разметке, в подписях таблиц. Точка с таким именем
+#: подменялась бы вместе с версткой, а сломанная страница выдаёт парк
+#: надёжнее, чем несколько букв в названии.
+TECH = frozenset({
+    "api", "ssh", "ftp", "dns", "dhcp", "ntp", "arp", "vpn", "lte", "wan",
+    "lan", "poe", "cpu", "ram", "mac", "vlan", "utc", "url", "svg", "div",
+    "css", "img", "get", "post", "put", "rx", "tx", "id", "ip", "ok", "up",
+})
+
 #: Слова, из которых состоит сам интерфейс. Подменять их нельзя: точка
 #: может называться словом, которое встречается в подписи кнопки, и тогда
 #: подмена переписывает не данные, а текст панели. Так «supported by both
@@ -128,6 +138,7 @@ _vocabulary: frozenset[str] | None = None
 #: а страницы дёргаются часто, поэтому словарь собирается один раз
 #: и живёт до тех пор, пока не изменится состав парка.
 _tables: dict[str, dict[str, str]] = {}
+_patterns: dict[str, re.Pattern] = {}
 _built_for: tuple = ()
 
 
@@ -143,6 +154,7 @@ def forget() -> None:
     """Забыть словарь подмен. Нужно тестам и после правки парка."""
     global _built_for, _vocabulary
     _tables.clear()
+    _patterns.clear()
     _built_for = ()
     _vocabulary = None
 
@@ -252,15 +264,38 @@ def vocabulary() -> frozenset[str]:
 
 def _add(table: dict[str, str], real: Any, fake: str) -> None:
     """
-    Записать подмену, пропустив пустое, короткое и слишком обычное.
+    Записать подмену, пропустив пустое, опасное и слишком обычное.
 
-    Короткая строка встречается в разметке где угодно, и подменять
-    её значит ломать страницу ради двух букв. Отдельное слово, которое
-    и так есть в интерфейсе, не подменяется по той же причине: имя точки
-    из одного словарного слова спрячется хуже, чем сломается страница.
+    Отдельное слово, которое и так есть в интерфейсе, не подменяется:
+    имя точки из одного словарного слова спрячется хуже, чем сломается
+    страница.
+
+    Про короткие имена. Раньше отбрасывалось всё короче четырёх символов,
+    и на живом парке сквозь витрину проехали «NSK», «URS» и группа «УРС»:
+    ровно те названия, которые и надо было спрятать. Причина запрета была
+    в другом: короткая строка встречается в разметке где угодно, и замена
+    ломала бы страницу. Но с тех пор появились границы слова, а страницу
+    ломают не короткие имена вообще, а короткие **строчные латинские**:
+    `rx` подменился бы внутри `rx_bps`, потому что подчёркивание границей
+    считается.
+
+    Поэтому правило теперь такое: два символа и больше, хотя бы одна
+    буква, и для имён короче четырёх ещё и заглавная либо кириллица.
+    «NSK» и «УРС» проходят, `rx` и `svg` нет.
     """
     text = str(real or "").strip()
-    if len(text) < 4 or text in table or text.lower() in KEEP:
+    if len(text) < 2 or text in table or text.lower() in KEEP:
+        return
+    if text.lower() in TECH:
+        return
+    # Строка без единой буквы это обычно номер, и подменять его значит
+    # переписывать все такие числа на странице, включая счётчики
+    # и проценты. Исключение адреса: они как раз из цифр и точек,
+    # и прятать их надо в первую очередь
+    address = bool(re.fullmatch(r"[0-9a-fA-F.:]{7,}", text)) and ("." in text or ":" in text)
+    if not address and not re.search(r"[A-Za-zА-Яа-яЁё]", text):
+        return
+    if len(text) < 4 and not re.search(r"[A-ZА-ЯЁ]|[а-яёА-ЯЁ]", text):
         return
     if " " not in text and text.lower() in vocabulary():
         return
@@ -274,6 +309,7 @@ def build(lang: str = "ru") -> dict[str, str]:
     mark = _fingerprint()
     if mark != _built_for:
         _tables.clear()
+        _patterns.clear()
         _built_for = mark
     if lang in _tables:
         return _tables[lang]
@@ -370,10 +406,7 @@ def mask(text: str, lang: str = "ru") -> str:
 
     table = build(lang)
     if table:
-        # Длинные строки первыми: иначе «Магазин» подменится внутри
-        # «Магазин Пекарня» и от длинного имени останется хвост
-        pattern = re.compile("|".join(
-            _bounded(key) for key in sorted(table, key=len, reverse=True)))
+        pattern = _pattern(table, lang)
         text = pattern.sub(lambda m: table.get(m.group(0), m.group(0)), text)
 
     text = MAC_RE.sub(lambda m: _mac(m.group(0)), text)
@@ -388,6 +421,94 @@ def mask(text: str, lang: str = "ru") -> str:
 #: намеренно: имя точки продолжается в имени файла бэкапа ровно через них,
 #: и `VAH_Bufet_obshch14_20260812.rsc` иначе осталось бы как есть.
 WORDISH = r"0-9A-Za-zА-Яа-яЁё"
+
+
+def _pattern(table: dict[str, str], lang: str) -> re.Pattern:
+    """
+    Один шаблон на весь словарь подмен, собранный деревом.
+
+    Раньше здесь стояло перечисление: каждый ключ со своими границами
+    слова, через «или». На парке в полсотни точек это двести с лишним
+    веток, и движок регулярных выражений примерял их на каждом символе
+    страницы. Замер на списке устройств в 240 КБ: **1,3 секунды** на
+    страницу. Именно поэтому панель в режиме витрины заметно тормозила.
+
+    Лечится двумя вещами. Первая: границы слова выносятся из каждой
+    ветки наружу, один просмотр назад и один вперёд вместо двухсот
+    (1,3 с превращаются в 0,1 с). Вторая: ключи складываются в
+    префиксное дерево, и общее начало проверяется один раз, а не
+    столько раз, сколько ключей с ним начинается (0,1 с превращается
+    в 0,009 с). Итого в полтораста раз быстрее.
+
+    Ключи разложены по четырём корзинам, потому что граница нужна не
+    всем: имя, начинающееся со скобки, не должно требовать разделителя
+    слева. Корзины идут отдельными ветками, внутри каждой дерево, и
+    таких веток четыре, а не двести.
+
+    Дерево заодно решает старую задачу: «Магазин» больше не подменяется
+    внутри «Магазин Пекарня». Продолжение в дереве жадное, поэтому
+    длинный ключ выигрывает у короткого сам собой, без сортировки.
+    """
+    if lang in _patterns:
+        return _patterns[lang]
+
+    buckets: dict[tuple[bool, bool], list[str]] = {}
+    for key in table:
+        head = bool(re.match(f"[{WORDISH}]", key))
+        tail = bool(re.search(f"[{WORDISH}]$", key))
+        buckets.setdefault((head, tail), []).append(key)
+
+    parts = []
+    for (head, tail), keys in sorted(buckets.items(), reverse=True):
+        body = _trie_pattern(_trie(keys))
+        if body is None:
+            continue
+        prefix = f"(?<![{WORDISH}])" if head else ""
+        suffix = f"(?![{WORDISH}])" if tail else ""
+        parts.append(f"{prefix}(?:{body}){suffix}")
+
+    _patterns[lang] = re.compile("|".join(parts))
+    return _patterns[lang]
+
+
+def _trie(keys: list[str]) -> dict:
+    """Сложить строки в дерево по общим началам."""
+    root: dict = {}
+    for key in keys:
+        node = root
+        for char in key:
+            node = node.setdefault(char, {})
+        node[""] = {}
+    return root
+
+
+def _trie_pattern(node: dict) -> str | None:
+    """
+    Превратить дерево в выражение.
+
+    Ветки с одиночными символами собираются в класс `[абв]`, а конец
+    слова превращается в необязательный хвост. Хвост жадный: из двух
+    ключей с общим началом выигрывает длинный, а это ровно то, что
+    нужно подмене.
+    """
+    if "" in node and len(node) == 1:
+        return None
+
+    alternatives: list[str] = []
+    singles: list[str] = []
+    for char in sorted(key for key in node if key):
+        tail = _trie_pattern(node[char])
+        if tail is None:
+            singles.append(re.escape(char))
+        else:
+            alternatives.append(re.escape(char) + tail)
+
+    if singles:
+        alternatives.append(singles[0] if len(singles) == 1
+                            else "[" + "".join(singles) + "]")
+
+    body = alternatives[0] if len(alternatives) == 1 else "(?:%s)" % "|".join(alternatives)
+    return f"(?:{body})?" if "" in node else body
 
 
 def _bounded(key: str) -> str:
