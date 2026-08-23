@@ -89,6 +89,22 @@ async def lifespan(_app: FastAPI):
     syslog.start()
     log.info("Tikpilot %s готов: http://%s:%s", __version__, settings.host, settings.port)
     log.info("Каталог программы: %s | база: %s", BASE_DIR, settings.db_path)
+
+    # Ограничение по сетям, из-за которого панель откажет тому, кто её
+    # только что запустил. Случай не выдуманный: рабочий `.env` уносят
+    # на другую машину, запускают, и панель встречает отказом «только
+    # из доверенной сети», а человек ищет ошибку в чём угодно, кроме
+    # настройки, которую сам когда-то и задал. Сказать об этом в момент
+    # запуска дешевле, чем разбираться потом
+    if settings.admin_networks:
+        from .netguard import allowed
+
+        if not allowed("127.0.0.1", "", settings.admin_networks, ()):
+            log.warning(
+                "ADMIN_NETWORKS=%s: с этой машины (127.0.0.1) панель откажет. "
+                "Добавьте 127.0.0.1 в список или очистите настройку в .env",
+                settings.admin_networks_raw,
+            )
     yield
     syslog.stop()
     monitor.stop()
@@ -118,7 +134,7 @@ async def restrict_to_admin_networks(request: Request, call_next):
     Настройка пустая по умолчанию, поэтому обновление программы ни у кого
     ничего не отнимает.
     """
-    from .netguard import allowed, is_public_path
+    from .netguard import allowed, is_public_path, real_client_ip
 
     if settings.admin_networks and not is_public_path(request.url.path):
         peer = request.client.host if request.client else ""
@@ -126,9 +142,18 @@ async def restrict_to_admin_networks(request: Request, call_next):
         if not allowed(peer, forwarded, settings.admin_networks, settings.trusted_proxies):
             log.warning("Доступ к панели с недоверенного адреса: %s %s",
                         peer, request.url.path)
+            # Свой адрес человеку и так известен, а вот то, что дело
+            # в настройке, а не в поломке, из прежнего текста понять
+            # было нельзя. Список сетей при этом не показываем: страницу
+            # видит кто угодно, включая того, от кого и закрывались
+            shown = real_client_ip(peer, forwarded, settings.trusted_proxies) or peer
             return PlainTextResponse(
                 "Панель доступна только из доверенной сети.\n"
-                "The panel is only available from a trusted network.",
+                f"Ваш адрес: {shown}\n"
+                "Список сетей задаётся настройкой ADMIN_NETWORKS в файле .env.\n\n"
+                "The panel is only available from a trusted network.\n"
+                f"Your address: {shown}\n"
+                "The list of networks is the ADMIN_NETWORKS setting in .env.",
                 status_code=403,
             )
 

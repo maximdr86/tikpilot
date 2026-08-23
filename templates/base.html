@@ -21,84 +21,190 @@
     <meta name="apple-mobile-web-app-title" content="Tikpilot">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="theme-color" content="#0f6156">
-    {# Тема применяется до отрисовки, иначе страница мигнёт светлым #}
+    {# Тема и ширина меню применяются до отрисовки, иначе страница мигнёт
+       светлым, а колонка успеет схлопнуться на глазах.
+
+       Меню по умолчанию раскрыто, и это решение, а не случайность.
+       Полоса из четырнадцати значков без подписей заставляет наводить
+       мышь на каждый, чтобы вспомнить, где что, а на телефоне подсказки
+       не всплывают вовсе. Свернувшему один раз мы верим и помним его
+       выбор; всем остальным показываем названия разделов. #}
     <script>
         try {
             var t = localStorage.getItem('tikpilot-theme');
             if (t) { document.documentElement.dataset.theme = t; }
-        } catch (e) { /* приватный режим */ }
+            if (localStorage.getItem('tikpilot-nav') !== 'narrow') {
+                document.documentElement.dataset.nav = 'open';
+            }
+        } catch (e) {
+            // Приватный режим: без памяти, зато с подписями
+            document.documentElement.dataset.nav = 'open';
+        }
     </script>
     {# Страницам иногда нужен свой стиль. Единственный такой случай это
        терминал: эмулятор поставляется со своей таблицей стилей. #}
     {% block head %}{% endblock %}
 </head>
 <body>
-{# Верхняя полоска, только на телефоне. Панель, добавленную на домашний
-   экран, система открывает без адресной строки, и без неё непонятно,
-   что вообще открыто. #}
-<header class="mobile-top">
-    <img class="mark" src="/static/logo.svg" alt="" width="22" height="22"> Tikpilot
-    {% if offline_count %}<span class="count">{{ offline_count }}</span>{% endif %}
+
+{# ---------------------------------------------------------------- значки #}
+{# Набор значков лежит один раз в начале страницы, дальше на него ссылаются
+   через <use>. Рисуются здесь же: своих иконок в панели нет, а тянуть ради
+   полутора десятков картинок чужой набор значило бы нарушить обещание
+   работать без интернета.
+
+   Заливка и толщина линии стоят на каждом значке, а не в стилях. Стиль
+   к содержимому <use> применяется от места вставки, и стоит завести
+   значок там, где такого правила нет, как он превращается в чёрное
+   пятно или исчезает совсем: линии без заливки не видно. Ровно это
+   и случилось с нижними вкладками телефона, где «Логи» и «Ещё» пропали,
+   а «Устройства» стали чёрным бруском. #}
+<svg class="sprite" aria-hidden="true" focusable="false">
+    <defs>
+        <g id="i-dashboard" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="11" width="7" height="10" rx="1.5"/></g>
+        <g id="i-monitoring" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></g>
+        <g id="i-devices" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="13" width="19" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h.01"/><path d="M12 10V4M12 4l-3 3M12 4l3 3"/></g>
+        <g id="i-groups" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 4.5-9 4.5-9-4.5L12 3z"/><path d="M3 12l9 4.5L21 12"/><path d="M3 16.5L12 21l9-4.5"/></g>
+        <g id="i-clients" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.8 20a6.2 6.2 0 0 1 12.4 0"/><path d="M16.5 11.4a3 3 0 0 0 0-5.8"/><path d="M17.5 14.6A5.6 5.6 0 0 1 21.4 20"/></g>
+        <g id="i-wireguard" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.8l7.5 3v5.4c0 4.4-3 8.4-7.5 10-4.5-1.6-7.5-5.6-7.5-10V5.8l7.5-3z"/><path d="M9.2 12.2l2 2 3.6-3.9"/></g>
+        <g id="i-jobs" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18"/><path d="M9.6 13.6l1.8 1.8 3.4-3.6"/></g>
+        <g id="i-backups" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1.6"/><path d="M5 9v9.4A1.6 1.6 0 0 0 6.6 20h10.8a1.6 1.6 0 0 0 1.6-1.6V9"/><path d="M10 13h4"/></g>
+        <g id="i-terminal" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.8" y="4.2" width="18.4" height="15.6" rx="2.2"/><path d="M7 9.5l3 2.5-3 2.5"/><path d="M12.5 15.5H17"/></g>
+        <g id="i-scripts" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 7.5L4 12l4.5 4.5"/><path d="M15.5 7.5L20 12l-4.5 4.5"/><path d="M13.6 4.5l-3.2 15"/></g>
+        <g id="i-logs" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 11h11M4 16h16M4 21h8"/></g>
+        <g id="i-history" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 12a8.4 8.4 0 1 0 2.5-6"/><path d="M3.2 3.4V8h4.6"/><path d="M12 7.6V12l3 1.8"/></g>
+        <g id="i-settings" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.1"/><path d="M12 2.6l1.5 2.3 2.7-.4.6 2.6 2.6 1.2-1.1 2.5 1.1 2.5-2.6 1.2-.6 2.6-2.7-.4L12 21.4l-1.5-2.3-2.7.4-.6-2.6-2.6-1.2 1.1-2.5-1.1-2.5 2.6-1.2.6-2.6 2.7.4z"/></g>
+        <g id="i-theme" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.2 14.4A8.6 8.6 0 0 1 9.6 3.8a8.6 8.6 0 1 0 10.6 10.6z"/></g>
+        <g id="i-logout" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4.5h3.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h9"/></g>
+        <g id="i-menu" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></g>
+    </defs>
+</svg>
+
+{# ------------------------------------------------------- верхняя полоса #}
+{# Одна и та же полоса на большом экране и на телефоне. На телефоне панель,
+   добавленную на домашний экран, система открывает без адресной строки,
+   и без этой полосы непонятно, что вообще открыто. #}
+<header class="topbar">
+    <a class="brand" href="/">
+        <img class="mark" src="/static/logo.svg" alt="" width="22" height="22"> Tikpilot
+    </a>
+    {% if offline_count %}
+    <a class="topbar-count" href="/monitoring" title="{{ _('Не в сети') }}">{{ offline_count }}</a>
+    {% endif %}
+
+    {% if demo_on %}
+    {# Режим витрины виден всегда, пока включён: иначе легко забыть
+       и потом долго гадать, почему точка называется не так #}
+    <form method="post" action="/demo/off" class="demo-note">
+        <input type="hidden" name="next" value="{{ request.url.path }}">
+        <span class="badge tag-pink">витрина</span>
+        <button class="linklike" type="submit">выключить</button>
+    </form>
+    {% endif %}
+
+    <div class="topbar-actions">
+        {# Переключатель языка. Текущий язык не ссылка — нажимать некуда. #}
+        <div class="lang-switch top">
+            {% for code, name in languages %}
+                {% if code == lang %}
+                    <span class="lang current">{{ name }}</span>
+                {% else %}
+                    <a class="lang" href="/lang/{{ code }}?next={{ request.url.path }}">{{ name }}</a>
+                {% endif %}
+            {% endfor %}
+        </div>
+        <button class="icon-btn" type="button" onclick="toggleTheme()" title="{{ _('Сменить тему') }}"
+                aria-label="{{ _('Сменить тему') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-theme"/></svg>
+        </button>
+        <a class="icon-btn" href="/logout" title="{{ _('Выход') }}" aria-label="{{ _('Выход') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-logout"/></svg>
+        </a>
+    </div>
 </header>
 
 <div class="layout">
 
     <!-- ------------------------------------------------------ боковое меню -->
+    {# Колонка значков. По умолчанию узкая: раздел читается по значку,
+       название всплывает подсказкой. Кнопка внизу раскрывает её вместе
+       с подписями, и выбор запоминается. На телефоне колонка становится
+       листом, выезжающим снизу, и подписи там видны всегда. #}
     <aside class="sidebar">
-        <div class="brand"><img class="mark" src="/static/logo.svg" alt="" width="20" height="20"> Tikpilot</div>
 
-        <div class="nav-group">Обзор</div>
-        <a class="nav-link {% if active == 'dashboard' %}active{% endif %}" href="/">Дашборд</a>
+        <div class="nav-group">{{ _('Обзор') }}</div>
+        <a class="nav-link {% if active == 'dashboard' %}active{% endif %}" href="/" title="{{ _('Дашборд') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-dashboard"/></svg><span class="label">{{ _('Дашборд') }}</span>
+        </a>
         {# Пороги отдельным пунктом не стоят: горящее живёт на мониторинге,
-           а правила в настройках. Счётчик один, про упавшие точки. Второй,
-           про сработавшие пороги, тут был и оказался лишним: два числа
-           подряд читаются как одно, а объяснение пряталось в подсказке.
-           Смысл счётчика позвать на страницу, а не пересказать её: блок
-           «Сейчас за порогом» там стоит первым. #}
-        <a class="nav-link {% if active == 'monitoring' %}active{% endif %}" href="/monitoring">
-            Мониторинг
+           а правила в настройках. Счётчик один, про упавшие точки. #}
+        <a class="nav-link {% if active == 'monitoring' %}active{% endif %}" href="/monitoring" title="{{ _('Мониторинг') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-monitoring"/></svg><span class="label">{{ _('Мониторинг') }}</span>
             {% if offline_count %}<span class="count">{{ offline_count }}</span>{% endif %}
         </a>
 
-        <div class="nav-group">Парк</div>
-        <a class="nav-link {% if active == 'devices' %}active{% endif %}" href="/devices">Устройства</a>
-        <a class="nav-link {% if active == 'groups' %}active{% endif %}" href="/groups">Группы</a>
+        <div class="nav-group">{{ _('Парк') }}</div>
+        <a class="nav-link {% if active == 'devices' %}active{% endif %}" href="/devices" title="{{ _('Устройства') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-devices"/></svg><span class="label">{{ _('Устройства') }}</span>
+        </a>
+        <a class="nav-link {% if active == 'groups' %}active{% endif %}" href="/groups" title="{{ _('Группы') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-groups"/></svg><span class="label">{{ _('Группы') }}</span>
+        </a>
         {% if can("clients.view") %}
-        <a class="nav-link {% if active == 'clients' %}active{% endif %}" href="/clients">Клиенты</a>
+        <a class="nav-link {% if active == 'clients' %}active{% endif %}" href="/clients" title="{{ _('Клиенты') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-clients"/></svg><span class="label">{{ _('Клиенты') }}</span>
+        </a>
         {% endif %}
         {% if can("wireguard.manage") %}
-        <a class="nav-link {% if active == 'wireguard' %}active{% endif %}" href="/wireguard">WireGuard</a>
+        <a class="nav-link {% if active == 'wireguard' %}active{% endif %}" href="/wireguard" title="WireGuard">
+            <svg viewBox="0 0 24 24"><use href="#i-wireguard"/></svg><span class="label">WireGuard</span>
+        </a>
         {% endif %}
 
-        <div class="nav-group">Операции</div>
-        <a class="nav-link {% if active == 'jobs' %}active{% endif %}" href="/jobs">
-            Задачи{% if running_jobs %}<span class="count">{{ running_jobs }}</span>{% endif %}
+        <div class="nav-group">{{ _('Операции') }}</div>
+        <a class="nav-link {% if active == 'jobs' %}active{% endif %}" href="/jobs" title="{{ _('Задачи') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-jobs"/></svg><span class="label">{{ _('Задачи') }}</span>
+            {% if running_jobs %}<span class="count">{{ running_jobs }}</span>{% endif %}
         </a>
-        {% if can("backups.view") %}<a class="nav-link {% if active == 'backups' %}active{% endif %}" href="/backups">Бэкапы</a>{% endif %}
+        {% if can("backups.view") %}
+        <a class="nav-link {% if active == 'backups' %}active{% endif %}" href="/backups" title="{{ _('Бэкапы') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-backups"/></svg><span class="label">{{ _('Бэкапы') }}</span>
+        </a>
+        {% endif %}
+        {% if can("terminal.use") %}
+        <a class="nav-link {% if active == 'terminal' %}active{% endif %}" href="/terminal" title="{{ _('Терминал') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-terminal"/></svg><span class="label">{{ _('Терминал') }}</span>
+        </a>
+        {% endif %}
+        <a class="nav-link {% if active == 'scripts' %}active{% endif %}" href="/scripts" title="{{ _('Скрипты') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-scripts"/></svg><span class="label">{{ _('Скрипты') }}</span>
+        </a>
         {# Один пункт на два журнала: вопрос у человека один, «что тут
            происходило», а источника два. Ведём туда, на что есть право. #}
-        {% if can("terminal.use") %}<a class="nav-link {% if active == 'terminal' %}active{% endif %}" href="/terminal">Терминал</a>{% endif %}
-        <a class="nav-link {% if active == 'scripts' %}active{% endif %}" href="/scripts">Скрипты</a>
         {% if can("syslog.view") or can("console.view") or can("visits.view") %}
-        <a class="nav-link {% if active in ('syslog', 'console', 'visits') %}active{% endif %}"
-           href="{% if can('syslog.view') %}/syslog{% elif can('console.view') %}/console{% else %}/logs/visits{% endif %}">Логи</a>
+        <a class="nav-link {% if active in ('syslog', 'console', 'visits') %}active{% endif %}" title="{{ _('Логи') }}"
+           href="{% if can('syslog.view') %}/syslog{% elif can('console.view') %}/console{% else %}/logs/visits{% endif %}">
+            <svg viewBox="0 0 24 24"><use href="#i-logs"/></svg><span class="label">{{ _('Логи') }}</span>
+        </a>
         {% endif %}
-        {% if can("history.view") %}<a class="nav-link {% if active == 'history' %}active{% endif %}" href="/history">История</a>{% endif %}
+        {% if can("history.view") %}
+        <a class="nav-link {% if active == 'history' %}active{% endif %}" href="/history" title="{{ _('История') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-history"/></svg><span class="label">{{ _('История') }}</span>
+        </a>
+        {% endif %}
 
         <div class="nav-spacer"></div>
 
-        <div class="nav-group">Система</div>
+        <div class="nav-group">{{ _('Система') }}</div>
         {% if can("settings.view") %}
-        <a class="nav-link {% if active == 'settings' %}active{% endif %}" href="/settings">
-            Настройки<span class="count quiet">{{ user.username }}</span>
+        <a class="nav-link {% if active == 'settings' %}active{% endif %}" href="/settings" title="{{ _('Настройки') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-settings"/></svg><span class="label">{{ _('Настройки') }}</span>
+            <span class="count quiet">{{ user.username }}</span>
         </a>
         {% endif %}
-        <button class="nav-link" style="background:none;border:none;cursor:pointer;font:inherit;width:100%;text-align:left"
-                onclick="toggleTheme()">Сменить тему</button>
-        <a class="nav-link" href="/logout">Выход</a>
-
-        {# Переключатель языка. Текущий язык не ссылка — нажимать некуда. #}
-        <div class="lang-switch">
+        {# Тема и выход — значками в верхней полосе, она есть и на телефоне.
+           Языку в узкой полосе места нет, поэтому он остаётся здесь. #}
+        <div class="lang-switch only-mobile">
             {% for code, name in languages %}
                 {% if code == lang %}
                     <span class="lang current">{{ name }}</span>
@@ -108,20 +214,18 @@
             {% endfor %}
         </div>
 
-        {% if demo_on %}
-        {# Режим витрины виден всегда, пока включён: иначе легко забыть
-           и потом долго гадать, почему точка называется не так #}
-        <form method="post" action="/demo/off" class="demo-note">
-            <input type="hidden" name="next" value="{{ request.url.path }}">
-            <span class="badge tag-pink">витрина</span>
-            <button class="linklike" type="submit">выключить</button>
-        </form>
-        {% endif %}
-
-        <div class="nav-foot">Tikpilot {{ app_version }}</div>
+        {# Кнопка ширины. Стоит последней и прижата к низу — так же,
+           как в панели роутера, и так она не мешает списку разделов.
+           Раскрытая колонка это состояние по умолчанию, свёрнутая
+           запоминается: сворачивает тот, кто уже выучил значки. #}
+        <button class="nav-toggle" type="button" onclick="toggleNav()"
+                title="{{ _('Свернуть меню') }}" aria-label="{{ _('Свернуть меню') }}">
+            <svg viewBox="0 0 24 24"><use href="#i-menu"/></svg>
+            <span class="label">Tikpilot {{ app_version }}</span>
+        </button>
     </aside>
 
-    <!-- --------------------------------------------------------- контент -->
+    <!-- ------------------------------------------------------------ контент -->
     <main class="content">
         {% block content %}{% endblock %}
     </main>
@@ -129,54 +233,31 @@
 
 {# ------------------------------------------------------- нижние вкладки #}
 {# Только на телефоне. Пять разделов, до которых дотягивается большой
-   палец; всё остальное в листе, который выезжает по кнопке «Ещё».
-   Значки рисуются здесь же: своих иконок в панели нет, а тянуть ради
-   пяти картинок чужой набор значило бы нарушить обещание работать
-   без интернета. #}
+   палец; всё остальное в листе, который выезжает по кнопке «Ещё». #}
 <div class="sheet-backdrop" onclick="closeMenu()"></div>
 <nav class="tabbar">
     <a class="tab-item {% if active == 'dashboard' %}active{% endif %}" href="/">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="3" width="7" height="8" rx="1.5"/>
-            <rect x="14" y="3" width="7" height="5" rx="1.5"/>
-            <rect x="3" y="14" width="7" height="7" rx="1.5"/>
-            <rect x="14" y="11" width="7" height="10" rx="1.5"/>
-        </svg>
+        <svg viewBox="0 0 24 24"><use href="#i-dashboard"/></svg>
         <span>{{ _('Дашборд') }}</span>
     </a>
     <a class="tab-item {% if active == 'monitoring' %}active{% endif %}" href="/monitoring">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>
-        </svg>
+        <svg viewBox="0 0 24 24"><use href="#i-monitoring"/></svg>
         <span>{{ _('Мониторинг') }}</span>
         {% if offline_count %}<span class="dot">{{ offline_count }}</span>{% endif %}
     </a>
     <a class="tab-item {% if active == 'devices' %}active{% endif %}" href="/devices">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="2.5" y="13" width="19" height="7" rx="2"/>
-            <path d="M7 16.5h.01M11 16.5h.01"/>
-            <path d="M12 10V4M12 4l-3 3M12 4l3 3"/>
-        </svg>
+        <svg viewBox="0 0 24 24"><use href="#i-devices"/></svg>
         <span>{{ _('Устройства') }}</span>
     </a>
     {% if can("syslog.view") or can("console.view") or can("visits.view") %}
     <a class="tab-item {% if active in ('syslog', 'console', 'visits') %}active{% endif %}"
        href="{% if can('syslog.view') %}/syslog{% elif can('console.view') %}/console{% else %}/logs/visits{% endif %}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M4 6h16M4 11h11M4 16h16M4 21h8"/>
-        </svg>
+        <svg viewBox="0 0 24 24"><use href="#i-logs"/></svg>
         <span>{{ _('Логи') }}</span>
     </a>
     {% endif %}
     <button class="tab-item" type="button" onclick="toggleMenu()" aria-label="{{ _('Ещё') }}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
-             stroke-linecap="round" aria-hidden="true">
-            <path d="M4 7h16M4 12h16M4 17h16"/>
-        </svg>
+        <svg viewBox="0 0 24 24"><use href="#i-menu"/></svg>
         <span>{{ _('Ещё') }}</span>
     </button>
 </nav>
@@ -187,6 +268,17 @@
 {# Словарь для строк, зашитых в app.js. Готовится на сервере: браузер
    не знает ни выбранного языка, ни каталога. #}
 <script>window.I18N = {{ js_i18n | tojson }};</script>
+<script>
+    // Ширина бокового меню. Держим в localStorage: выбор ширины это
+    // привычка человека, а не свойство страницы, и переживать переходы
+    // между разделами он обязан.
+    function toggleNav() {
+        var d = document.documentElement;
+        var open = d.dataset.nav === 'open';
+        if (open) { delete d.dataset.nav; } else { d.dataset.nav = 'open'; }
+        try { localStorage.setItem('tikpilot-nav', open ? 'narrow' : 'open'); } catch (e) { /* приватный режим */ }
+    }
+</script>
 {% include "partials/validation_js.html" %}
 <script src="/static/sort.js"></script>
 <script src="/static/app.js"></script>
