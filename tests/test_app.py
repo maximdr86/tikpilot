@@ -10913,3 +10913,56 @@ def test_screenshot_mode_prefers_the_longer_name(client, router):
                       "тут Магазин Пекарня, а тут просто Магазин")
     assert out == "тут ДЛИННОЕ, а тут просто КОРОТКОЕ"
     demo.forget()
+
+
+def test_untrusted_network_page_says_what_to_do():
+    """
+    Отказ по сетям объясняет себя.
+
+    Прежний текст был «панель доступна только из доверенной сети» и всё.
+    Человек, запустивший панель у себя с рабочим `.env`, получал его на
+    своей же машине и искал поломку где угодно, кроме настройки, которую
+    сам когда-то и задал. Теперь страница называет адрес гостя и саму
+    настройку, но не перечисляет сети: её видит кто угодно.
+    """
+    from app.config import settings
+    from app.netguard import parse_networks
+
+    saved = settings.admin_networks
+    settings.admin_networks = parse_networks("10.0.0.0/8")
+    try:
+        with _anon() as outside:
+            r = outside.get("/login")
+            assert r.status_code == 403
+            assert "ADMIN_NETWORKS" in r.text
+            assert "testclient" in r.text or "Ваш адрес" in r.text
+            assert "10.0.0.0/8" not in r.text, "список сетей показывать нельзя"
+    finally:
+        settings.admin_networks = saved
+
+
+def test_icons_carry_their_own_drawing_rules(client):
+    """
+    Каждый значок в наборе умеет рисоваться сам.
+
+    Стиль к содержимому <use> применяется от места вставки, а не от
+    набора. Пока признаки рисования жили только в правиле для бокового
+    меню, нижние вкладки телефона остались без них: «Логи» и «Ещё»,
+    нарисованные одними линиями, стали невидимыми, а «Устройства»
+    из прямоугольников превратились в чёрный брусок.
+    """
+    import re
+
+    page = client.get("/devices").text
+    icons = re.findall(r'<g id="(i-[a-z]+)"([^>]*)>', page)
+    assert icons, "набор значков не найден на странице"
+
+    naked = [name for name, attrs in icons if 'stroke="currentColor"' not in attrs
+             or 'fill="none"' not in attrs]
+    assert not naked, f"значки без признаков рисования: {naked}"
+
+    # Каждая ссылка ведёт на существующий значок: опечатка в имени
+    # это пустое место в меню, которое легко не заметить
+    known = {name for name, _ in icons}
+    used = set(re.findall(r'<use href="#(i-[a-z]+)"', page))
+    assert used <= known, f"ссылки на несуществующие значки: {sorted(used - known)}"

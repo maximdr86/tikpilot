@@ -2064,5 +2064,6 @@
   "Отчёт": "Report",
   "нет данных": "no data",
   "Столбик это доля времени в сети за день. Шкала полная, от нуля до ста процентов.": "A bar is the share of the day spent online. The scale is full, from zero to one hundred percent.",
-  "Столбик это доля времени в сети по всем точкам сразу. Шкала полная, от нуля до ста процентов.": "A bar is the share of time online across all sites at once. The scale is full, from zero to one hundred percent."
+  "Столбик это доля времени в сети по всем точкам сразу. Шкала полная, от нуля до ста процентов.": "A bar is the share of time online across all sites at once. The scale is full, from zero to one hundred percent.",
+  "Свернуть меню": "Collapse menu"
 }

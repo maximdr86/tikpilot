@@ -1,9 +1,16 @@
 /* ===========================================================================
-   Tikpilot — оформление в духе WebFig.
+   Tikpilot — оформление в духе панели Keenetic.
 
-   Светлая рабочая область, тёмно-синяя боковая панель, плотные таблицы
-   с тонкими границами, минимум теней и скруглений. Всё на собственном CSS:
-   ни сборщиков, ни CDN — интерфейс работает в изолированной сети.
+   Крупный заголовок страницы, много воздуха вокруг блоков, плоские
+   поверхности на тонкой рамке без теней, контурные кнопки, вкладки
+   с подчёркиванием, шапка таблицы отдельной заливкой. Цвета остались
+   свои: менялись размеры, отступы, рамки и форма элементов, а палитра
+   ниже та же, что была. Таблицы намеренно оставлены плотными: у Keenetic
+   строка 57px, здесь 30px — панель рассчитана на парк в полсотни точек,
+   и высота строки тут стоит дороже воздуха.
+
+   Всё на собственном CSS: ни сборщиков, ни CDN — интерфейс работает
+   в изолированной сети.
 
    Тёмная тема включается атрибутом data-theme="dark" на <html>.
    =========================================================================== */
@@ -60,7 +67,13 @@
     --hl-pink:       #b3246e;
 
     --radius:        4px;
-    --radius-lg:     6px;
+    --radius-lg:     8px;
+
+    /* Каркас: высота верхней полосы и ширина колонки разделов. Ширина
+       живёт переменной, потому что от неё зависят и сама колонка,
+       и её содержимое, и переход между двумя состояниями. */
+    --topbar-h:      56px;
+    --rail-w:        228px;
     --shadow:        0 2px 8px rgba(20, 40, 36, .08);
     --shadow-lg:     0 8px 28px rgba(20, 40, 36, .16);
     --row-h:         30px;
@@ -121,7 +134,7 @@ body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font: 13px/1.45 "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+    font: 14px/1.55 "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
 }
 
@@ -129,102 +142,222 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 /* ================================================================== layout */
-.layout { display: flex; min-height: 100vh; }
 
-.sidebar {
-    width: 210px;
-    flex: 0 0 210px;
-    background: linear-gradient(180deg, var(--nav-bg) 0%, var(--nav-bg-2) 100%);
-    border-right: 1px solid var(--nav-border);
-    padding: 0 0 12px;
-    display: flex;
-    flex-direction: column;
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    overflow-y: auto;
-}
+/* Набор значков лежит в начале страницы и сам ничего не рисует */
+.sprite { display: none; }
 
-.brand {
-    display: flex; align-items: center; gap: 9px;
-    font-size: 15px; font-weight: 600; letter-spacing: .2px;
-    color: var(--accent);
-    padding: 14px 14px 13px;
-    background: var(--nav-bg-2);
+/* --------------------------------------------------------- верхняя полоса */
+/* Липкая: остаётся на месте при прокрутке, поэтому шапки таблиц ниже
+   отсчитывают свою липкость от её высоты, а не от края экрана. */
+.topbar {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; gap: 14px;
+    height: var(--topbar-h);
+    padding-right: 14px;
+    background: var(--nav-bg);
     border-bottom: 1px solid var(--nav-border);
-    margin-bottom: 8px;
 }
+.brand {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 20px;
+    font-size: 16px; font-weight: 600; letter-spacing: .2px;
+    color: var(--accent); text-decoration: none; white-space: nowrap;
+}
+.brand:hover { text-decoration: none; }
 .brand .mark { display: block; border-radius: 4px; }
 .login-card .head .mark { display: block; margin: 0 auto 8px; border-radius: 8px; }
 
+/* Счётчик упавших точек рядом с названием: единственное число, которое
+   должно быть видно с любой страницы. */
+.topbar-count {
+    background: var(--err); color: #fff;
+    border-radius: 9px; padding: 0 8px;
+    font-size: 11px; font-weight: 700; line-height: 19px;
+    text-decoration: none;
+}
+.topbar-count:hover { text-decoration: none; opacity: .9; }
+.topbar .demo-note { padding: 0; }
+
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+
+/* Кнопка-значок: квадрат под значок без рамки и заливки, подсветка
+   только под курсором. Такими в панели роутера сделан весь правый край
+   верхней полосы. */
+.icon-btn {
+    display: grid; place-items: center;
+    width: 36px; height: 36px;
+    border: none; border-radius: var(--radius-lg);
+    background: none; cursor: pointer;
+    color: var(--nav-text-dim); text-decoration: none;
+}
+.icon-btn svg {
+    width: 20px; height: 20px;
+    fill: none; stroke: currentColor; stroke-width: 1.7;
+    stroke-linecap: round; stroke-linejoin: round;
+}
+.icon-btn:hover { background: var(--nav-hover); color: var(--nav-text-on); text-decoration: none; }
+
+/* ------------------------------------------------------------- разделы */
+.layout { display: flex; align-items: flex-start; min-height: calc(100vh - var(--topbar-h)); }
+
+.sidebar {
+    width: var(--rail-w);
+    flex: 0 0 var(--rail-w);
+    background: var(--nav-bg);
+    border-right: 1px solid var(--nav-border);
+    padding: 8px 0 0;
+    display: flex;
+    flex-direction: column;
+    position: sticky;
+    top: var(--topbar-h);
+    height: calc(100vh - var(--topbar-h));
+    overflow-y: auto;
+    overflow-x: hidden;
+    transition: width .16s ease, flex-basis .16s ease;
+}
+/* Колонка это flex-столбец с прокруткой. Без запрета на сжатие браузер,
+   когда разделы не помещаются по высоте, ужимает не список целиком,
+   а каждый пункт понемногу — и заголовкам групп срезает буквы. */
+.sidebar > * { flex: 0 0 auto; }
+
 .nav-group {
     color: var(--nav-text-dim);
-    font-size: 10px; font-weight: 700; letter-spacing: .9px; text-transform: uppercase;
-    padding: 12px 15px 5px;
+    font-size: 11px; font-weight: 700; letter-spacing: .9px; text-transform: uppercase;
+    padding: 14px 22px 6px;
+    white-space: nowrap; overflow: hidden;
 }
 
 .nav-link {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    padding: 7px 15px;
+    display: flex; align-items: center; gap: 12px;
+    height: 42px; margin: 2px 10px; padding: 0 12px;
+    border: none; background: none; font: inherit; font-size: 14px;
+    border-radius: var(--radius-lg);
     color: var(--nav-text);
-    text-decoration: none;
-    font-size: 13px;
-    border-left: 3px solid transparent;
+    text-decoration: none; text-align: left;
+    white-space: nowrap; overflow: hidden; cursor: pointer;
 }
+.nav-link svg {
+    width: 22px; height: 22px; flex: 0 0 22px;
+    fill: none; stroke: currentColor; stroke-width: 1.7;
+    stroke-linecap: round; stroke-linejoin: round;
+    color: var(--nav-text-dim);
+}
+.nav-link .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .nav-link:hover { background: var(--nav-hover); color: var(--nav-text-on); text-decoration: none; }
+.nav-link:hover svg { color: var(--nav-text); }
+/* Выбранный раздел помечен заливкой блока целиком и цветным значком,
+   а не полоской у края: узкой колонке полоску негде показать. */
 .nav-link.active {
-    background: var(--nav-hover);
-    border-left-color: var(--accent);
+    background: var(--accent-soft);
     color: var(--nav-text-on);
     font-weight: 600;
 }
+.nav-link.active svg { color: var(--accent); }
 .nav-link .count {
+    flex: 0 0 auto;
     background: var(--accent); color: #fff;
-    border-radius: 9px; padding: 0 6px;
-    font-size: 11px; font-weight: 600; line-height: 16px;
+    border-radius: 9px; padding: 0 7px;
+    font-size: 11px; font-weight: 600; line-height: 18px;
 }
 .nav-link .count.quiet { background: var(--panel-3); color: var(--text-soft); }
-.nav-spacer { flex: 1; }
-.nav-foot {
-    color: var(--nav-text-dim); font-size: 11px;
-    padding: 8px 15px 0; border-top: 1px solid var(--nav-border); margin-top: 8px;
+.nav-spacer { flex: 1 1 auto; min-height: 12px; }
+
+/* Переключатель языка живёт в верхней полосе, но на телефоне она узкая
+   и языку там места нет — тогда он показывается в листе разделов. */
+.sidebar .only-mobile { display: none; }
+
+/* Кнопка ширины внизу колонки. Когда колонка раскрыта, рядом с кнопкой
+   стоит версия панели: место всё равно пустует, а строку с версией
+   иначе пришлось бы держать отдельно. */
+.nav-toggle {
+    display: flex; align-items: center; gap: 12px;
+    height: 46px; margin-top: 6px; padding: 0 22px;
+    border: none; border-top: 1px solid var(--nav-border);
+    background: none; cursor: pointer;
+    font: inherit; font-size: 11px;
+    color: var(--nav-text-dim);
+    white-space: nowrap; overflow: hidden;
+}
+.nav-toggle svg {
+    width: 22px; height: 22px; flex: 0 0 22px;
+    fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round;
+}
+.nav-toggle:hover { background: var(--nav-hover); color: var(--nav-text-on); }
+
+
+/* ------------------------------------------- узкая колонка, только значки */
+/* Состояние по умолчанию на большом экране: раздел читается по значку,
+   название всплывает подсказкой браузера. Правила заперты в медиазапрос,
+   чтобы на телефоне, где колонка становится листом снизу, они не мешали
+   подписям. */
+@media (min-width: 721px) {
+    html:not([data-nav="open"]) { --rail-w: 68px; }
+
+    html:not([data-nav="open"]) .nav-link {
+        position: relative;
+        width: 42px; margin: 3px auto; padding: 0;
+        justify-content: center;
+    }
+    html:not([data-nav="open"]) .nav-link .label { display: none; }
+    /* Счётчик перестаёт быть строкой в конце пункта и становится меткой
+       в углу значка — как значок непрочитанного в мобильном приложении */
+    html:not([data-nav="open"]) .nav-link .count {
+        position: absolute; top: 2px; right: 2px;
+        min-width: 15px; padding: 0 4px;
+        font-size: 10px; line-height: 15px; text-align: center;
+    }
+    html:not([data-nav="open"]) .nav-link .count.quiet { display: none; }
+
+    /* Название группы разделов в узкой колонке не помещается, и вместо
+       него остаётся то, ради чего группа и заведена: черта между
+       блоками. Перед первой группой чертить нечего. */
+    html:not([data-nav="open"]) .nav-group {
+        height: 1px; padding: 0; margin: 9px 16px;
+        background: var(--nav-border);
+        color: transparent; font-size: 0;
+    }
+    html:not([data-nav="open"]) .nav-group:first-of-type { display: none; }
+
+    html:not([data-nav="open"]) .nav-toggle { justify-content: center; padding: 0; }
+    html:not([data-nav="open"]) .nav-toggle .label { display: none; }
 }
 
-.content { flex: 1; padding: 16px 20px 48px; min-width: 0; }
+.content { flex: 1; padding: 24px 24px 64px; min-width: 0; }
 
 /* --------------------------------------------------------------- заголовок */
 .page-head {
     display: flex; align-items: flex-start; justify-content: space-between;
-    gap: 14px; flex-wrap: wrap;
-    padding-bottom: 11px; margin-bottom: 14px;
-    border-bottom: 1px solid var(--border);
+    gap: 16px; flex-wrap: wrap;
+    margin-bottom: 22px;
 }
-.page-head h1 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.2px; }
-.page-head .sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+/* Заголовок крупный и без линии под ним: у Keenetic страница начинается
+   с имени раздела и пояснения к нему, а не с разлинованной шапки.
+   Черту убрал сознательно — она делила страницу там, где деления нет. */
+.page-head h1 { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.25; }
+.page-head .sub { color: var(--muted); font-size: 13.5px; margin-top: 6px; }
 
 /* Полоска вкладок раздела. Обычные ссылки: у каждой вкладки свой адрес,
    и на неё можно дать ссылку или открыть в новом окне. */
+/* Вкладки-подчёркивания вместо вкладок-папок: активная помечена чертой
+   снизу, а не рамкой вокруг. Так полоска читается как строка ссылок,
+   которой она и является, и не спорит с рамкой блока под ней. */
 .tabs {
-    display: flex; flex-wrap: wrap; gap: 2px;
-    margin: -6px 0 14px;
+    display: flex; flex-wrap: wrap; gap: 24px;
+    margin: 0 0 22px;
     border-bottom: 1px solid var(--border);
 }
 .tab {
-    padding: 7px 13px;
+    padding: 0 0 11px;
     color: var(--muted);
-    font-size: 13px;
-    border: 1px solid transparent;
-    border-bottom: none;
-    border-radius: var(--radius) var(--radius) 0 0;
+    font-size: 14px;
+    border-bottom: 2px solid transparent;
     margin-bottom: -1px;
 }
-.tab:hover { color: var(--text); background: var(--panel-2); text-decoration: none; }
+.tab:hover { color: var(--text); text-decoration: none; }
 .tab.active {
-    color: var(--text);
+    color: var(--accent);
     font-weight: 600;
-    background: var(--panel);
-    border-color: var(--border);
-    border-bottom: 1px solid var(--panel);
+    border-bottom-color: var(--accent);
 }
 
 /* Красным то, что требует внимания прямо сейчас. Отдельным классом,
@@ -236,16 +369,18 @@ a:hover { text-decoration: underline; }
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    margin-bottom: 14px;
+    margin-bottom: 22px;
 }
+/* Заголовок карточки без заливки и без черты: у Keenetic это просто
+   негромкая подпись над содержимым. Заливка делала из него ещё одну
+   шапку таблицы, а шапка на карточке уже есть — своя, у таблицы. */
 .panel > h2 {
     margin: 0;
-    padding: 9px 13px;
-    font-size: 12px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: .6px;
-    color: var(--text-soft);
-    background: var(--panel-2);
-    border-bottom: 1px solid var(--border);
+    padding: 15px 18px 9px;
+    font-size: 13px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: normal;
+    color: var(--muted);
+    background: none;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
 }
@@ -253,7 +388,7 @@ a:hover { text-decoration: underline; }
     font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 12px;
     display: flex; align-items: center; gap: 8px;
 }
-.panel .panel-body { padding: 13px; }
+.panel .panel-body { padding: 6px 18px 18px; }
 
 /* ------------------------------------------------------- требует внимания
 
@@ -341,11 +476,18 @@ a:hover { text-decoration: underline; }
 .panel > .table-wrap:last-child { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 
 table { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 13px; }
-th, td { padding: 5px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+th, td { padding: 5px 9px; text-align: left; border-bottom: 1px solid var(--border); }
+/* Шапка таблицы: отдельная заливка, обычный регистр, тот же кегль, что
+   и строки. Капитель мелким шрифтом читается как служебная надпись,
+   а у Keenetic шапка это такая же строка, только жирная. */
 th {
-    background: var(--panel-2);
-    font-size: 11px; font-weight: 700;
-    color: var(--text-soft); text-transform: uppercase; letter-spacing: .5px;
+    background: var(--panel-3);
+    padding: 9px 9px;
+    font-size: 13px; font-weight: 700;
+    color: var(--text); text-transform: none; letter-spacing: normal;
+    /* Липкость отсчитывается от .table-wrap: это он прокручивается,
+       а не страница. Поэтому ноль, а не высота верхней полосы — иначе
+       шапка отъезжает вниз и накрывает первую строку. */
     white-space: nowrap; position: sticky; top: 0; z-index: 1;
     border-bottom: 1px solid var(--border-strong);
 }
@@ -360,7 +502,9 @@ th.sortable-col::after {
 th.sorted-asc::after  { content: "▲"; opacity: 1; color: var(--accent); font-size: 8px; }
 th.sorted-desc::after { content: "▼"; opacity: 1; color: var(--accent); font-size: 8px; }
 
-tbody tr:nth-child(even) { background: var(--panel-2); }
+/* Чересстрочной заливки нет: строки разделены линейкой, как у Keenetic.
+   Две метки одного и того же — граница и заливка — спорят друг с другом,
+   а на широкой таблице глаз ведёт линейка. */
 tbody tr:hover { background: var(--accent-soft); }
 tbody tr:last-child td { border-bottom: none; }
 td.nowrap, th.nowrap { white-space: nowrap; }
@@ -373,7 +517,7 @@ td.mono, .mono { font-family: Consolas, "SF Mono", Menlo, monospace; font-size: 
 /* ================================================================== бейджи */
 .badge {
     display: inline-flex; align-items: center; gap: 5px;
-    padding: 1px 7px; border-radius: 3px;
+    padding: 2px 8px; border-radius: var(--radius);
     font-size: 11px; font-weight: 600; white-space: nowrap;
     background: var(--panel-3); color: var(--text-soft);
     border: 1px solid var(--border);
@@ -412,54 +556,60 @@ html[data-theme="dark"] .tag-cyan   { color:#6cc7d6; background:#152a2f; border-
 html[data-theme="dark"] .tag-pink   { color:#e493ba; background:#2e1c26; border-color:#4c2d3c; }
 
 /* ================================================================== кнопки */
+/* Кнопки контурные: прозрачный фон, рамка в цвет и подпись в цвет.
+   Главное действие отличается не заливкой, а цветом рамки и текста —
+   так у Keenetic, и так ряд кнопок над таблицей перестаёт быть
+   разноцветной лентой. Градиента нет: он выдаёт возраст интерфейса. */
 .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    padding: 5px 11px;
+    padding: 6px 14px;
     border-radius: var(--radius);
     border: 1px solid var(--border-strong);
-    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    background: transparent;
     color: var(--text);
-    font-size: 12.5px; font-weight: 600; font-family: inherit;
+    font-size: 13px; font-weight: 500; font-family: inherit;
     cursor: pointer; white-space: nowrap;
-    transition: background .1s, border-color .1s;
+    transition: background .1s, border-color .1s, color .1s;
 }
 .btn:hover { background: var(--panel-3); border-color: var(--muted); text-decoration: none; color: var(--text); }
 .btn:active { background: var(--panel-3); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn.primary {
-    background: linear-gradient(180deg, var(--accent) 0%, var(--accent-hover) 100%);
-    border-color: var(--accent-hover); color: #fff;
+    background: transparent;
+    border-color: var(--accent); color: var(--accent); font-weight: 600;
 }
-.btn.primary:hover { background: var(--accent-hover); color: #fff; }
-.btn.danger { color: var(--err); border-color: rgba(179, 36, 31, .40); background: var(--err-soft); }
+.btn.primary:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.btn.danger { color: var(--err); border-color: rgba(179, 36, 31, .40); background: transparent; }
 .btn.danger:hover { background: var(--err); border-color: var(--err); color: #fff; }
-.btn.sm { padding: 2px 7px; font-size: 11.5px; }
-.btn-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.btn.sm { padding: 2px 8px; font-size: 11.5px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
 /* =================================================================== формы */
-label { display: block; font-size: 11px; color: var(--text-soft); margin-bottom: 3px; font-weight: 600; }
+/* Подпись поля обычным начертанием и в полный кегль: у Keenetic она
+   часть текста страницы, а не мелкая техническая метка. */
+label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; font-weight: 400; }
 input[type=text], input[type=password], input[type=number], input[type=search],
 input[type=file], select, textarea {
-    width: 100%; padding: 5px 8px;
+    width: 100%; padding: 8px 10px;
     border-radius: var(--radius);
     border: 1px solid var(--border-strong);
     background: var(--panel); color: var(--text);
-    font: inherit; font-size: 13px; outline: none;
+    font: inherit; font-size: 14px; outline: none;
 }
 input:focus, select:focus, textarea:focus {
     border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft);
 }
 textarea { min-height: 110px; resize: vertical; font-family: Consolas, Menlo, monospace; font-size: 12.5px; }
-.field { margin-bottom: 11px; }
-.field .hint, .hint { color: var(--muted); font-size: 11.5px; margin-top: 3px; font-weight: 400; }
+.field { margin-bottom: 14px; }
+.field .hint, .hint { color: var(--muted); font-size: 12.5px; margin-top: 4px; font-weight: 400; }
 .check { display: flex; align-items: center; gap: 7px; }
 .check input { width: 14px; height: 14px; accent-color: var(--accent); }
-.check label { margin: 0; color: var(--text); font-weight: 500; font-size: 12.5px; }
+.check label { margin: 0; color: var(--text); font-weight: 400; font-size: 13.5px; }
 
 .filters {
-    display: flex; gap: 9px; flex-wrap: wrap; align-items: flex-end;
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end;
     background: var(--panel); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); padding: 10px 12px; margin-bottom: 12px;
+    border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: 20px;
 }
 .filters .field { margin: 0; min-width: 140px; }
 .filters .grow { flex: 1; min-width: 200px; }
@@ -574,7 +724,7 @@ textarea { min-height: 110px; resize: vertical; font-family: Consolas, Menlo, mo
 .toast.ok { border-left-color: var(--ok); }
 
 .muted { color: var(--muted); }
-.small { font-size: 11.5px; }
+.small { font-size: 12.5px; }
 .result-cell {
     max-width: 480px; white-space: pre-wrap; word-break: break-word;
     font-family: Consolas, Menlo, monospace; font-size: 11.5px;
@@ -629,7 +779,7 @@ textarea { min-height: 110px; resize: vertical; font-family: Consolas, Menlo, mo
    Отступы под вырез и полоску «домой» раздаёт env(safe-area-inset-*):
    в браузере они нулевые, поэтому одна и та же вёрстка годится и там
    и там. */
-.mobile-top, .tabbar, .sheet-backdrop { display: none; }
+.tabbar, .sheet-backdrop { display: none; }
 
 @media (max-width: 720px) {
     /* Страховка от бокового съезда: что бы ни оказалось шире экрана,
@@ -640,24 +790,29 @@ textarea { min-height: 110px; resize: vertical; font-family: Consolas, Menlo, mo
        правилом min-width для колонок сетки. */
     html, body { overflow-x: clip; }
 
-    .layout { flex-direction: column; }
+    /* Растягивание вернуть обязательно. У .layout стоит
+       align-items: flex-start, и на большом экране это про вертикаль:
+       колонка меню не тянется на всю высоту страницы. А в вертикальном
+       флексе то же правило означает «по ширине содержимого», и колонка
+       с широкой таблицей распирала себя шире экрана. Вылезшее срезал
+       overflow-x: clip, поэтому половина страницы просто пропадала,
+       и даже прокрутить к ней было нельзя. */
+    .layout { flex-direction: column; align-items: stretch; }
 
-    /* Верхняя полоска. Липкая: на длинных таблицах видно, где ты. */
-    .mobile-top {
-        display: flex; align-items: center; gap: 8px;
-        position: sticky; top: 0; z-index: 30;
-        padding: 8px 12px;
-        padding-top: calc(8px + env(safe-area-inset-top));
-        background: var(--nav-bg);
-        border-bottom: 1px solid var(--nav-border);
-        color: var(--accent); font-weight: 600; font-size: 15px;
+    /* Верхняя полоса та же, что на большом экране, только ниже и без
+       переключателя языка: на телефоне язык живёт в листе разделов.
+       Отступ под вырез добавляется к высоте, иначе название уезжает
+       под чёлку. */
+    :root { --topbar-h: calc(48px + env(safe-area-inset-top)); }
+    .topbar {
+        height: var(--topbar-h);
+        padding-top: env(safe-area-inset-top);
+        padding-right: 6px;
+        gap: 8px;
+        z-index: 30;
     }
-    .mobile-top .count {
-        margin-left: auto;
-        background: var(--err); color: #fff;
-        border-radius: 9px; padding: 0 7px;
-        font-size: 11px; font-weight: 700; line-height: 17px;
-    }
+    .brand { padding: 0 12px; font-size: 15px; }
+    .lang-switch.top { display: none; }
 
     /* Боковое меню превращается в лист, выезжающий снизу */
     .sidebar {
@@ -675,9 +830,12 @@ textarea { min-height: 110px; resize: vertical; font-family: Consolas, Menlo, mo
     }
     body.menu-open .sidebar { transform: none; }
     body.menu-open { overflow: hidden; }
-    .brand { border-radius: 14px 14px 0 0; }
-    .nav-link { min-height: 44px; }   /* палец, а не курсор */
+    .nav-link { min-height: 46px; }   /* палец, а не курсор */
     .nav-spacer { display: none; }
+    /* Кнопка ширины листу не нужна: он и так во всю ширину экрана */
+    .nav-toggle { display: none; }
+    /* Тема, выход и язык: на телефоне их неоткуда взять, кроме листа */
+    .sidebar .only-mobile { display: flex; }
 
     .sheet-backdrop {
         display: block; position: fixed; inset: 0; z-index: 50;
@@ -705,6 +863,9 @@ textarea { min-height: 110px; resize: vertical; font-family: Consolas, Menlo, mo
     .tab-item span {
         max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
+    /* Размер здесь, а рисование на самих значках в наборе: стиль
+       к содержимому <use> применяется от места вставки, и правило,
+       написанное для бокового меню, до вкладок не доходит. */
     .tab-item svg { width: 22px; height: 22px; }
     .tab-item.active { color: var(--accent); }
     .tab-item:hover { text-decoration: none; }
@@ -763,6 +924,9 @@ textarea { min-height: 110px; resize: vertical; font-family: Consolas, Menlo, mo
 }
 
 .lang-switch .lang:hover { background: var(--nav-hover); }
+
+/* Тот же переключатель в верхней полосе: без отступов, в строку со значками */
+.lang-switch.top { padding: 0; margin-right: 6px; }
 
 .lang-switch .lang.current {
     color: var(--accent);
