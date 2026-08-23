@@ -10804,6 +10804,112 @@ def test_hour_report_has_enough_bars(client, router):
     _add_device(client, router, "часовой-график")
     buckets = monitor.availability_buckets(1)
     assert len(buckets) >= 10, len(buckets)
-    # Подписи выровнены по пятиминуткам, а не по случайным числам
-    assert all(b["label"].endswith(("0", "5")) for b in buckets), \
+    # Подписи выровнены по пятиминуткам, а не по случайным числам.
+    # Кроме первой: она обрезана левым краем окна и честно показывает
+    # его начало, а не круглое время, которого в окне не было
+    assert all(b["label"].endswith(("0", "5")) for b in buckets[1:]), \
         [b["label"] for b in buckets[:5]]
+
+
+def test_screenshot_mode_hides_short_names(client, router):
+    """
+    Короткое имя тоже прячется: витрина пропускала «NSK» и «URS».
+
+    Нашлось глазами на живом парке: точки с трёхбуквенными названиями
+    и группа «УРС» ехали в снимок как есть, потому что подмена
+    отбрасывала всё короче четырёх символов. Запрет был не про длину
+    как таковую, а про строчную латиницу в разметке: `rx` подменился бы
+    внутри `rx_bps`, и страница бы поехала.
+    """
+    from app import demo
+    from app.database import execute, utcnow
+
+    demo.forget()
+    _add_device(client, router, "NSK")
+    _add_device(client, router, "URS")
+    execute("INSERT INTO groups (name, created_at) VALUES (?, ?)", ("УРС", utcnow()))
+    _add_device(client, router, "rx")
+
+    table = demo.build()
+    assert "NSK" in table, "трёхбуквенное имя должно подменяться"
+    assert "URS" in table
+    assert "УРС" in table, "короткое имя группы тоже"
+    assert "rx" not in table, "строчная латиница ломает разметку, её не трогаем"
+
+    # И проверка на готовой строке: имя ушло, а поле в разметке цело
+    assert "NSK" not in demo.mask("Точка NSK не отвечает")
+    assert demo.mask('{"rx_bps": 1200}') == '{"rx_bps": 1200}'
+    demo.forget()
+
+
+def test_screenshot_mode_keeps_numbers_and_tech_words(client, router):
+    """
+    Номера и технические сокращения остаются как есть.
+
+    Точка с именем «12» переписала бы все двенадцатки на странице,
+    включая счётчики, а «DNS» встречается в списке сервисов роутера.
+    """
+    from app import demo
+
+    demo.forget()
+    _add_device(client, router, "12")
+    _add_device(client, router, "DNS")
+
+    table = demo.build()
+    assert "12" not in table
+    assert "DNS" not in table
+    demo.forget()
+
+
+def test_screenshot_mode_is_fast_enough_to_use(client, router):
+    """
+    Подмена не должна стоить секунду на страницу.
+
+    Было именно так: шаблон собирался перечислением, каждый ключ со
+    своими границами слова, и на парке в полсотни точек движок примерял
+    двести с лишним веток на каждом символе. Список устройств в 240 КБ
+    обрабатывался 1,3 секунды, и панель в режиме витрины заметно
+    тормозила. Теперь границы вынесены наружу, а ключи сложены
+    в префиксное дерево.
+
+    Порог с большим запасом: тест меряет время, а машина под тестами
+    бывает занята. Если он падает, значит сломали не скорость на
+    проценты, а способ сборки шаблона.
+    """
+    import time
+
+    from app import demo
+
+    demo.forget()
+    table = {}
+    for i in range(200):
+        demo._add(table, f"Магазин Огонёк {i:03d}", f"Site {i}")
+    page = ("<tr><td>Магазин Огонёк 007</td><td>ничего интересного</td></tr>\n" * 3000)
+
+    pattern = demo._pattern(table, "ru")
+    started = time.perf_counter()
+    pattern.sub(lambda m: table.get(m.group(0), m.group(0)), page)
+    spent = time.perf_counter() - started
+
+    assert spent < 0.5, f"подмена заняла {spent:.2f} с на {len(page) // 1024} КБ"
+    demo.forget()
+
+
+def test_screenshot_mode_prefers_the_longer_name(client, router):
+    """
+    Длинное имя выигрывает у короткого, начинающегося так же.
+
+    «Магазин» не должен подменяться внутри «Магазин Пекарня»: от
+    длинного имени остался бы настоящий хвост. Раньше это держалось
+    на сортировке ключей по длине, теперь на жадности дерева, и
+    проверить это надо явно.
+    """
+    from app import demo
+
+    demo.forget()
+    table = {"Магазин Пекарня": "ДЛИННОЕ", "Магазин": "КОРОТКОЕ"}
+    pattern = demo._pattern(table, "ru")
+    out = pattern.sub(lambda m: table.get(m.group(0), m.group(0)),
+                      "тут Магазин Пекарня, а тут просто Магазин")
+    assert out == "тут ДЛИННОЕ, а тут просто КОРОТКОЕ"
+    demo.forget()
