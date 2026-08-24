@@ -172,6 +172,11 @@
                         {% set cls = 'bad' if r.uptime_percent < 95 else ('warn' if r.uptime_percent < 99.5 else '') %}
                         <span class="uptime-bar {{ cls }}"><i style="width: {{ r.uptime_percent }}%"></i></span>
                         <strong>{{ r.uptime_percent }}%</strong>
+                        {# Точку могли завести уже внутри окна: процент считается
+                           с этого момента, а не с начала суток или недели #}
+                        {% if r.covered < 100 %}
+                        <span class="muted small">за {{ r.covered }}% окна</span>
+                        {% endif %}
                     </td>
                     <td class="nowrap" data-sort="{{ r.down_seconds }}">{{ r.down_seconds | duration }}</td>
                     <td class="nowrap">{{ r.outages }}{% if r.flaps %}

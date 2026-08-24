@@ -193,7 +193,15 @@
             <tbody>
             {% for r in rows %}
                 <tr>
-                    <td>{{ r.name }}</td>
+                    <td>
+                        {{ r.name }}
+                        {# Точку могли завести уже внутри периода. Её процент
+                           относится к своему куску, и без пометки она выглядит
+                           лучше тех, за кем панель смотрела весь месяц #}
+                        {% if r.covered < 100 %}
+                        <span class="small muted">наблюдается с {{ r.watch_text }}</span>
+                        {% endif %}
+                    </td>
                     <td class="small muted">{{ r.group_name or '' }}</td>
                     <td class="mono muted">{{ r.host }}</td>
                     <td class="small">
@@ -201,9 +209,13 @@
                         {% elif r.status == 'offline' %}<span style="color:var(--err)">не отвечает</span>
                         {% else %}неизвестно{% endif %}
                     </td>
-                    <td class="num" style="color:{{ r.color }}">{{ r.uptime_percent }}%</td>
+                    <td class="num" style="color:{{ r.color }}">
+                        {% if r.covered %}{{ r.uptime_percent }}%{% else %}<span class="muted">нет данных</span>{% endif %}
+                    </td>
                     <td>
+                        {% if r.covered %}
                         <span class="bar"><i style="width:{{ r.uptime_percent }}%;background:{{ r.color }}"></i></span>
+                        {% endif %}
                     </td>
                     <td class="num">{% if r.down_seconds %}{{ r.down_seconds | duration }}{% else %}0{% endif %}</td>
                     <td class="num">{{ r.outages }}</td>

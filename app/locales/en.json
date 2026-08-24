@@ -2065,5 +2065,11 @@
   "нет данных": "no data",
   "Столбик это доля времени в сети за день. Шкала полная, от нуля до ста процентов.": "A bar is the share of the day spent online. The scale is full, from zero to one hundred percent.",
   "Столбик это доля времени в сети по всем точкам сразу. Шкала полная, от нуля до ста процентов.": "A bar is the share of time online across all sites at once. The scale is full, from zero to one hundred percent.",
-  "Свернуть меню": "Collapse menu"
+  "Свернуть меню": "Collapse menu",
+  "времени в сети за время наблюдения": "of the watched time online",
+  "<span class=\"muted\">нет данных</span>": "<span class=\"muted\">no data</span>",
+  "<span class=\"muted small\">за %(p0)s% окна</span>": "<span class=\"muted small\">over %(p0)s% of the window</span>",
+  "<span class=\"small muted\">наблюдается с %(p0)s</span>": "<span class=\"small muted\">watched since %(p0)s</span>",
+  "Площадка под наблюдением с %(p0)s, это %(p1)s процентов периода. Доступность, простой и падения посчитаны за это время: до него панель сюда не смотрела.": "The site has been watched since %(p0)s, which is %(p1)s percent of the period. Availability, downtime and outages are counted over that time: before it the panel was not looking here.",
+  "Площадка заведена в панели %(p0)s, уже после конца периода. За сам период наблюдений нет.": "The site was added to the panel on %(p0)s, after the end of the period. There is nothing observed within the period itself."
 }
