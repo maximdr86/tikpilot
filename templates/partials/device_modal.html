@@ -21,7 +21,11 @@
                     </div>
                 </div>
 
-                <div class="grid cols-2">
+                {# Три порта в ряд. SSH здесь потому, что двадцать второй
+                   в живых сетях часто переносят, а поля для него не было
+                   вовсе: колонка в базе есть с самого начала, задать её
+                   можно было только руками в SQLite #}
+                <div class="grid cols-3">
                     <div class="field">
                         <label for="d-api-port">Порт API</label>
                         <input type="number" id="d-api-port" name="api_port" value="8728" min="1" max="65535">
@@ -30,7 +34,12 @@
                     <div class="field">
                         <label for="d-ftp-port">Порт FTP</label>
                         <input type="number" id="d-ftp-port" name="ftp_port" value="21" min="1" max="65535">
-                        <div class="hint">Используется для скачивания бэкапов</div>
+                        <div class="hint">Скачивание бэкапов</div>
+                    </div>
+                    <div class="field">
+                        <label for="d-ssh-port">Порт SSH</label>
+                        <input type="number" id="d-ssh-port" name="ssh_port" value="22" min="1" max="65535">
+                        <div class="hint">Нужен только терминалу</div>
                     </div>
                 </div>
 

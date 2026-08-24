@@ -572,6 +572,9 @@ def _device_form_values(form: dict[str, Any]) -> dict[str, Any]:
         "host": (form.get("host") or "").strip(),
         "api_port": int(form.get("api_port") or 8728),
         "ftp_port": int(form.get("ftp_port") or 21),
+        # Порт SSH нужен только терминалу. Двадцать второй тут значение
+        # по умолчанию, а не допущение: в живых сетях его часто переносят
+        "ssh_port": int(form.get("ssh_port") or 22),
         "use_ssl": form_bool(form.get("use_ssl")),
         "username": (form.get("username") or "").strip(),
         "group_id": int(form["group_id"]) if (form.get("group_id") or "").strip() else None,
@@ -594,14 +597,15 @@ async def create_device(request: Request, user=Depends(require("devices.edit")))
 
     now = utcnow()
     device_id = execute(
-        "INSERT INTO devices (name, host, api_port, ftp_port, use_ssl, username, password_enc, "
-        "group_id, comment, latency_targets, enabled, created_at, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO devices (name, host, api_port, ftp_port, ssh_port, use_ssl, username, "
+        "password_enc, group_id, comment, latency_targets, enabled, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             values["name"],
             values["host"],
             values["api_port"],
             values["ftp_port"],
+            values["ssh_port"],
             values["use_ssl"],
             values["username"],
             encrypt(form.get("password") or ""),
@@ -630,8 +634,8 @@ async def update_device(request: Request, device_id: int,
 
     password = form.get("password") or ""
     sql = (
-        "UPDATE devices SET name=?, host=?, api_port=?, ftp_port=?, use_ssl=?, username=?, "
-        "group_id=?, comment=?, latency_targets=?, enabled=?, updated_at=?"
+        "UPDATE devices SET name=?, host=?, api_port=?, ftp_port=?, ssh_port=?, use_ssl=?, "
+        "username=?, group_id=?, comment=?, latency_targets=?, enabled=?, updated_at=?"
     )
 
     # Оператор считается вписанным руками только если его действительно
@@ -654,6 +658,7 @@ async def update_device(request: Request, device_id: int,
         values["host"],
         values["api_port"],
         values["ftp_port"],
+        values["ssh_port"],
         values["use_ssl"],
         values["username"],
         values["group_id"],
@@ -773,7 +778,7 @@ async def import_devices(
     Импорт устройств из CSV.
 
     Ожидаемые колонки (регистр не важен, лишние игнорируются):
-        name, host, username, password, api_port, ftp_port, group, comment
+        name, host, username, password, api_port, ftp_port, ssh_port, group, comment
     Разделитель определяется автоматически (запятая или точка с запятой).
     """
     raw = (await file.read()).decode("utf-8-sig", errors="replace")
@@ -809,13 +814,14 @@ async def import_devices(
             group_id = int(default_group)
 
         execute(
-            "INSERT INTO devices (name, host, api_port, ftp_port, username, password_enc, group_id, "
-            "comment, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO devices (name, host, api_port, ftp_port, ssh_port, username, password_enc, "
+            "group_id, comment, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
                 name,
                 host,
                 int(row.get("api_port") or 8728),
                 int(row.get("ftp_port") or 21),
+                int(row.get("ssh_port") or 22),
                 row.get("username") or "admin",
                 encrypt(row.get("password") or ""),
                 group_id,
@@ -841,11 +847,11 @@ async def export_devices(user=Depends(current_user)):
     # Модель в выгрузке нужна ровно за тем же, зачем в таблице: план
     # обновления парка обычно составляют в электронной таблице, и там
     # «какая это коробка» столбец не менее важный, чем версия
-    writer.writerow(["name", "host", "api_port", "ftp_port", "username", "group",
+    writer.writerow(["name", "host", "api_port", "ftp_port", "ssh_port", "username", "group",
                      "comment", "status", "version", "model", "architecture"])
     for r in rows:
         writer.writerow(
-            [r["name"], r["host"], r["api_port"], r["ftp_port"], r["username"],
+            [r["name"], r["host"], r["api_port"], r["ftp_port"], r["ssh_port"], r["username"],
              r["group_name"] or "", r["comment"], r["status"], r["ros_version"],
              r["board_name"], r["architecture"]]
         )
