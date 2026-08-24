@@ -8513,6 +8513,71 @@ def test_terminal_needs_permission_and_scope(client, router):
         ssh.stop()
 
 
+def test_ssh_port_is_set_from_the_device_form(client, router):
+    """
+    Порт SSH задаётся в карточке и доезжает до самого подключения.
+
+    Просьба со стороны (issue #1): в живых сетях SSH почти никогда не на
+    двадцать втором. Колонка в базе была с самого начала и терминал её
+    читал, а задать её было нечем: в форме поля нет, API его не принимал.
+    Значит, у всех, кто не лез в базу руками, там намертво стояло 22.
+    """
+    from tests.fake_ssh import FakeSSH
+
+    ssh = FakeSSH()
+    try:
+        # Заводим точку так же, как это делает человек: через форму
+        answer = client.post("/api/devices", data={
+            "name": "порт-ssh", "host": "127.0.0.1", "api_port": str(router.port),
+            "ssh_port": str(ssh.port), "username": "tikpilot", "password": "s3cret",
+            "enabled": "1",
+        })
+        device_id = answer.json()["id"]
+        assert query_one("SELECT ssh_port FROM devices WHERE id=?",
+                         (device_id,))["ssh_port"] == ssh.port
+
+        # И подключение действительно уходит на этот порт, а не на 22
+        with client.websocket_connect(f"/ws/terminal/{device_id}") as ws:
+            assert "[admin@MikroTik]" in _terminal_read(ws, "MikroTik")
+
+        # Правка карточки порт не теряет и умеет его менять
+        client.post(f"/api/devices/{device_id}/update", data={
+            "name": "порт-ssh", "host": "127.0.0.1", "api_port": str(router.port),
+            "ssh_port": "2222", "username": "tikpilot", "enabled": "1",
+        })
+        assert query_one("SELECT ssh_port FROM devices WHERE id=?",
+                         (device_id,))["ssh_port"] == 2222
+    finally:
+        ssh.stop()
+
+
+def test_ssh_port_travels_through_csv(client, router):
+    """Порт SSH переносится импортом и уходит в выгрузку."""
+    import io
+
+    body = ("name;host;username;ssh_port\n"
+            "csv-ssh;10.9.9.9;tikpilot;2200\n").encode("utf-8")
+    answer = client.post("/api/devices/import",
+                         files={"file": ("devices.csv", io.BytesIO(body), "text/csv")})
+    assert answer.json()["created"] == 1
+    assert query_one("SELECT ssh_port FROM devices WHERE name=?",
+                     ("csv-ssh",))["ssh_port"] == 2200
+
+    text = client.get("/api/devices/export/csv").text
+    header, *lines = text.lstrip("﻿").splitlines()
+    assert "ssh_port" in header.split(";")
+    place = header.split(";").index("ssh_port")
+    row = next(line for line in lines if line.startswith("csv-ssh"))
+    assert row.split(";")[place] == "2200"
+
+    # Не указали колонку — остаётся двадцать второй, как было
+    plain = ("name;host;username\nssh-default;10.9.9.10;tikpilot\n").encode("utf-8")
+    client.post("/api/devices/import",
+                files={"file": ("devices.csv", io.BytesIO(plain), "text/csv")})
+    assert query_one("SELECT ssh_port FROM devices WHERE name=?",
+                     ("ssh-default",))["ssh_port"] == 22
+
+
 def test_terminal_window_is_made_once_per_page():
     """
     Повторное подключение продолжает то же окно, а не открывает второе.

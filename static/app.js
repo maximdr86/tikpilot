@@ -440,6 +440,7 @@ function newDevice() {
     $('#device-password').placeholder = T('пароль API-пользователя');
     $('#device-form [name=api_port]').value = 8728;
     $('#device-form [name=ftp_port]').value = 21;
+    $('#device-form [name=ssh_port]').value = 22;
     $('#device-form [name=enabled]').checked = true;
     openModal('device-modal');
 }
@@ -452,7 +453,7 @@ async function editDevice(id) {
         form.reset();
         form.dataset.deviceId = id;
         $('#device-modal-title').textContent = T('Редактирование: ') + data.name;
-        ['name', 'host', 'api_port', 'ftp_port', 'username', 'comment',
+        ['name', 'host', 'api_port', 'ftp_port', 'ssh_port', 'username', 'comment',
          'latency_targets', 'operator'].forEach((key) => {
             const el = form.querySelector(`[name=${key}]`);
             if (el) { el.value = data[key] == null ? '' : data[key]; }

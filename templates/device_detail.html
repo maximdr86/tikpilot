@@ -128,6 +128,7 @@
             <tr><td class="muted" style="width:220px">Адрес</td><td class="mono">{{ device.host }}</td></tr>
             <tr><td class="muted">Порт API</td><td class="mono">{{ device.api_port }}{% if device.use_ssl %} (SSL){% endif %}</td></tr>
             <tr><td class="muted">Порт FTP</td><td class="mono">{{ device.ftp_port }}</td></tr>
+            <tr><td class="muted">Порт SSH</td><td class="mono">{{ device.ssh_port or 22 }}</td></tr>
             <tr><td class="muted">Пользователь</td><td class="mono">{{ device.username }}</td></tr>
             <tr><td class="muted">Пароль</td><td class="mono">•••••••• <span class="small muted">(хранится зашифрованным)</span></td></tr>
             <tr><td class="muted">Identity</td><td class="mono">{{ device.identity or '—' }}</td></tr>
