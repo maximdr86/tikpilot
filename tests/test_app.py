@@ -8513,6 +8513,33 @@ def test_terminal_needs_permission_and_scope(client, router):
         ssh.stop()
 
 
+def test_terminal_window_is_made_once_per_page():
+    """
+    Повторное подключение продолжает то же окно, а не открывает второе.
+
+    Нашлось глазами: подключиться, отключиться и подключиться снова к той
+    же точке. Каждое подключение создавало новый `Terminal` в том же блоке,
+    а прежний оставался в разметке. Приглашение новой сессии уезжало вниз,
+    между сессиями висела пустота, по краю ехали остатки измерителя ширины
+    символа, и нажатия из мёртвого окна продолжали уходить в живой сокет.
+
+    Проверяем то, из чего это следовало: окно создаётся ровно один раз и
+    не внутри `connect()`, а опрос состояния не копится от подключения
+    к подключению.
+    """
+    from pathlib import Path
+
+    text = Path("templates/terminal.html").read_text(encoding="utf-8")
+    assert text.count("new Terminal(") == 1, "окно создаётся больше одного раза"
+    assert text.count("term.open(") == 1
+    # Обработчик нажатий тоже один: второй слал бы каждый символ дважды
+    assert text.count("term.onData(") == 1
+
+    body = text.split("function connect()", 1)[1].split("\n    /**", 1)[0]
+    assert "new Terminal(" not in body, "окно создаётся при каждом подключении"
+    assert "clearInterval" in body, "таймер состояния не гасится"
+
+
 def test_device_work_never_blocks_the_event_loop():
     """
     Ни один обработчик, ходящий на устройства, не объявлен `async`.
