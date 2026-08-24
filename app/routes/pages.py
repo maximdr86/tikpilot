@@ -452,7 +452,8 @@ async def device_report_page(request: Request, device_id: int, hours: int = 720,
 
     rows = monitor.availability(hours, one, edge)
     row = rows[0] if rows else {"uptime_percent": 100.0, "down_seconds": 0,
-                                "outages": 0, "status": device["status"]}
+                                "outages": 0, "status": device["status"],
+                                "covered": 100, "watched_since": None}
     buckets = monitor.availability_buckets(hours, one, edge)
     intervals = monitor.outage_intervals(hours, one, edge)
 
@@ -513,6 +514,10 @@ async def device_report_page(request: Request, device_id: int, hours: int = 720,
         hours=hours,
         row=row,
         color=_report_color(row["uptime_percent"]),
+        # Какую долю периода панель эту площадку вообще видела. Меньше ста
+        # значит, что её завели уже внутри периода, и об этом надо сказать
+        covered=int(row.get("covered", 100)),
+        watch_text=local(row["watched_since"]) if row.get("watched_since") else "",
         longest=max((item["seconds"] for item in intervals), default=0),
         outages=outages,
         totals=totals,
@@ -573,6 +578,14 @@ async def availability_report_page(request: Request, hours: int = 720,
     def local(moment: datetime) -> str:
         return moment.astimezone().strftime("%d.%m.%Y %H:%M")
 
+    # Точка, заведённая внутри периода, наблюдалась не весь его. Её процент
+    # честен только на своём куске, и в таблице это надо пометить, иначе
+    # вчерашняя точка выглядит лучше всех остальных
+    for row in rows:
+        row["watch_text"] = local(row["watched_since"]) if row.get("watched_since") else ""
+    # Средние и «без единого падения» считаем по тем, кого вообще видели
+    seen = [r for r in rows if r["covered"]]
+
     outages = [{
         "name": row["name"],
         "group_name": row["group_name"],
@@ -592,7 +605,7 @@ async def availability_report_page(request: Request, hours: int = 720,
     # часов на десяти точках и на пятидесяти это разные вещи. Среднее
     # сравнимо и с прошлым месяцем, и с соседней группой
     down_average = round(down_total / len(rows)) if rows else 0
-    average = round(sum(r["uptime_percent"] for r in rows) / len(rows), 2) if rows else 100.0
+    average = round(sum(r["uptime_percent"] for r in seen) / len(seen), 2) if seen else 100.0
 
     log_audit(user["username"], "Открыт отчёт по доступности",
               f"{hours} ч · {subject}", f"точек: {len(rows)}", client_ip(request))
@@ -614,8 +627,8 @@ async def availability_report_page(request: Request, hours: int = 720,
         down_average=down_average,
         outage_count=sum(r["outages"] for r in rows),
         offline_now=sum(1 for r in rows if r["status"] == "offline"),
-        perfect=sum(1 for r in rows if r["uptime_percent"] >= 100 and not r["outages"]),
-        worst=[r for r in rows if r["uptime_percent"] < 100 or r["outages"]][:7],
+        perfect=sum(1 for r in seen if r["uptime_percent"] >= 100 and not r["outages"]),
+        worst=[r for r in seen if r["uptime_percent"] < 100 or r["outages"]][:7],
         chart=charts.bar_chart(
             [(b["label"], b["percent"]) for b in buckets],
             unit="%", y_min=floor, y_max=100.0, color_of=_chart_color,
@@ -679,9 +692,13 @@ async def availability_report(request: Request, hours: int = 720,
     writer.writerow([
         "Точка", "Группа", "Адрес", "Состояние сейчас",
         "Доступность, %", "Простой, часов", "Простой, минут", "Падений",
+        # Колонки про наблюдение приписаны в конец, чтобы не сломать
+        # чужие сводные таблицы, собранные по прежним выгрузкам
+        "Наблюдение с", "Покрыто периода, %",
     ])
     for row in rows:
         minutes = round(row["down_seconds"] / 60)
+        watched = row.get("watched_since")
         writer.writerow([
             row["name"],
             row["group_name"] or "",
@@ -690,10 +707,14 @@ async def availability_report(request: Request, hours: int = 720,
             # Запятая как разделитель дробной части: с точкой Excel в русской
             # локали считает это текстом, и по колонке нельзя ни отсортировать,
             # ни посчитать среднее
-            str(row["uptime_percent"]).replace(".", ","),
+            # Точку, заведённую после конца периода, оставляем пустой:
+            # ноль наблюдения это не сто процентов доступности
+            str(row["uptime_percent"]).replace(".", ",") if row["covered"] else "",
             str(round(row["down_seconds"] / 3600, 2)).replace(".", ","),
             minutes,
             row["outages"],
+            watched.astimezone().strftime("%d.%m.%Y %H:%M") if watched else "",
+            row["covered"],
         ])
 
     log_audit(user["username"], "Выгружен отчёт по доступности",

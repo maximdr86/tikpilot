@@ -706,7 +706,13 @@ def availability(hours: int = 24, scope: Scope = NO_SCOPE,
       мог начаться ещё до начала окна — тогда обрезаем его по границе;
     * если точка лежит прямо сейчас, незакрытый простой считаем до текущего
       момента;
-    * если событий не было вовсе, точка всё окно провела в текущем статусе.
+    * если событий не было вовсе, точка всё окно провела в текущем статусе;
+    * точка, заведённая внутри окна, до своего появления не наблюдалась.
+      Отсутствие падений там не значит, что их не было: панель туда просто
+      не смотрела. Поэтому окно каждой точки начинается не раньше, чем она
+      появилась в панели, и рядом с процентом едет `covered` — какую долю
+      периода наблюдение вообще покрыло. Без этого точка, добавленная
+      вчера, показывала в месячном отчёте безупречные сто процентов.
     """
     window = max(1, hours) * 3600
     # `until` это правая граница окна. По умолчанию сейчас, но отчёт умеет
@@ -717,7 +723,7 @@ def availability(hours: int = 24, scope: Scope = NO_SCOPE,
     since_text = since.strftime("%Y-%m-%d %H:%M:%S")
 
     devices = query(
-        "SELECT d.id, d.name, d.host, d.status, d.status_changed_at, "
+        "SELECT d.id, d.name, d.host, d.status, d.status_changed_at, d.created_at, "
         "g.name AS group_name, g.color AS group_color "
         "FROM devices d LEFT JOIN groups g ON g.id = d.group_id "
         f"WHERE d.enabled = 1{scope[0]} ORDER BY d.name COLLATE NOCASE",
@@ -751,6 +757,11 @@ def availability(hours: int = 24, scope: Scope = NO_SCOPE,
         down_seconds = 0
         outages = 0
 
+        # Левая граница именно этой точки. Обычно совпадает с началом окна,
+        # но у недавно заведённой точки наблюдение началось позже
+        watched = max(since, _parse_ts(device["created_at"]) or since)
+        observed = max(0, int((now - watched).total_seconds()))
+
         for event in rows:
             if event["status"] != "online":
                 outages += 1
@@ -763,20 +774,23 @@ def availability(hours: int = 24, scope: Scope = NO_SCOPE,
             moment = _parse_ts(event["ts"])
             if moment is not None:
                 started = moment - timedelta(seconds=downtime)
-                left = max(started, since)
+                left = max(started, watched)
                 right = min(moment, now)
                 downtime = max(0, int((right - left).total_seconds()))
             down_seconds += downtime
 
         # Незакрытый простой: точка лежит прямо сейчас
         if device["status"] == "offline":
-            changed = _parse_ts(device["status_changed_at"]) or since
-            down_seconds += max(0, int((now - max(changed, since)).total_seconds()))
+            changed = _parse_ts(device["status_changed_at"]) or watched
+            down_seconds += max(0, int((now - max(changed, watched)).total_seconds()))
             if not rows:
                 outages = 1
 
-        down_seconds = min(down_seconds, window)
-        percent = round(100.0 * (window - down_seconds) / window, 2)
+        down_seconds = min(down_seconds, observed)
+        # Процент считается от наблюдавшегося времени, а не от всего окна:
+        # иначе точка, заведённая вчера, «пролежала» весь предыдущий месяц
+        percent = round(100.0 * (observed - down_seconds) / observed, 2) \
+            if observed else 100.0
 
         result.append({
             "id": device["id"],
@@ -789,6 +803,11 @@ def availability(hours: int = 24, scope: Scope = NO_SCOPE,
             "down_seconds": down_seconds,
             "outages": outages,
             "flaps": flaps.get(device["id"], 0),
+            # Наблюдение: с какого момента и какая доля периода им покрыта.
+            # 100 значит «всё окно», 0 — «точки в этом периоде ещё не было»
+            "watched_since": watched,
+            "observed_seconds": observed,
+            "covered": min(100, int(round(100.0 * observed / window))),
         })
 
     return result
@@ -896,17 +915,27 @@ def availability_buckets(hours: int = 24, scope: Scope = NO_SCOPE,
 
     Границы отрезков берутся по местному времени, а не по UTC: отчёт читает
     человек, и «пятое августа» для него начинается в его полночь.
+
+    Ёмкость отрезка считается по точкам, которые к тому дню уже были
+    заведены. Иначе точка, добавленная сегодня, задним числом улучшала
+    весь месяц: секунды в знаменателе она давала, а падений за то время
+    у неё быть не могло. Отрезки, где не наблюдалось ещё ничего, не
+    рисуются вовсе — столбик в сто процентов там означал бы измерение.
     """
     window = max(1, hours) * 3600
     now = until or datetime.now(timezone.utc)
     since = now - timedelta(seconds=window)
 
-    total = query_one(
-        f"SELECT COUNT(*) AS c FROM devices d WHERE d.enabled = 1{scope[0]}",
-        tuple(scope[1]),
-    )
-    devices = int(total["c"]) if total else 0
-    if not devices:
+    # С какого момента наблюдается каждая точка. Пустая дата это старая
+    # запись без отметки о заведении: считаем, что наблюдалась всегда
+    watched = [
+        max(since, _parse_ts(row["created_at"]) or since)
+        for row in query(
+            f"SELECT d.created_at FROM devices d WHERE d.enabled = 1{scope[0]}",
+            tuple(scope[1]),
+        )
+    ]
+    if not watched:
         return []
 
     step = bucket_step(hours)
@@ -936,14 +965,18 @@ def availability_buckets(hours: int = 24, scope: Scope = NO_SCOPE,
         start = max(start, since.astimezone())
         if end <= start:
             continue
-        seconds = (end - start).total_seconds()
         down = 0.0
         for row in intervals:
             overlap = (min(row["end"], end) - max(row["start"], start)).total_seconds()
             if overlap > 0:
                 down += overlap
-        capacity = seconds * devices
-        percent = round(100.0 * max(0.0, capacity - down) / capacity, 3) if capacity else 100.0
+        capacity = sum(max(0.0, (end - max(start, moment)).total_seconds())
+                       for moment in watched)
+        if capacity <= 0:
+            # Ни одна точка тогда ещё не наблюдалась: делить не на что,
+            # и рисовать нечего
+            continue
+        percent = round(100.0 * max(0.0, capacity - down) / capacity, 3)
         buckets.append({
             "start": start,
             "end": end,

@@ -776,13 +776,30 @@ def test_update_badge_shown_in_device_list(client, router):
 
 
 # ------------------------------------------------------------- помощники
-def _add_device(client, router: FakeRouter, name: str, ftp_port: int = 21) -> int:
-    """Добавить устройство, указывающее на заглушку."""
+def _add_device(client, router: FakeRouter, name: str, ftp_port: int = 21,
+                known_for_days: int = 400) -> int:
+    """
+    Добавить устройство, указывающее на заглушку.
+
+    Дата заведения отодвигается назад, потому что почти каждый тест
+    изображает точку, которая в панели давно: подкладывает события
+    прошлой недели, считает доступность за месяц. Доступность считается
+    только за время наблюдения, и точка, заведённая секунду назад, честно
+    не наблюдалась ни в одном из этих окон.
+
+    `known_for_days=0` оставляет её новой: это отдельный случай, и тесты
+    про него просят его явно.
+    """
     r = client.post("/api/devices", data={
         "name": name, "host": "127.0.0.1", "api_port": str(router.port),
         "ftp_port": str(ftp_port), "username": "tikpilot", "password": "s3cret", "enabled": "1",
     })
-    return r.json()["id"]
+    device_id = r.json()["id"]
+    if known_for_days:
+        from app.database import execute
+        execute("UPDATE devices SET created_at = datetime('now', ?) WHERE id = ?",
+                (f"-{int(known_for_days)} days", device_id))
+    return device_id
 
 
 def _run_and_wait(client, action: str, device_ids: list, params: dict, timeout: int = 90) -> dict:
@@ -3171,6 +3188,10 @@ def _group_with_devices(client, router, group_name: str) -> tuple[int, int]:
     group_id = query_one("SELECT id FROM groups WHERE name = ?", (group_name,))["id"]
 
     now = utcnow()
+    # Заведены давно: точки изображают давно живущие площадки, а простой
+    # считается только за время наблюдения
+    known = (_dt.datetime.now(_dt.timezone.utc)
+             - _dt.timedelta(days=400)).strftime("%Y-%m-%d %H:%M:%S")
     for name, host, status in ((f"{group_name}-up", "10.44.0.1", "online"),
                                (f"{group_name}-down", "10.44.0.2", "offline")):
         execute(
@@ -3178,7 +3199,7 @@ def _group_with_devices(client, router, group_name: str) -> tuple[int, int]:
             " status, status_changed_at, ros_version, last_error, created_at, updated_at)"
             " VALUES (?,?,?,?,1,?,?,?,?,?,?,?)",
             (name, host, "api", "x", group_id, status, now,
-             "7.21.5", "Таймаут подключения", now, now),
+             "7.21.5", "Таймаут подключения", known, now),
         )
     return group_id, 2
 
@@ -7089,7 +7110,7 @@ def test_availability_report_is_a_csv_excel_understands(client, router):
     assert text.startswith("﻿"), "нет метки BOM, Excel испортит кириллицу"
     header, *lines = text.lstrip("﻿").splitlines()
     assert header.split(";")[0] == "Точка"
-    assert header.count(";") == 7
+    assert header.count(";") == 9
 
     row = next(line for line in lines if line.startswith("report-device"))
     cells = row.split(";")
@@ -10809,6 +10830,86 @@ def test_hour_report_has_enough_bars(client, router):
     # его начало, а не круглое время, которого в окне не было
     assert all(b["label"].endswith(("0", "5")) for b in buckets[1:]), \
         [b["label"] for b in buckets[:5]]
+
+
+def test_availability_counts_only_the_watched_time(client, router):
+    """
+    Точке не засчитывается время до её появления в панели.
+
+    Нашлось глазами: точку завели вчера, а месячный отчёт показал по ней
+    безупречные сто процентов. Падений за прошлый месяц у неё правда нет,
+    но не потому, что их не было, а потому, что панель туда не смотрела.
+    """
+    from app import monitor
+
+    device_id = _add_device(client, router, "вчерашняя", known_for_days=0)
+    from app.database import execute
+    execute("UPDATE devices SET created_at = datetime('now', '-1 day') WHERE id = ?",
+            (device_id,))
+
+    row = next(r for r in monitor.availability(720) if r["id"] == device_id)
+    # Сутки из тридцати: около трёх процентов периода
+    assert 2 <= row["covered"] <= 5, row["covered"]
+    assert row["observed_seconds"] <= 25 * 3600
+
+    # А у давно заведённой точки в том же отчёте оговорки нет
+    old_id = _add_device(client, router, "давняя")
+    old = next(r for r in monitor.availability(720) if r["id"] == old_id)
+    assert old["covered"] == 100
+
+
+def test_report_says_since_when_the_site_is_watched(client, router):
+    """Отчёт по новой точке оговаривает, что период покрыт не весь."""
+    from app.database import execute
+
+    device_id = _add_device(client, router, "новая-в-отчёте", known_for_days=0)
+    execute("UPDATE devices SET created_at = datetime('now', '-1 day') WHERE id = ?",
+            (device_id,))
+
+    text = client.get(f"/devices/{device_id}/report?hours=720").text
+    assert "под наблюдением с" in text
+    assert "времени в сети за время наблюдения" in text
+
+    # У давно заведённой точки оговорки быть не должно: она только мешает
+    old_id = _add_device(client, router, "давняя-в-отчёте")
+    assert "под наблюдением с" not in client.get(
+        f"/devices/{old_id}/report?hours=720").text
+
+
+def test_report_for_a_period_before_the_site_existed_says_no_data(client, router):
+    """
+    За период до заведения точки отчёт не показывает процент вовсе.
+
+    Ноль наблюдения это не сто процентов доступности, и большая зелёная
+    цифра здесь была бы худшим из возможных ответов.
+    """
+    device_id = _add_device(client, router, "поздняя", known_for_days=0)
+
+    text = client.get(
+        f"/devices/{device_id}/report?since=2020-01-01&until=2020-01-05").text
+    assert "нет данных" in text
+    assert "уже после конца периода" in text
+
+
+def test_fleet_chart_leaves_out_days_with_nobody_to_watch(client, router):
+    """
+    Столбик рисуется только там, где было за чем наблюдать.
+
+    Иначе точка, заведённая сегодня, задним числом рисует идеальный месяц:
+    секунды в знаменателе она даёт, а падений за то время у неё быть не
+    могло. Пустой день должен отсутствовать, а не выглядеть стопроцентным.
+    """
+    from app import monitor
+    from app.database import execute
+
+    device_id = _add_device(client, router, "график-новой", known_for_days=0)
+    execute("UPDATE devices SET created_at = datetime('now', '-2 days') WHERE id = ?",
+            (device_id,))
+
+    # Только эта точка: в базе теста живут и другие, заведённые давно
+    buckets = monitor.availability_buckets(720, (" AND d.id = ?", [device_id]))
+    # Месяц по дням это около тридцати столбиков, а наблюдения всего три дня
+    assert 1 <= len(buckets) <= 4, [b["label"] for b in buckets]
 
 
 def test_screenshot_mode_hides_short_names(client, router):

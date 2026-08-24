@@ -1049,9 +1049,18 @@ If the samples cover less than nine tenths of the period the volume is
 understated, and the document says so: while the site was down there was
 nothing to count.
 
+Availability is counted only over the time the panel actually watched the
+site. A site added yesterday does not get a flawless month: an absence of
+records is not a measurement. The single-site report says since when it has
+been watched and what share of the period that covers, the fleet report marks
+such rows and leaves them out of the fleet average, and a day when there was
+nothing to watch yet is not drawn as a bar at all.
+
 The same numbers are still available as CSV, from the button inside the report
 or directly at `/monitoring/report.csv`. That file opens in Excel as it is:
-semicolon separator, comma as the decimal mark, BOM at the front.
+semicolon separator, comma as the decimal mark, BOM at the front. Two columns
+at the end of each row say since when the site has been watched and how much
+of the period that covers.
 
 Both respect scope: a contractor with two sites gets a report about two sites.
 
