@@ -10792,8 +10792,14 @@ def test_report_scale_does_not_exaggerate_a_bad_day():
     assert _report_floor([]) == 99.5
 
 
-def test_report_explains_which_scale_it_used(client, router):
-    """Подпись под графиком соответствует шкале, а не противоречит ей."""
+def test_report_explains_only_a_cut_scale(client, router):
+    """
+    Подпись под графиком есть только у обрезанной шкалы.
+
+    Обрезанной она нужна: без неё столбик в 99,2 процента читается как
+    провал. У обычной шкалы подпись сообщала, что всё в порядке, а такие
+    строки человек перестаёт читать через неделю.
+    """
     from app.database import execute
 
     device_id = _add_device(client, router, "шкала-в-отчёте")
@@ -10804,9 +10810,15 @@ def test_report_explains_which_scale_it_used(client, router):
             " VALUES (?,?,?, datetime('now','-24 hours'), 21600)",
             (device_id, "шкала-в-отчёте", "online"))
 
+    # Полсуток простоя за неделю: шкала обычная, объяснять нечего
     text = client.get(f"/devices/{device_id}/report?hours=168").text
-    assert "Шкала полная" in text
     assert "Шкала начинается" not in text
+    assert "Шкала полная" not in text
+
+    # А у ровного месяца шкала обрезана, и подпись обязана быть
+    calm_id = _add_device(client, router, "ровная-шкала")
+    assert "Шкала начинается" in client.get(
+        f"/devices/{calm_id}/report?hours=720").text
 
 
 def test_chart_bars_are_not_a_traffic_light(client, router):
