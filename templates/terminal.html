@@ -99,6 +99,7 @@
 <script>
     let term = null;
     let socket = null;
+    let stateTimer = null;
 
     function pickDevice() {
         const id = document.getElementById('t-device').value;
@@ -110,9 +111,22 @@
         if (box) { box.className = 'hint ' + (cls || ''); }
     }
 
-    function connect() {
-        const id = document.getElementById('t-device').value;
-        if (!id || socket) { return; }
+    /**
+     * Окно терминала. Создаётся один раз на страницу и переиспользуется.
+     *
+     * Раньше каждое подключение делало новый `Terminal` и открывало его
+     * в том же блоке. Старое окно при этом никуда не девалось: его разметка
+     * оставалась в странице, приглашение новой сессии рисовалось далеко
+     * внизу, между ними висела пустота, а по краю ехали остатки прежнего
+     * измерителя ширины символа. Хуже того, обработчик нажатий старого окна
+     * продолжал слать символы в новый сокет: клик мимо, и набранное уходило
+     * дважды.
+     *
+     * Второе подключение теперь продолжает то же окно, а прежний вывод
+     * остаётся в прокрутке, как в любом терминальном клиенте.
+     */
+    function ensureTerminal() {
+        if (term) { return term; }
 
         const box = document.getElementById('terminal-box');
         // Цвета берём из темы панели: терминал не должен быть чужеродным
@@ -128,14 +142,32 @@
             },
         });
         term.open(box);
-        fit();
-        fitSoon();
+
+        term.onData((data) => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: 'data', text: data }));
+            }
+        });
 
         // Размер окна меняется не только вместе с окном браузера: на
         // телефоне это адресная строка, клавиатура и поворот экрана
         if (window.ResizeObserver) {
             new ResizeObserver(() => { fit(); sendSize(); }).observe(box);
         }
+
+        fit();
+        fitSoon();
+        return term;
+    }
+
+    function connect() {
+        const id = document.getElementById('t-device').value;
+        if (!id || socket) { return; }
+
+        ensureTerminal();
+        // Отбивка между сессиями: иначе приглашение новой садится вплотную
+        // к «Соединение закрыто» и читается как продолжение старой
+        if (term.buffer.active.length > 1) { term.write('\r\n'); }
 
         const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
         socket = new WebSocket(`${scheme}://${window.location.host}/ws/terminal/${id}`);
@@ -160,18 +192,17 @@
             socket = null;
             document.getElementById('t-connect').style.display = '';
             document.getElementById('t-disconnect').style.display = 'none';
+            // Опрос состояния больше не нужен: пока он висел, каждое
+            // подключение добавляло ещё один такой же
+            if (stateTimer) { clearInterval(stateTimer); stateTimer = null; }
+            showState();
         };
-
-        term.onData((data) => {
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({ type: 'data', text: data }));
-            }
-        });
 
         document.getElementById('t-connect').style.display = 'none';
         document.getElementById('t-disconnect').style.display = '';
         showState();
-        setInterval(showState, 1000);
+        if (stateTimer) { clearInterval(stateTimer); }
+        stateTimer = setInterval(showState, 1000);
     }
 
     function disconnect() {
