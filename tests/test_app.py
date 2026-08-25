@@ -3153,6 +3153,69 @@ def test_existing_admins_keep_full_access_after_upgrade(tmp_path):
     assert row[0] == "full"
 
 
+def test_every_permission_is_actually_checked():
+    """
+    Каждое право из списка где-то проверяется.
+
+    Галочка, которая ничего не запрещает, хуже отсутствующей: человек
+    снимает её и уходит уверенный, что доступ закрыт. Так было
+    с `devices.secrets`: право обещало спрятать пароли устройств
+    и не упоминалось в коде ни разу.
+
+    Тест грубый, ищет вхождение ключа по исходникам и шаблонам. Этого
+    достаточно: право проверяют либо через `require`, либо через `has`,
+    либо через `can` в шаблоне, и во всех трёх случаях ключ написан
+    строкой рядом.
+
+    Права вида `action.имя` из проверки исключены: их ключ собирается
+    из имени действия в `can_run`, буквально в коде его нет. Что сам
+    `can_run` вызывается перед постановкой задачи, проверяет отдельный
+    тест про запуск действия без права.
+    """
+    from pathlib import Path
+
+    from app import permissions
+
+    haystack = ""
+    for path in list(Path("app").rglob("*.py")) + list(Path("templates").rglob("*.html")):
+        if path.name == "permissions.py":
+            continue        # объявление это не проверка
+        haystack += path.read_text(encoding="utf-8")
+
+    idle = [key for key, *_ in permissions.all_permissions()
+            if not key.startswith("action.") and key not in haystack]
+    assert not idle, "право объявлено, но нигде не проверяется: " + ", ".join(idle)
+
+
+def test_deferring_a_job_needs_its_own_permission(client, router):
+    """
+    Отложенный запуск закрыт правом, и не только в разметке.
+
+    Поле «когда выполнить» можно спрятать, но запрос уходит из браузера,
+    и подделать его ничего не стоит. Проверка обязана быть на сервере.
+    """
+    device_id = _add_device(client, router, "отложенный-запуск")
+    _make_user(client, "nodelay", ["action.check"])
+
+    with _as("nodelay") as limited:
+        # Немедленный запуск разрешён: право на само действие есть
+        answer = limited.post("/api/jobs", json={
+            "action": "check", "device_ids": [device_id], "params": {}})
+        assert answer.status_code == 200, answer.text
+
+        # А отложенный нет
+        answer = limited.post("/api/jobs", json={
+            "action": "check", "device_ids": [device_id], "params": {},
+            "scheduled_at": "2030-01-01T02:00"})
+        assert answer.status_code == 403, answer.text
+
+        # И поля в окне действия он не видит
+        assert "action-schedule" not in limited.get(f"/devices/{device_id}").text
+
+    # У того, кому право выдано, всё работает
+    assert "action-schedule" in client.get(f"/devices/{device_id}").text
+
+
 def test_permission_labels_are_translated():
     """
     Названия прав и пресетов переведены.
@@ -5747,6 +5810,69 @@ def test_passport_is_stored_and_shown_on_the_card(client, router):
                        (device_id,))["c"]
     assert stored == len(inventory.load(device_id)["ports"]) + \
         len(inventory.load(device_id)["logical"])
+
+
+def test_webfig_address_comes_from_the_passport():
+    """
+    Адрес WebFig собирается по сервисам точки, а не по догадке.
+
+    Порт восемьдесят это значение по умолчанию, а не обещание: перенести
+    веб на другой порт первое, что делают на точке, смотрящей наружу.
+    Кнопка, ведущая в никуда, хуже отсутствующей.
+    """
+    from app.inventory import webfig_url
+
+    def services(*rows):
+        return [{"name": n, "port": p, "enabled": e} for n, p, e in rows]
+
+    # Обычный случай: порт по умолчанию в адрес не пишется
+    assert webfig_url("10.0.0.1", services(("www", "80", 1))) == \
+        "http://10.0.0.1/webfig/"
+    # Перенесённый порт пишется
+    assert webfig_url("10.0.0.1", services(("www", "8080", 1))) == \
+        "http://10.0.0.1:8080/webfig/"
+    # Включены оба: ведём по шифрованному, раз он настроен
+    assert webfig_url("10.0.0.1", services(("www", "80", 1), ("www-ssl", "443", 1))) == \
+        "https://10.0.0.1/webfig/"
+    # Веб выключен вовсе: кнопке взяться неоткуда
+    assert webfig_url("10.0.0.1", services(("www", "80", 0), ("ssh", "22", 1))) == ""
+    # Паспорт ещё не собирали
+    assert webfig_url("10.0.0.1", []) == ""
+    # IPv6 в адресе браузера пишется в скобках
+    assert webfig_url("fd00::1", services(("www", "8080", 1))) == \
+        "http://[fd00::1]:8080/webfig/"
+
+
+def test_device_card_offers_webfig_when_the_router_has_one(client, router):
+    """Кнопка WebFig есть, пока веб на точке включён, и исчезает вместе с ним."""
+    device_id = _add_device(client, router, "webfig-device")
+
+    # Паспорта ещё нет: обещать нечего
+    assert "/webfig/" not in client.get(f"/devices/{device_id}").text
+
+    client.post(f"/api/devices/{device_id}/inventory")
+    page = client.get(f"/devices/{device_id}").text
+    assert 'href="http://127.0.0.1/webfig/"' in page
+    assert 'target="_blank"' in page
+
+    # Витрина обязана подменить адрес и внутри ссылки: карточку с этой
+    # кнопкой первым делом снимут на скриншот
+    from app import demo
+    demo.forget()
+    client.post("/demo/on", data={"next": "/settings"}, follow_redirects=False)
+    try:
+        masked = client.get(f"/devices/{device_id}").text
+        assert "/webfig/" in masked, "кнопка пропала в витрине"
+        assert "127.0.0.1/webfig/" not in masked, "настоящий адрес уехал в снимок"
+    finally:
+        client.post("/demo/off", data={"next": "/settings"}, follow_redirects=False)
+
+    # Веб на точке выключили: кнопка уходит после следующего сбора
+    for service in router.services:
+        if service["name"] == "www":
+            service["disabled"] = True
+    client.post(f"/api/devices/{device_id}/inventory")
+    assert "/webfig/" not in client.get(f"/devices/{device_id}").text
 
 
 def test_neighbor_known_to_the_panel_becomes_a_link(client, router):
@@ -9434,6 +9560,58 @@ def test_alert_rule_waits_for_the_hold_time(client, router):
 
     kinds = [e["kind"] for e in alerts.events(10) if e["rule_id"] == rule_id]
     assert kinds[:2] == ["resolved", "fired"], kinds
+
+
+def test_ping_is_called_the_way_each_system_expects():
+    """
+    Команда `ping` собирается под свою систему.
+
+    Ключи у неё разные, и перепутать их дорого: в Linux `-c` это число
+    пакетов, а в Windows то же самое означает `-n`, где в Linux `-n`
+    отключает разбор имён. Команда с чужими ключами не запускается вовсе,
+    и её ненулевой код неотличим от честного «не ответила». Пока вызов
+    был только линуксовым, на macOS и в Windows отвечающая точка получала
+    отметку «ICMP не прошёл».
+    """
+    from app.icmp import command
+
+    linux = command("ping", "10.0.0.1", 1, "linux")
+    assert linux == ["ping", "-n", "-c", "1", "-w", "1", "10.0.0.1"]
+
+    # У BSD предела в секундах на попытку нет, там -t на всю команду
+    mac = command("ping", "10.0.0.1", 2, "darwin")
+    assert mac == ["ping", "-n", "-c", "1", "-t", "2", "10.0.0.1"]
+    assert "-w" not in mac
+
+    # В Windows -n это счётчик, а ожидание задаётся в миллисекундах
+    windows = command("ping", "10.0.0.1", 2, "win32")
+    assert windows == ["ping", "-n", "1", "-w", "2000", "10.0.0.1"]
+
+    # Незнакомая система лечится как Linux: это самый частый случай
+    assert command("ping", "10.0.0.1", 1, "aix")[1:3] == ["-n", "-c"]
+
+
+def test_ping_that_did_not_run_is_not_a_silent_site(monkeypatch):
+    """
+    Код возврата, которого у `ping` быть не должно, означает «не спросили».
+
+    Ноль это ответ, единица это тишина. Всё остальное значит, что команда
+    не отработала: не тот ключ, нет прав, не разобралось имя. Считать это
+    молчанием площадки нельзя, иначе рабочая точка получит отметку
+    о недоступности на ровном месте.
+    """
+    import subprocess
+
+    from app import icmp
+
+    class Answer:
+        def __init__(self, code):
+            self.returncode = code
+
+    monkeypatch.setattr(icmp, "_binary", "/bin/ping")
+    for code, expected in ((0, True), (1, False), (2, None), (127, None)):
+        monkeypatch.setattr(subprocess, "run", lambda *a, code=code, **kw: Answer(code))
+        assert icmp.alive("10.0.0.1") is expected, code
 
 
 def test_status_is_about_the_site_and_api_is_separate(client, router):

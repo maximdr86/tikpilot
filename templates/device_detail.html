@@ -26,6 +26,16 @@
         <button class="btn"
                 onclick="openActionModal({device_ids: [{{ device.id }}]}, '{{ _("устройство «%(p0)s»", p0=(device.name)) }}', 'speedtest')">Скорость</button>
         <a class="btn" href="/devices/{{ device.id }}/report">Отчёт</a>
+        {# Веб-интерфейс самой точки. Кнопка появляется только если www или
+           www-ssl там включён, и ведёт на тот порт, который записан
+           в паспорте. Ссылка открывается с машины человека, а не с сервера
+           панели, и дойдёт ли она, отсюда не проверить: у панели туннель
+           есть, у ноутбука может не быть. Поэтому просто ссылка, без
+           обещаний и без проверки доступности #}
+        {% if passport.webfig %}
+        <a class="btn" href="{{ passport.webfig }}"
+           target="_blank" rel="noopener noreferrer">WebFig</a>
+        {% endif %}
         <button class="btn" onclick="editDevice({{ device.id }})">Изменить</button>
         <a class="btn" href="/devices">К списку</a>
     </div>

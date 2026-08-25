@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from .database import get_conn, query, utcnow, write_lock
+from .database import get_conn, query, query_one, utcnow, write_lock
 from .mikrotik import DeviceError
 
 #: Сервисы, включённость которых сама по себе плохая новость. Не «запрещено»,
@@ -512,6 +512,47 @@ def forget(device_id: int) -> None:
             raise
 
 
+#: Порты, при которых номер в адресе браузера не нужен
+_DEFAULT_WEB_PORTS = {"http": "80", "https": "443"}
+
+
+def webfig_url(host: str, services: Iterable[dict[str, Any]]) -> str:
+    """
+    Адрес WebFig на самой точке, либо пустая строка, если веб выключен.
+
+    Порт не угадывается, а берётся из паспорта: там записано, включён ли
+    `www`, на каком он порту и есть ли `www-ssl`. Гадать нельзя, потому
+    что перенести веб с восьмидесятого порта это первое, что делают на
+    точке, смотрящей наружу, а кнопка, ведущая в никуда, хуже её
+    отсутствия.
+
+    При включённых обоих сервисах выбирается `https`: раз шифрованный
+    вход настроен, отправлять человека по открытому незачем.
+
+    Ссылка ведёт с машины человека, а не с сервера панели. Дойдёт она
+    или нет, отсюда не проверить: у панели туннель есть, а у ноутбука
+    может и не быть. Поэтому кнопка ничего не обещает, а просто ведёт.
+    """
+    host = str(host or "").strip()
+    if not host:
+        return ""
+    # IPv6 в адресе браузера пишется в скобках, иначе двоеточия адреса
+    # и порта неразличимы
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+
+    enabled = {str(s.get("name") or ""): s for s in services
+               if int(s.get("enabled") or 0)}
+    for name, scheme in (("www-ssl", "https"), ("www", "http")):
+        service = enabled.get(name)
+        if service is None:
+            continue
+        port = str(service.get("port") or "").strip()
+        tail = "" if port in ("", _DEFAULT_WEB_PORTS[scheme]) else f":{port}"
+        return f"{scheme}://{host}{tail}/webfig/"
+    return ""
+
+
 def load(device_id: int) -> dict[str, Any]:
     """Паспорт устройства из базы, готовый для карточки."""
     ports = [dict(r) for r in query(
@@ -542,6 +583,13 @@ def load(device_id: int) -> dict[str, Any]:
         "neighbors": neighbors,
         "scripts": scripts,
         "has_data": bool(ports or services or neighbors or scripts),
+        # Адрес веб-интерфейса самой точки. Считается по всем сервисам,
+        # а не по отфильтрованным выше: www среди динамических не бывает,
+        # но зависеть от этого незачем
+        "webfig": webfig_url(
+            (query_one("SELECT host FROM devices WHERE id = ?", (device_id,)) or
+             {"host": ""})["host"],
+            services),
     }
 
 

@@ -134,6 +134,13 @@ open is a hole, and you cannot find it by eye across fifty boxes.
 Collected during the full poll, in the same session, and rendered from the
 database: the card opens instantly and still works when the site is down.
 
+The **WebFig** button comes from the same data: if `www` or `www-ssl` is
+enabled on the router, the card header links to the router's own web
+interface, on the port recorded in the inventory and over https when that is
+configured. No web service, no button. The link opens from your machine
+rather than from the panel's server, so it only gets through from wherever
+the site is reachable anyway.
+
 **Device logs.** The panel receives syslog over UDP and TCP itself and keeps
 the lines next to everything else: a line is tied to its site right away, and
 you can jump from it to that device. Filters by text, site, severity and topic,
@@ -258,6 +265,16 @@ On Windows run `run.bat`. The script creates the environment and installs the
 dependencies itself.
 
 Python 3.10 or newer is required. Tested on 3.10 and on 3.14.
+
+**Where this actually runs.** The panel is plain Python and will start almost
+anywhere, but it is meant for Linux: the installer writes a systemd service,
+and the tests run on Ubuntu against Python 3.10, 3.12 and 3.13. Docker is the
+same Linux inside, so it is the right answer on Windows and macOS too.
+
+Running `run.bat` or `run.sh` directly on the machine is for having a look at
+the panel rather than keeping a fleet on it: no service, no autostart, close
+the window and the panel is gone. The ICMP check does work on all three
+systems, the command is built for whichever one it is on.
 
 > `requirements.txt` uses lower bounds rather than pinned versions, on purpose.
 > Prebuilt packages for a brand new Python release may not exist yet, and then
