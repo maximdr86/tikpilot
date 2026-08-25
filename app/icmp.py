@@ -27,6 +27,14 @@ API не достучаться: канал захлёбывается, тунн
 прав администратора, а панель обязана работать обычным пользователем.
 Если `ping` в системе нет (случается в тощих контейнерах), проверка
 молча выключается: она вспомогательная и падать из-за неё нельзя.
+
+Аргументы у `ping` разные в каждой системе, и это не мелочь. В Linux
+`-c` это число пакетов, а в Windows то же самое означает `-n`, где
+в Linux `-n` отключает разбор имён. Команда с чужими ключами не
+запускается вовсе, возвращает ненулевой код, и он неотличим от
+честного «не ответила». Пока команда собиралась только по-линуксовому,
+на macOS и Windows любая точка получала отметку «ICMP не прошёл»,
+включая ту, которая отвечает.
 """
 
 from __future__ import annotations
@@ -34,6 +42,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import sys
 
 log = logging.getLogger("tikpilot.icmp")
 
@@ -54,6 +63,33 @@ def available() -> bool:
     return bool(_binary)
 
 
+def command(binary: str, host: str, timeout: int, platform: str = "") -> list[str]:
+    """
+    Собрать вызов `ping` под систему, на которой запущена панель.
+
+    Различия ровно в двух ключах, но перепутать их нельзя:
+
+    * Linux (iputils): `-c` число пакетов, `-w` предел в секундах на
+      всю попытку, `-n` не разбирать имена;
+    * macOS и BSD: `-c` тот же, а предела в секундах нет, есть `-t`
+      на всю команду; `-W` там ждёт миллисекунды и относится к одному
+      пакету, поэтому берём `-t`;
+    * Windows: `-n` это число пакетов, а не запрет разбора имён,
+      и `-w` ждёт миллисекунды.
+
+    `platform` передаётся только тестами: гонять их приходится на одной
+    системе, а проверять надо все три.
+    """
+    platform = platform or sys.platform
+    seconds = max(1, int(timeout))
+
+    if platform.startswith("win"):
+        return [binary, "-n", "1", "-w", str(seconds * 1000), host]
+    if platform.startswith(("darwin", "freebsd", "openbsd", "netbsd")):
+        return [binary, "-n", "-c", "1", "-t", str(seconds), host]
+    return [binary, "-n", "-c", "1", "-w", str(seconds), host]
+
+
 def alive(host: str, timeout: int = TIMEOUT) -> bool | None:
     """
     Отвечает ли хост на ICMP.
@@ -69,14 +105,22 @@ def alive(host: str, timeout: int = TIMEOUT) -> bool | None:
 
     try:
         answer = subprocess.run(
-            [str(_binary), "-n", "-c", "1", "-w", str(max(1, timeout)), host],
+            command(str(_binary), host, timeout),
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
             timeout=max(2, timeout + 2),
             check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:  # noqa: BLE001
         log.debug("Пинг %s не выполнился: %s", host, exc)
+        return None
+
+    # Коды возврата у ping только два осмысленных: 0 это ответ, 1 это
+    # тишина. Всё остальное означает, что команда не отработала вовсе:
+    # не тот ключ, нет прав, не разобралось имя. Это не «не ответила»,
+    # и путать их нельзя, иначе живая точка получит отметку о молчании
+    if answer.returncode not in (0, 1):
+        log.debug("Пинг %s вернул код %s, ответа нет", host, answer.returncode)
         return None
 
     return answer.returncode == 0

@@ -17,7 +17,10 @@
             </div>
             <div id="action-params"></div>
 
-            {# Окно обслуживания: тяжёлые операции удобнее ставить на ночь #}
+            {# Окно обслуживания: тяжёлые операции удобнее ставить на ночь.
+               Прячется без права: раньше поле видели все, и обещание в списке
+               прав про «откладывать запуск» ничего не значило #}
+            {% if can("jobs.schedule") %}
             <div class="field" style="border-top:1px solid var(--border); padding-top:11px">
                 <label for="action-schedule">Когда выполнить</label>
                 <div style="display:flex; gap:7px; align-items:center; flex-wrap:wrap">
@@ -27,6 +30,7 @@
                 </div>
                 <div class="hint">Пусто: запустить немедленно. Задача будет ждать указанного времени.</div>
             </div>
+            {% endif %}
         </div>
         <footer>
             <button class="btn" onclick="closeModal('action-modal')">Отмена</button>

@@ -61,7 +61,12 @@ async def start_job(request: Request, user=Depends(current_user)):
         if p.required and not str(params.get(p.name, "")).strip():
             return JSONResponse({"error": f"Не заполнено поле «{p.label}»"}, status_code=400)
 
+    # Отложенный запуск это отдельное право. Проверяется здесь, а не только
+    # прятанием поля в форме: запрос уходит из браузера, и подделать его
+    # ничего не стоит
     scheduled_at = _parse_schedule(payload.get("scheduled_at"))
+    if scheduled_at and not permissions.has(user, "jobs.schedule"):
+        raise Forbidden("Нет права откладывать запуск")
 
     try:
         job_id = worker.create_job(
