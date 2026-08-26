@@ -6270,6 +6270,44 @@ def test_spoke_script_contains_everything_needed():
     assert "[Interface]" in conf and "Endpoint = vpn.example.com:13231" in conf
 
 
+def test_config_filename_fits_what_wireguard_accepts():
+    """
+    Имя файла конфигурации годится в название туннеля.
+
+    Это не украшение: и `wg-quick`, и приложения на телефоне берут имя
+    туннеля из имени файла, а разрешены там только латиница, цифры
+    и `_=+.-`, не длиннее пятнадцати знаков. Файл «Магазин 53.conf»
+    приложение отвергнет, и человек будет искать ошибку в самой
+    конфигурации, а не в имени.
+    """
+    import re
+
+    from app.wireguard import WG_NAME_MAX, config_filename
+
+    assert config_filename("NV Bufet 730") == "NV-Bufet-730.conf"
+    # Кириллица выкидывается, остаётся то, что можно прочитать
+    assert config_filename("Магазин 53") == "53.conf"
+    # Не осталось ничего пригодного: имя всё равно должно быть
+    assert config_filename("Кафе Ромашка") == "wg.conf"
+    # Разделители подряд схлопываются
+    assert config_filename("metro - Gateway") == "metro-Gateway.conf"
+
+    # Длинное имя обрезается, и обрезок не кончается разделителем
+    long_name = config_filename("Traygorodskoe - st. Yuzhanka")
+    assert len(long_name) - len(".conf") <= WG_NAME_MAX
+    assert not long_name.startswith("-") and "-.conf" not in long_name
+
+    # Итог всегда проходит проверку самого WireGuard
+    allowed = re.compile(r"^[A-Za-z0-9_=+.-]{1,%d}\.conf$" % WG_NAME_MAX)
+    for name in ("NV Bufet 730", "Магазин 53", "Кафе Ромашка", "metro - Gateway",
+                 "Traygorodskoe - st. Yuzhanka", "", "..--..", "x" * 80):
+        assert allowed.match(config_filename(name)), name
+
+    # У скрипта RouterOS ограничения на длину нет
+    assert config_filename("Traygorodskoe - st. Yuzhanka", ".rsc") == \
+        "Traygorodskoe-st.-Yuzhanka.rsc"
+
+
 def _wg_hub(client, router) -> int:
     """Устройство-хаб с сохранёнными настройками."""
     device_id = _add_device(client, router, "wg-hub-device")
@@ -6300,6 +6338,9 @@ def test_link_creates_peer_and_routes_on_the_hub(client, router):
     assert r.status_code == 200, r.text
     body = r.json()
     assert "PrivateKey" in body["config"] or "private-key" in body["script"]
+    # Имена файлов для скачивания считает сервер, а не браузер: правила
+    # именования тут не про удобство, а про то, что примет клиент
+    assert body["conf_file"] == "73.conf" and body["rsc_file"] == "73.rsc"
 
     peers = [p for p in router.wg_peers if p.get("comment") == "wgpanel:Кедр 73"]
     assert len(peers) == 1

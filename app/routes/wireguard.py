@@ -462,6 +462,10 @@ def create_link(request: Request, payload: dict = Body(default={}),
         "name": link.name,
         "script": wg.build_spoke_script(hub, link),
         "config": config,
+        # Имена файлов для скачивания считает сервер: у клиента WireGuard
+        # имя файла задаёт название туннеля, и правила там свои
+        "conf_file": wg.config_filename(link.name),
+        "rsc_file": wg.config_filename(link.name, ".rsc"),
         # QR только здесь: он нужен, чтобы внести конфигурацию в телефон,
         # а без приватного ключа вносить нечего
         "qr": wg.qr_svg(config),
@@ -530,6 +534,8 @@ async def link_script(request: Request, user=Depends(require("wireguard.manage")
         "name": name,
         "script": wg.build_spoke_script(hub, link),
         "config": wg.build_wg_quick_config(hub, link),
+        "conf_file": wg.config_filename(name),
+        "rsc_file": wg.config_filename(name, ".rsc"),
         # Ключа нет, значит и в QR попадёт нерабочая конфигурация:
         # честнее не показывать его вовсе
         "qr": "",

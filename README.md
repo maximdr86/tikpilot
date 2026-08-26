@@ -501,6 +501,12 @@ It all runs over the same device API the panel already uses to manage the fleet.
 No REST service, no certificate, no extra router user. The spoke private key is
 shown once and stored nowhere.
 
+The config can be copied to the clipboard or downloaded as a file: the desktop
+WireGuard app takes it by import, and to a phone it is easier to send as a
+message. The panel shapes the filename into something the client will accept,
+because the client takes the tunnel name from it and only allows latin letters,
+digits and `_=+.-`, up to fifteen characters.
+
 For a phone or a laptop, a QR code is shown next to the `wg-quick` config. It is
 drawn on the server, so no internet access is needed for it. An existing link
 has no code: the private key is gone by then, and without it there is nothing to

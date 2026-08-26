@@ -850,7 +850,7 @@ document.addEventListener('click', (e) => {
 
 /* ============================================================== WireGuard */
 
-let wgConfigs = { rsc: '', conf: '', qr: '' };
+let wgConfigs = { rsc: '', conf: '', qr: '', kind: 'rsc', confFile: '', rscFile: '' };
 
 /** Обработчики кнопок в таблицах линков и маршрутов. */
 function wgInit() {
@@ -982,7 +982,13 @@ async function wgRemoveRoute(routeId) {
 
 /** Показать окно с готовой конфигурацией дальней стороны. */
 function wgOpenConfig(data) {
-    wgConfigs = { rsc: data.script || '', conf: data.config || '', qr: data.qr || '' };
+    wgConfigs = {
+        rsc: data.script || '', conf: data.config || '', qr: data.qr || '',
+        kind: 'rsc',
+        // Имена файлов приходят с сервера: у клиента WireGuard имя файла
+        // задаёт название туннеля, и правила там свои
+        confFile: data.conf_file || 'wg.conf', rscFile: data.rsc_file || 'wg.rsc',
+    };
     // QR рисуется сервером и вставляется как есть: это наш собственный SVG,
     // а не текст, пришедший от устройства или от пользователя
     $('#wg-qr').innerHTML = wgConfigs.qr;
@@ -991,6 +997,7 @@ function wgOpenConfig(data) {
 }
 
 function wgShowTab(kind) {
+    wgConfigs.kind = kind;
     $('#wg-config-text').value = kind === 'conf' ? wgConfigs.conf : wgConfigs.rsc;
     $('#wg-tab-rsc').classList.toggle('active', kind === 'rsc');
     $('#wg-tab-conf').classList.toggle('active', kind === 'conf');
@@ -1001,6 +1008,30 @@ function wgShowTab(kind) {
 async function wgCopyConfig() {
     await copyText($('#wg-config-text').value);
     toast(T('Скопировано'), 'ok');
+}
+
+/**
+ * Сохранить показанную конфигурацию файлом.
+ *
+ * Через буфер обмена конфигурацию несут не всегда: в приложение WireGuard
+ * на компьютере её вносят импортом файла, а на телефон файл отправляют
+ * сообщением. Сохраняем прямо из браузера, без обращения к серверу:
+ * текст уже здесь, а лишний адрес, отдающий приватные ключи, нам не нужен.
+ */
+function wgDownloadConfig() {
+    const conf = wgConfigs.kind === 'conf';
+    const blob = new Blob([$('#wg-config-text').value], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = conf ? wgConfigs.confFile : wgConfigs.rscFile;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Ссылку на объект надо отпустить, иначе содержимое висит в памяти
+    // вкладки до её закрытия, а там приватный ключ
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(T('Файл сохранён: %s').replace('%s', link.download), 'ok');
 }
 
 async function wgApplySpoke() {

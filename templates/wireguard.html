@@ -302,6 +302,7 @@
                 <button class="btn" id="wg-tab-conf" onclick="wgShowTab('conf')">Обычный клиент</button>
                 <span class="muted">|</span>
                 <button class="btn" onclick="wgCopyConfig()">Скопировать</button>
+                <button class="btn" onclick="wgDownloadConfig()">Скачать файлом</button>
                 <select id="wg-spoke" style="width:auto">
                     <option value="">применить на устройстве</option>
                     {% for d in devices %}

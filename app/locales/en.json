@@ -2090,5 +2090,7 @@
   "Порт SSH": "SSH port",
   "Нужен только терминалу": "Used by the terminal only",
   "Скачивание бэкапов": "Downloading backups",
-  "Первая строка файла это заголовки. Распознаются колонки: <span class=\"mono\">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>. Разделитель (<span class=\"mono\">,</span> или <span class=\"mono\">;</span>) определяется автоматически. Несуществующие группы создаются на лету.": "The first line of the file is the header. Recognised columns: <span class=\"mono\">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>. The separator (<span class=\"mono\">,</span> or <span class=\"mono\">;</span>) is detected automatically. Groups that do not exist are created on the fly."
+  "Первая строка файла это заголовки. Распознаются колонки: <span class=\"mono\">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>. Разделитель (<span class=\"mono\">,</span> или <span class=\"mono\">;</span>) определяется автоматически. Несуществующие группы создаются на лету.": "The first line of the file is the header. Recognised columns: <span class=\"mono\">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>. The separator (<span class=\"mono\">,</span> or <span class=\"mono\">;</span>) is detected automatically. Groups that do not exist are created on the fly.",
+  "Скачать файлом": "Download as file",
+  "Файл сохранён: %s": "Saved as %s"
 }
