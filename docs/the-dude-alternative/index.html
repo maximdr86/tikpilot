@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-M5YT1VL1L8"></script>
+<script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-M5YT1VL1L8');
+</script>
+<title>An alternative to The Dude for a MikroTik fleet - Tikpilot</title>
+<meta name="description" content="What to use instead of The Dude when you run dozens of MikroTik routers on remote sites: what The Dude is good at, where it stops helping, and what covers the rest. Self-hosted, MIT.">
+<link rel="canonical" href="https://tikpilot.ru/the-dude-alternative/">
+<link rel="alternate" hreflang="en" href="https://tikpilot.ru/the-dude-alternative/">
+<link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/alternativa-the-dude/">
+<link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/the-dude-alternative/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="An alternative to The Dude for a MikroTik fleet">
+<meta property="og:description" content="What The Dude is good at, where it stops helping across fifty remote sites, and what to put next to it or instead of it.">
+<meta property="og:url" content="https://tikpilot.ru/the-dude-alternative/">
+<meta property="og:image" content="https://tikpilot.ru/screenshots/dashboard.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../brand/logo.svg">
+<style>
+:root {
+    --bg: #ffffff;
+    --bg-soft: #f4f6f6;
+    --border: #dfe4e3;
+    --text: #1d2b28;
+    --muted: #64756f;
+    --accent: #0f6156;
+    --accent-soft: #e7f1ef;
+    --code-bg: #f7f9f9;
+    --shot-bg: #f4f6f6;
+}
+html[data-theme="dark"] {
+    --bg: #121a19;
+    --bg-soft: #1a2523;
+    --border: #32433f;
+    --text: #dfe8e5;
+    --muted: #869491;
+    --accent: #2f9e8b;
+    --accent-soft: #16302b;
+    --code-bg: #16211f;
+    --shot-bg: #0e1615;
+}
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+        --bg: #121a19;
+        --bg-soft: #1a2523;
+        --border: #32433f;
+        --text: #dfe8e5;
+        --muted: #869491;
+        --accent: #2f9e8b;
+        --accent-soft: #16302b;
+        --code-bg: #16211f;
+        --shot-bg: #0e1615;
+    }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+}
+a { color: var(--accent); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+header { border-bottom: 1px solid var(--border); }
+.top { display: flex; align-items: center; gap: 14px; padding: 14px 0; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; }
+.mark { display: block; border-radius: 5px; }
+.top nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 15px; }
+.top nav a, .theme { white-space: nowrap; }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover { color: var(--text); }
+
+.hero { padding: 56px 0 8px; }
+h1 { font-size: 40px; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.02em; }
+.lead { font-size: 20px; color: var(--muted); margin: 0 0 26px; max-width: 46em; }
+.buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn {
+    display: inline-block; padding: 11px 20px; border-radius: 5px;
+    text-decoration: none; font-weight: 500; font-size: 16px;
+    border: 1px solid var(--accent);
+}
+.btn.primary { background: var(--accent); color: #fff; }
+.theme {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    color: var(--muted); font: inherit; font-size: 15px;
+}
+.theme:hover { color: var(--text); }
+.btn.ghost { color: var(--accent); }
+.facts { color: var(--muted); font-size: 15px; margin-left: 6px; }
+/* Команда установки прямо на первом экране: её ищут первой, и три
+   экрана прокрутки до неё это три лишних экрана */
+.hero-install { margin: 22px 0 20px; max-width: 46em; font-size: 13.5px; }
+
+.shot { margin: 34px 0 10px; }
+.shot img, .pair img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--shot-bg);
+}
+.zoom { display: block; cursor: zoom-in; }
+.caption { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+
+h2 { font-size: 26px; margin: 54px 0 6px; letter-spacing: -0.01em; }
+h2 + .sub { color: var(--muted); margin: 0 0 22px; }
+h2 + .grid, h2 + .pair, h2 + pre { margin-top: 22px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 22px; }
+.card { border: 1px solid var(--border); border-radius: 6px; padding: 18px 20px; background: var(--bg-soft); }
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 26px; margin-top: 24px; }
+.pair figure { margin: 0; }
+.pair figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+
+/* Full-screen view. Without JavaScript the links simply open the PNG. */
+.full {
+    display: none; position: fixed; inset: 0; z-index: 20;
+    background: rgba(16, 24, 22, .88); padding: 24px;
+    align-items: center; justify-content: center;
+}
+.full.open { display: flex; }
+.full img {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    border-radius: 4px; background: #fff;
+}
+.full .backdrop { position: absolute; inset: 0; background: none; border: 0; cursor: zoom-out; }
+.full .close {
+    position: absolute; top: 10px; right: 16px; color: #fff;
+    font-size: 30px; line-height: 1; background: none; border: 0; cursor: pointer;
+}
+.full .raw {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 14px;
+}
+
+pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 16px 18px; overflow-x: auto; font-size: 14.5px; line-height: 1.7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .93em; }
+
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
+ul.plain li:last-child { border-bottom: 0; }
+ul.plain b { color: var(--text); font-weight: 600; }
+
+.faq details {
+    border-bottom: 1px solid var(--border); padding: 4px 0;
+}
+.faq summary {
+    cursor: pointer; padding: 10px 0; font-weight: 500; list-style: none;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::before { content: "+ "; color: var(--accent); }
+.faq details[open] summary::before { content: "\2212 "; }
+.faq p { margin: 0 0 12px; color: var(--muted); }
+
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 5px 5px 0; }
+.note p { margin: 0; }
+
+footer { margin-top: 64px; border-top: 1px solid var(--border); padding: 22px 0 48px; color: var(--muted); font-size: 15px; }
+footer a { color: var(--muted); }
+
+/* На телефоне шапка становится в две строки: сначала название,
+   потом меню. В одну строку оно всё равно не помещается, а перенос
+   посреди пункта читается как ошибка вёрстки. */
+@media (max-width: 720px) {
+    .top { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .top nav { margin-left: 0; width: 100%; }
+}
+
+@media (max-width: 600px) {
+    h1 { font-size: 30px; }
+    .lead { font-size: 18px; }
+    .hero { padding-top: 34px; }
+    h2 { font-size: 22px; margin-top: 40px; }
+}
+
+/* Таблица сравнения. Своих таблиц на сайте до этой страницы не было,
+   поэтому правила лежат здесь, а не в общем блоке. */
+.cmp { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 15px; }
+.cmp th, .cmp td { text-align: left; vertical-align: top; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); }
+.cmp th { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); font-weight: 600; }
+.cmp td:first-child { color: var(--text); font-weight: 600; }
+.cmp td { color: var(--muted); }
+.cmp-wrap { overflow-x: auto; margin: 18px 0 26px; }
+/* Нумерованный список: те же отбивки, что у ul.plain, но с цифрами */
+ol.steps { margin: 0 0 24px; padding-left: 22px; }
+ol.steps li { padding: 7px 0; color: var(--muted); }
+.brand a { color: inherit; text-decoration: none; display: flex;
+    align-items: center; gap: 9px; }
+
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type": "Question", "name": "Is The Dude discontinued?",
+     "acceptedAnswer": {"@type": "Answer", "text": "No. It ships with RouterOS and it is still free. The question is not whether it is alive, but what it was built for: a map of one network, not fifty independent sites."}},
+    {"@type": "Question", "name": "Can I run both The Dude and Tikpilot?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Yes. They look at the network from different sides and do not interfere: The Dude polls over SNMP and ICMP, the panel talks to the RouterOS API. Nothing on the routers needs to change."}},
+    {"@type": "Question", "name": "Does Tikpilot draw a network map?",
+     "acceptedAnswer": {"@type": "Answer", "text": "No, deliberately. It shows a list of sites and their state. If you need autodiscovery and SNMP, keep The Dude or look at Zabbix or LibreNMS."}},
+    {"@type": "Question", "name": "What do the routers need for this to work?",
+     "acceptedAnswer": {"@type": "Answer", "text": "The API enabled and a dedicated user. No agent, no REST service, no certificates."}}
+  ]
+}
+</script>
+</head>
+<body>
+
+<header>
+    <div class="wrap top">
+        <span class="brand"><a href="../"><img class="mark" src="../brand/logo.svg" alt="" width="22" height="22"> Tikpilot</a></span>
+        <nav>
+            <a href="../">Home</a>
+            <a href="../#screens">Screens</a>
+            <a href="../#install">Install</a>
+            <a href="https://github.com/maximdr86/tikpilot">GitHub</a>
+            <a href="../ru/alternativa-the-dude/">Русский</a>
+            <button class="theme" id="theme" type="button">Dark theme</button>
+        </nav>
+    </div>
+</header>
+
+<main class="wrap">
+
+    <section class="hero">
+        <h1>An alternative to The Dude for a MikroTik fleet</h1>
+        <p class="lead">
+            Written for people with dozens of routers spread across remote
+            sites. What The Dude is good at, where it stops helping, and what
+            to put next to it or instead of it.
+        </p>
+    </section>
+
+    <h2>First, what The Dude gets right</h2>
+    <p class="sub">Opening with its faults would not be honest.</p>
+
+    <ul class="plain">
+        <li>It is free and comes from MikroTik itself, installed as a package on a router.</li>
+        <li>It finds devices on the network by itself and draws the links between them.</li>
+        <li>It polls over SNMP and ICMP, so it sees more than MikroTik: switches,
+        printers, servers.</li>
+        <li>For one network in one building that is usually enough, and there is
+        little reason to replace it there.</li>
+    </ul>
+
+    <h2>Where it stops helping</h2>
+    <p class="sub">Not because it is bad, but because the job is a different one.</p>
+
+    <p>
+        The difference shows up once there are many sites and they are not
+        connected to each other. Fifty shops, canteens and dormitories are not
+        one network, they are fifty independent networks, each behind its own
+        provider. The map of links, the very thing The Dude exists for, shows
+        fifty separate icons and explains nothing.
+    </p>
+
+    <p>
+        Then comes the work that has no place in that picture at all. Upgrade
+        RouterOS on every site. Collect the configuration from all of them and
+        compare today's against yesterday's. Push one script to forty-nine
+        devices and see which three failed and why. Hand the person renting the
+        channel a document with the uptime for the month. All of it is done by
+        hand, one device at a time.
+    </p>
+
+    <h2>What covers what</h2>
+
+    <div class="cmp-wrap">
+    <table class="cmp">
+        <thead>
+        <tr><th>Task</th><th>The Dude</th><th>Tikpilot</th></tr>
+        </thead>
+        <tbody>
+        <tr><td>Network map, autodiscovery, SNMP</td>
+            <td>Yes, this is its strength</td>
+            <td>No, and not planned</td></tr>
+        <tr><td>Fifty remote sites as one list</td>
+            <td>A map rather than a list</td>
+            <td>List, groups, a needs-attention block on top</td></tr>
+        <tr><td>RouterOS upgrade across the fleet</td>
+            <td>One device at a time</td>
+            <td>One job over the selected sites, a result per device</td></tr>
+        <tr><td>Scheduled backups</td>
+            <td>Yes, configured separately</td>
+            <td>Binary copy and text export, N copies per device,
+                diff between any two configs, full-text search across all of them</td></tr>
+        <tr><td>Running scripts in bulk</td>
+            <td>One device at a time</td>
+            <td>A script library, run on the selected, see where it failed</td></tr>
+        <tr><td>Availability report for a period</td>
+            <td>Assembled by hand</td>
+            <td>A printable document for the fleet or for one site</td></tr>
+        <tr><td>Alerts</td>
+            <td>Yes, its own</td>
+            <td>Telegram, with hold times, quiet hours and a digest</td></tr>
+        <tr><td>Working from a phone</td>
+            <td>A Windows application</td>
+            <td>A web panel, phone included</td></tr>
+        </tbody>
+    </table>
+    </div>
+
+    <div class="shot">
+        <a class="zoom" href="../screenshots/dashboard.png">
+            <img src="../shots/hero-dashboard.png" alt="Tikpilot dashboard: the needs-attention block, fleet tiles, groups and RouterOS versions" width="1900" height="738">
+        </a>
+        <p class="caption">
+            Instead of a map of links, a list of what to deal with today. Taken
+            from a live fleet of 49 routers; names and addresses are replaced by
+            the panel itself.
+        </p>
+    </div>
+
+    <h2>What Tikpilot does not do</h2>
+    <p class="sub">So that you do not find out after installing it.</p>
+
+    <ul class="plain">
+        <li>It does not draw topology and does not discover devices. Sites are
+        added by hand or imported from a CSV file.</li>
+        <li>It does not poll SNMP and speaks nothing but MikroTik. Printers,
+        switches from other vendors and servers are out of scope.</li>
+        <li>It does not replace WinBox. Fine-tuning a single site still happens
+        there; the panel takes over the repetitive work across the fleet.</li>
+    </ul>
+
+    <p>
+        If a map with autodiscovery is what you actually need, look at Zabbix,
+        LibreNMS or The Dude itself. These are different jobs, and pretending one
+        program covers both would be a lie.
+    </p>
+
+    <h2>Moving over without throwing The Dude away</h2>
+
+    <p>
+        You do not have to choose. The Dude polls over SNMP and ICMP, the panel
+        talks to the RouterOS API, nothing on the routers has to change, and
+        neither of them knows about the other. A sensible order:
+    </p>
+
+    <ol class="steps">
+        <li>Install the panel on any machine nearby, add five sites by hand and
+        watch it for a week.</li>
+        <li>Import the rest from a CSV file: name, address, login, group.</li>
+        <li>Turn on scheduled backups. That is the part that pays for itself first.</li>
+        <li>Then decide for yourself whether you still need the map.</li>
+    </ol>
+
+    <pre class="hero-install"><code>git clone https://github.com/maximdr86/tikpilot
+cd tikpilot &amp;&amp; cp .env.example .env
+docker compose up -d</code></pre>
+
+    <div class="buttons">
+        <a class="btn primary" href="../#install">More about installing</a>
+        <a class="btn ghost" href="https://github.com/maximdr86/tikpilot">Code on GitHub</a>
+        <span class="facts">MIT · Python · no cloud · works on a network with no internet</span>
+    </div>
+
+    <h2 id="faq">Frequently asked</h2>
+
+    <h3>Is The Dude discontinued?</h3>
+    <p>
+        No. It ships with RouterOS and it is still free. The question is not
+        whether it is alive, but what it was built for: a map of one network,
+        not fifty independent sites.
+    </p>
+
+    <h3>Can I run both?</h3>
+    <p>
+        Yes, they look at the network from different sides and do not interfere.
+    </p>
+
+    <h3>Does the panel draw a network map?</h3>
+    <p>
+        No, deliberately. It shows a list of sites and their state.
+    </p>
+
+    <h3>What do the routers need for this to work?</h3>
+    <p>
+        The API enabled and a dedicated user. No agent, no REST service,
+        no certificates.
+    </p>
+
+</main>
+
+<footer>
+    <div class="wrap">
+        <a href="../">Home</a> ·
+        <a href="https://github.com/maximdr86/tikpilot">GitHub</a> ·
+        <a href="https://github.com/maximdr86/tikpilot/issues">Questions and bugs</a> ·
+        <a href="../ru/alternativa-the-dude/">Русский</a>
+        <p>MIT licence. Tikpilot is not affiliated with MikroTik and is not their
+        product. The Dude, MikroTik and RouterOS are trademarks of MikroTik.</p>
+        <p>The site collects anonymised visit statistics with Yandex Metrica and
+        Google Analytics, both of which use cookies. By continuing to use the site
+        you agree to this.</p>
+    </div>
+</footer>
+
+<div class="full" id="viewer">
+    <button class="backdrop" type="button" aria-label="Close"></button>
+    <img id="viewer-image" src="" alt="">
+    <button class="close" type="button" aria-label="Close">&times;</button>
+    <a class="raw" id="viewer-raw" href="" target="_blank" rel="noopener">Open the file at full size</a>
+</div>
+
+<script>
+    (function () {
+        var root = document.documentElement;
+        var button = document.getElementById("theme");
+        var dark = matchMedia("(prefers-color-scheme: dark)");
+
+        function current() {
+            return root.dataset.theme || (dark.matches ? "dark" : "light");
+        }
+        function label() {
+            button.textContent = current() === "dark" ? "Light theme" : "Dark theme";
+        }
+        button.addEventListener("click", function () {
+            var next = current() === "dark" ? "light" : "dark";
+            root.dataset.theme = next;
+            localStorage.setItem("tikpilot-theme", next);
+            label();
+        });
+        dark.addEventListener("change", label);
+        label();
+    })();
+
+    // Screenshot viewer: an own layer instead of an anchor, otherwise
+    // closing it throws the page back to the top
+    (function () {
+        var viewer = document.getElementById("viewer");
+        var image = document.getElementById("viewer-image");
+        var raw = document.getElementById("viewer-raw");
+        if (!viewer || !image || !raw) { return; }
+
+        function show(href, alt) {
+            image.src = href;
+            image.alt = alt;
+            raw.href = href;
+            viewer.classList.add("open");
+            document.body.style.overflow = "hidden";
+        }
+        function hide() {
+            viewer.classList.remove("open");
+            document.body.style.overflow = "";
+            image.src = "";
+        }
+
+        document.querySelectorAll("a.zoom").forEach(function (link) {
+            link.addEventListener("click", function (event) {
+                if (event.metaKey || event.ctrlKey || event.button !== 0) { return; }
+                event.preventDefault();
+                show(link.getAttribute("href"), link.querySelector("img").alt);
+            });
+        });
+        viewer.querySelector(".backdrop").addEventListener("click", hide);
+        viewer.querySelector(".close").addEventListener("click", hide);
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") { hide(); }
+        });
+    })();
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function(m,e,t,r,i,k,a){
+        m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();
+        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+    })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=111622992', 'ym');
+    ym(111622992, 'init', {ssr:true, webvisor:true, clickmap:true, referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/111622992" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+
+</body>
+</html>
