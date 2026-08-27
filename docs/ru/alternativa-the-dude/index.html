@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-M5YT1VL1L8"></script>
+<script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-M5YT1VL1L8');
+</script>
+<title>Альтернатива The Dude: чем заменить для парка MikroTik - Tikpilot</title>
+<meta name="description" content="Чем заменить The Dude, если роутеров MikroTik полсотни и они на удалённых площадках: разбор, что The Dude делает хорошо, где перестаёт помогать и что вместо него. Self-hosted панель, MIT.">
+<link rel="canonical" href="https://tikpilot.ru/ru/alternativa-the-dude/">
+<link rel="alternate" hreflang="en" href="https://tikpilot.ru/the-dude-alternative/">
+<link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/alternativa-the-dude/">
+<link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/the-dude-alternative/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Альтернатива The Dude для парка MikroTik">
+<meta property="og:description" content="Что The Dude делает хорошо, где он перестаёт помогать на полусотне удалённых точек и чем его дополнить или заменить.">
+<meta property="og:url" content="https://tikpilot.ru/ru/alternativa-the-dude/">
+<meta property="og:image" content="https://tikpilot.ru/screenshots/dashboard.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../../brand/logo.svg">
+<style>
+:root {
+    --bg: #ffffff;
+    --bg-soft: #f4f6f6;
+    --border: #dfe4e3;
+    --text: #1d2b28;
+    --muted: #64756f;
+    --accent: #0f6156;
+    --accent-soft: #e7f1ef;
+    --code-bg: #f7f9f9;
+    --shot-bg: #f4f6f6;
+}
+html[data-theme="dark"] {
+    --bg: #121a19;
+    --bg-soft: #1a2523;
+    --border: #32433f;
+    --text: #dfe8e5;
+    --muted: #869491;
+    --accent: #2f9e8b;
+    --accent-soft: #16302b;
+    --code-bg: #16211f;
+    --shot-bg: #0e1615;
+}
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+        --bg: #121a19;
+        --bg-soft: #1a2523;
+        --border: #32433f;
+        --text: #dfe8e5;
+        --muted: #869491;
+        --accent: #2f9e8b;
+        --accent-soft: #16302b;
+        --code-bg: #16211f;
+        --shot-bg: #0e1615;
+    }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+}
+a { color: var(--accent); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+header { border-bottom: 1px solid var(--border); }
+.top { display: flex; align-items: center; gap: 14px; padding: 14px 0; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; }
+.mark { display: block; border-radius: 5px; }
+.top nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 15px; }
+.top nav a, .theme { white-space: nowrap; }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover { color: var(--text); }
+
+.hero { padding: 56px 0 8px; }
+h1 { font-size: 40px; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.02em; }
+.lead { font-size: 20px; color: var(--muted); margin: 0 0 26px; max-width: 46em; }
+.buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn {
+    display: inline-block; padding: 11px 20px; border-radius: 5px;
+    text-decoration: none; font-weight: 500; font-size: 16px;
+    border: 1px solid var(--accent);
+}
+.btn.primary { background: var(--accent); color: #fff; }
+.theme {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    color: var(--muted); font: inherit; font-size: 15px;
+}
+.theme:hover { color: var(--text); }
+.btn.ghost { color: var(--accent); }
+.facts { color: var(--muted); font-size: 15px; margin-left: 6px; }
+/* Команда установки прямо на первом экране: её ищут первой, и три
+   экрана прокрутки до неё это три лишних экрана */
+.hero-install { margin: 22px 0 20px; max-width: 46em; font-size: 13.5px; }
+
+.shot { margin: 34px 0 10px; }
+.shot img, .pair img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--shot-bg);
+}
+.zoom { display: block; cursor: zoom-in; }
+.caption { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+
+h2 { font-size: 26px; margin: 54px 0 6px; letter-spacing: -0.01em; }
+h2 + .sub { color: var(--muted); margin: 0 0 22px; }
+h2 + .grid, h2 + .pair, h2 + pre { margin-top: 22px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 22px; }
+.card { border: 1px solid var(--border); border-radius: 6px; padding: 18px 20px; background: var(--bg-soft); }
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 26px; margin-top: 24px; }
+.pair figure { margin: 0; }
+.pair figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+
+/* Просмотр во весь экран. Без JavaScript ссылки просто откроют PNG. */
+.full {
+    display: none; position: fixed; inset: 0; z-index: 20;
+    background: rgba(16, 24, 22, .88); padding: 24px;
+    align-items: center; justify-content: center;
+}
+.full.open { display: flex; }
+.full img {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    border-radius: 4px; background: #fff;
+}
+.full .backdrop { position: absolute; inset: 0; background: none; border: 0; cursor: zoom-out; }
+.full .close {
+    position: absolute; top: 10px; right: 16px; color: #fff;
+    font-size: 30px; line-height: 1; background: none; border: 0; cursor: pointer;
+}
+.full .raw {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 14px;
+}
+
+pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 16px 18px; overflow-x: auto; font-size: 14.5px; line-height: 1.7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .93em; }
+
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
+ul.plain li:last-child { border-bottom: 0; }
+ul.plain b { color: var(--text); font-weight: 600; }
+
+.faq details {
+    border-bottom: 1px solid var(--border); padding: 4px 0;
+}
+.faq summary {
+    cursor: pointer; padding: 10px 0; font-weight: 500; list-style: none;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::before { content: "+ "; color: var(--accent); }
+.faq details[open] summary::before { content: "\2212 "; }
+.faq p { margin: 0 0 12px; color: var(--muted); }
+
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 5px 5px 0; }
+.note p { margin: 0; }
+
+footer { margin-top: 64px; border-top: 1px solid var(--border); padding: 22px 0 48px; color: var(--muted); font-size: 15px; }
+footer a { color: var(--muted); }
+
+/* На телефоне шапка становится в две строки: сначала название,
+   потом меню. В одну строку оно всё равно не помещается, а перенос
+   посреди пункта читается как ошибка вёрстки. */
+@media (max-width: 720px) {
+    .top { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .top nav { margin-left: 0; width: 100%; }
+}
+
+@media (max-width: 600px) {
+    h1 { font-size: 30px; }
+    .lead { font-size: 18px; }
+    .hero { padding-top: 34px; }
+    h2 { font-size: 22px; margin-top: 40px; }
+}
+
+/* Таблица сравнения. Своих таблиц на сайте до этой страницы не было,
+   поэтому правила лежат здесь, а не в общем блоке. */
+.cmp { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 15px; }
+.cmp th, .cmp td { text-align: left; vertical-align: top; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); }
+.cmp th { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); font-weight: 600; }
+.cmp td:first-child { color: var(--text); font-weight: 600; }
+.cmp td { color: var(--muted); }
+.cmp-wrap { overflow-x: auto; margin: 18px 0 26px; }
+/* Нумерованный список: те же отбивки, что у ul.plain, но с цифрами */
+ol.steps { margin: 0 0 24px; padding-left: 22px; }
+ol.steps li { padding: 7px 0; color: var(--muted); }
+.brand a { color: inherit; text-decoration: none; display: flex;
+    align-items: center; gap: 9px; }
+
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type": "Question", "name": "The Dude больше не поддерживается?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Поддерживается, он идёт вместе с RouterOS и остаётся бесплатным. Вопрос не в том, жив ли он, а в том, на какую работу он рассчитан: на карту одной сети, а не на полсотни независимых площадок."}},
+    {"@type": "Question", "name": "Можно ли пользоваться и The Dude, и панелью одновременно?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Да. Они смотрят на сеть с разных сторон и друг другу не мешают: The Dude опрашивает по SNMP и ICMP, панель ходит по API RouterOS. Ничего на роутерах для этого переделывать не нужно."}},
+    {"@type": "Question", "name": "Панель рисует карту сети?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Нет, и это сделано намеренно. Она показывает список площадок и их состояние. Если нужна карта с автообнаружением и SNMP, оставьте The Dude или возьмите Zabbix, LibreNMS."}},
+    {"@type": "Question", "name": "Что нужно на роутерах, чтобы начать?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Включённый API и отдельный пользователь. Ни агента, ни REST, ни сертификатов."}}
+  ]
+}
+</script>
+</head>
+<body>
+
+<header>
+    <div class="wrap top">
+        <span class="brand"><a href="../"><img class="mark" src="../../brand/logo.svg" alt="" width="22" height="22"> Tikpilot</a></span>
+        <nav>
+            <a href="../">Главная</a>
+            <a href="../#screens">Экраны</a>
+            <a href="../#install">Установка</a>
+            <a href="https://github.com/maximdr86/tikpilot">GitHub</a>
+            <a href="../../the-dude-alternative/">English</a>
+            <button class="theme" id="theme" type="button">Тёмная тема</button>
+        </nav>
+    </div>
+</header>
+
+<main class="wrap">
+
+    <section class="hero">
+        <h1>Альтернатива The Dude для парка MikroTik</h1>
+        <p class="lead">
+            Разбор для тех, у кого роутеров десятки и стоят они на удалённых
+            площадках. Что The Dude делает хорошо, где он перестаёт помогать
+            и чем его дополнить или заменить.
+        </p>
+    </section>
+
+    <h2>Сначала честно: что у The Dude хорошо</h2>
+    <p class="sub">Начинать разговор с недостатков было бы нечестно.</p>
+
+    <ul class="plain">
+        <li>Он бесплатный и от самой MikroTik, ставится пакетом на роутер.</li>
+        <li>Он сам находит устройства в сети и рисует карту связей.</li>
+        <li>Он опрашивает по SNMP и ICMP не только MikroTik, а всё подряд:
+        коммутаторы, принтеры, серверы.</li>
+        <li>Для одной сети в одном здании этого чаще всего достаточно, и
+        менять его там не на что.</li>
+    </ul>
+
+    <h2>Где он перестаёт помогать</h2>
+    <p class="sub">Не потому, что плохой, а потому, что задача другая.</p>
+
+    <p>
+        Разница появляется, когда точек становится много и между собой они
+        не связаны. Пятьдесят магазинов, столовых и общежитий это не одна
+        сеть, а пятьдесят независимых сетей, каждая за своим провайдером.
+        Карта связей, ради которой The Dude и придуман, в таком парке
+        показывает пятьдесят отдельных значков и ничего не объясняет.
+    </p>
+
+    <p>
+        Дальше начинается работа, которой в этой картине мира просто нет.
+        Обновить RouterOS на всех точках. Собрать конфигурации со всех и
+        сравнить сегодняшнюю со вчерашней. Раскатать один скрипт на сорок
+        девять устройств и увидеть, на каких трёх он не прошёл и почему.
+        Показать арендатору канала бумагу с доступностью за месяц. Всё это
+        делается руками, по одному устройству за раз.
+    </p>
+
+    <h2>Что вместо, по задачам</h2>
+
+    <div class="cmp-wrap">
+    <table class="cmp">
+        <thead>
+        <tr><th>Задача</th><th>The Dude</th><th>Tikpilot</th></tr>
+        </thead>
+        <tbody>
+        <tr><td>Карта сети, автообнаружение, SNMP</td>
+            <td>Да, это его сильная сторона</td>
+            <td>Нет, и не планируется</td></tr>
+        <tr><td>Состояние полусотни удалённых точек одним списком</td>
+            <td>Карта вместо списка</td>
+            <td>Список, группы, «требует внимания» сверху</td></tr>
+        <tr><td>Обновление RouterOS на всём парке</td>
+            <td>По одному устройству</td>
+            <td>Одна задача на выбранные точки, результат построчно</td></tr>
+        <tr><td>Резервные копии по расписанию</td>
+            <td>Есть, отдельной настройкой</td>
+            <td>Двоичная копия и текстовый экспорт, N копий на точку,
+                сравнение любых двух конфигураций, поиск по всем сразу</td></tr>
+        <tr><td>Массовый запуск скриптов</td>
+            <td>По одному устройству</td>
+            <td>Библиотека скриптов, запуск на выбранных, видно где не прошло</td></tr>
+        <tr><td>Отчёт о доступности за период</td>
+            <td>Собирается руками</td>
+            <td>Печатный документ по парку или по одной площадке</td></tr>
+        <tr><td>Оповещения</td>
+            <td>Есть, свои</td>
+            <td>Telegram, с выдержкой, тихими часами и дайджестом</td></tr>
+        <tr><td>Работа с телефона</td>
+            <td>Приложение под Windows</td>
+            <td>Веб-панель, на телефоне тоже</td></tr>
+        </tbody>
+    </table>
+    </div>
+
+    <div class="shot">
+        <a class="zoom" href="../../screenshots/dashboard.png">
+            <img src="../../shots/hero-dashboard.png" alt="Дашборд Tikpilot: блок «требует внимания», плитки парка, разбивка по группам и версиям RouterOS" width="1900" height="738">
+        </a>
+        <p class="caption">
+            Вместо карты связей список того, за что хвататься сегодня. Снимок
+            с живого парка из 49 роутеров, названия и адреса подменены самой панелью.
+        </p>
+    </div>
+
+    <h2>Чего Tikpilot не делает</h2>
+    <p class="sub">Чтобы не пришлось выяснять это после установки.</p>
+
+    <ul class="plain">
+        <li>Не рисует топологию и не ищет устройства сам. Список точек заводится
+        руками или загружается файлом CSV.</li>
+        <li>Не опрашивает по SNMP и не умеет ничего, кроме MikroTik. Принтеры,
+        коммутаторы других вендоров и серверы мимо.</li>
+        <li>Не заменяет WinBox. Тонкая настройка одной точки по-прежнему там,
+        панель берёт на себя повторяющуюся работу по всему парку.</li>
+    </ul>
+
+    <p>
+        Если нужна именно карта с автообнаружением, смотрите в сторону Zabbix,
+        LibreNMS или того же The Dude. Задачи разные, и делать вид, что одна
+        программа закрывает обе, было бы враньём.
+    </p>
+
+    <h2>Как перейти, не выкидывая The Dude</h2>
+
+    <p>
+        Их не обязательно выбирать. The Dude опрашивает по SNMP и ICMP, панель
+        ходит по API RouterOS, на роутерах для этого ничего переделывать не
+        нужно, и друг о друге они не знают. Разумный порядок такой:
+    </p>
+
+    <ol class="steps">
+        <li>Поставить панель на любую машину рядом, добавить пять точек руками
+        и посмотреть неделю.</li>
+        <li>Загрузить остальные файлом CSV: имя, адрес, логин, группа.</li>
+        <li>Включить бэкапы по расписанию. Это то, что окупается первым.</li>
+        <li>Дальше решать самому, нужна ли ещё карта.</li>
+    </ol>
+
+    <pre class="hero-install"><code>git clone https://github.com/maximdr86/tikpilot
+cd tikpilot &amp;&amp; cp .env.example .env
+docker compose up -d</code></pre>
+
+    <div class="buttons">
+        <a class="btn primary" href="../#install">Подробнее про установку</a>
+        <a class="btn ghost" href="https://github.com/maximdr86/tikpilot">Код на GitHub</a>
+        <span class="facts">MIT · Python · без облака · работает в сети без интернета</span>
+    </div>
+
+    <h2 id="faq">Частые вопросы</h2>
+
+    <h3>The Dude больше не поддерживается?</h3>
+    <p>
+        Поддерживается, он идёт вместе с RouterOS и остаётся бесплатным. Вопрос
+        не в том, жив ли он, а в том, на какую работу он рассчитан: на карту
+        одной сети, а не на полсотни независимых площадок.
+    </p>
+
+    <h3>Можно ли пользоваться и тем, и другим?</h3>
+    <p>
+        Да, они смотрят на сеть с разных сторон и друг другу не мешают.
+    </p>
+
+    <h3>Панель рисует карту сети?</h3>
+    <p>
+        Нет, и это сделано намеренно. Она показывает список площадок и их
+        состояние.
+    </p>
+
+    <h3>Что нужно на роутерах, чтобы начать?</h3>
+    <p>
+        Включённый API и отдельный пользователь. Ни агента, ни REST,
+        ни сертификатов.
+    </p>
+
+</main>
+
+<footer>
+    <div class="wrap">
+        <a href="../">Главная</a> ·
+        <a href="https://github.com/maximdr86/tikpilot">GitHub</a> ·
+        <a href="https://github.com/maximdr86/tikpilot/issues">Вопросы и ошибки</a> ·
+        <a href="../../the-dude-alternative/">English</a>
+        <p>Лицензия MIT. Tikpilot не связан с MikroTik и не является её продуктом.
+        The Dude, MikroTik и RouterOS это товарные знаки MikroTik.</p>
+        <p>Сайт собирает обезличенную статистику посещений через Яндекс.Метрику
+        и Google Analytics, они используют куки. Продолжая пользоваться сайтом,
+        вы соглашаетесь с этим.</p>
+    </div>
+</footer>
+
+<div class="full" id="viewer">
+    <button class="backdrop" type="button" aria-label="Закрыть"></button>
+    <img id="viewer-image" src="" alt="">
+    <button class="close" type="button" aria-label="Закрыть">&times;</button>
+    <a class="raw" id="viewer-raw" href="" target="_blank" rel="noopener">Открыть файл в полном размере</a>
+</div>
+
+<script>
+    (function () {
+        var root = document.documentElement;
+        var button = document.getElementById("theme");
+        var dark = matchMedia("(prefers-color-scheme: dark)");
+
+        function current() {
+            return root.dataset.theme || (dark.matches ? "dark" : "light");
+        }
+        function label() {
+            button.textContent = current() === "dark" ? "Светлая тема" : "Тёмная тема";
+        }
+        button.addEventListener("click", function () {
+            var next = current() === "dark" ? "light" : "dark";
+            root.dataset.theme = next;
+            localStorage.setItem("tikpilot-theme", next);
+            label();
+        });
+        dark.addEventListener("change", label);
+        label();
+    })();
+
+    // Просмотр скриншота: свой слой вместо якоря, иначе закрытие
+    // отматывает страницу в начало
+    (function () {
+        var viewer = document.getElementById("viewer");
+        var image = document.getElementById("viewer-image");
+        var raw = document.getElementById("viewer-raw");
+        if (!viewer || !image || !raw) { return; }
+
+        function show(href, alt) {
+            image.src = href;
+            image.alt = alt;
+            raw.href = href;
+            viewer.classList.add("open");
+            document.body.style.overflow = "hidden";
+        }
+        function hide() {
+            viewer.classList.remove("open");
+            document.body.style.overflow = "";
+            image.src = "";
+        }
+
+        document.querySelectorAll("a.zoom").forEach(function (link) {
+            link.addEventListener("click", function (event) {
+                if (event.metaKey || event.ctrlKey || event.button !== 0) { return; }
+                event.preventDefault();
+                show(link.getAttribute("href"), link.querySelector("img").alt);
+            });
+        });
+        viewer.querySelector(".backdrop").addEventListener("click", hide);
+        viewer.querySelector(".close").addEventListener("click", hide);
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") { hide(); }
+        });
+    })();
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function(m,e,t,r,i,k,a){
+        m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();
+        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+    })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=111622992', 'ym');
+    ym(111622992, 'init', {ssr:true, webvisor:true, clickmap:true, referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/111622992" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+
+</body>
+</html>
