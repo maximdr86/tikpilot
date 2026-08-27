@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-M5YT1VL1L8"></script>
+<script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-M5YT1VL1L8');
+</script>
+<title>Bulk RouterOS upgrade across a MikroTik fleet - Tikpilot</title>
+<meta name="description" content="How to upgrade RouterOS on dozens of MikroTik routers without losing a remote site: what to check first, why to go in batches, and what to do when a router does not come back.">
+<link rel="canonical" href="https://tikpilot.ru/bulk-routeros-upgrade/">
+<link rel="alternate" hreflang="en" href="https://tikpilot.ru/bulk-routeros-upgrade/">
+<link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/massovoe-obnovlenie-routeros/">
+<link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/bulk-routeros-upgrade/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Bulk RouterOS upgrade across a MikroTik fleet">
+<meta property="og:description" content="What to check before you press the button, why batches and pauses matter, and what to do when a remote site does not come back after the reboot.">
+<meta property="og:url" content="https://tikpilot.ru/bulk-routeros-upgrade/">
+<meta property="og:image" content="https://tikpilot.ru/screenshots/jobs.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../brand/logo.svg">
+<style>
+:root {
+    --bg: #ffffff;
+    --bg-soft: #f4f6f6;
+    --border: #dfe4e3;
+    --text: #1d2b28;
+    --muted: #64756f;
+    --accent: #0f6156;
+    --accent-soft: #e7f1ef;
+    --code-bg: #f7f9f9;
+    --shot-bg: #f4f6f6;
+}
+html[data-theme="dark"] {
+    --bg: #121a19;
+    --bg-soft: #1a2523;
+    --border: #32433f;
+    --text: #dfe8e5;
+    --muted: #869491;
+    --accent: #2f9e8b;
+    --accent-soft: #16302b;
+    --code-bg: #16211f;
+    --shot-bg: #0e1615;
+}
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+        --bg: #121a19;
+        --bg-soft: #1a2523;
+        --border: #32433f;
+        --text: #dfe8e5;
+        --muted: #869491;
+        --accent: #2f9e8b;
+        --accent-soft: #16302b;
+        --code-bg: #16211f;
+        --shot-bg: #0e1615;
+    }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+}
+a { color: var(--accent); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+header { border-bottom: 1px solid var(--border); }
+.top { display: flex; align-items: center; gap: 14px; padding: 14px 0; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; }
+.mark { display: block; border-radius: 5px; }
+.top nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 15px; }
+.top nav a, .theme { white-space: nowrap; }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover { color: var(--text); }
+
+.hero { padding: 56px 0 8px; }
+h1 { font-size: 40px; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.02em; }
+.lead { font-size: 20px; color: var(--muted); margin: 0 0 26px; max-width: 46em; }
+.buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn {
+    display: inline-block; padding: 11px 20px; border-radius: 5px;
+    text-decoration: none; font-weight: 500; font-size: 16px;
+    border: 1px solid var(--accent);
+}
+.btn.primary { background: var(--accent); color: #fff; }
+.theme {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    color: var(--muted); font: inherit; font-size: 15px;
+}
+.theme:hover { color: var(--text); }
+.btn.ghost { color: var(--accent); }
+.facts { color: var(--muted); font-size: 15px; margin-left: 6px; }
+/* Команда установки прямо на первом экране: её ищут первой, и три
+   экрана прокрутки до неё это три лишних экрана */
+.hero-install { margin: 22px 0 20px; max-width: 46em; font-size: 13.5px; }
+
+.shot { margin: 34px 0 10px; }
+.shot img, .pair img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--shot-bg);
+}
+.zoom { display: block; cursor: zoom-in; }
+.caption { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+
+h2 { font-size: 26px; margin: 54px 0 6px; letter-spacing: -0.01em; }
+h2 + .sub { color: var(--muted); margin: 0 0 22px; }
+h2 + .grid, h2 + .pair, h2 + pre { margin-top: 22px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 22px; }
+.card { border: 1px solid var(--border); border-radius: 6px; padding: 18px 20px; background: var(--bg-soft); }
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 26px; margin-top: 24px; }
+.pair figure { margin: 0; }
+.pair figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+
+/* Full-screen view. Without JavaScript the links simply open the PNG. */
+.full {
+    display: none; position: fixed; inset: 0; z-index: 20;
+    background: rgba(16, 24, 22, .88); padding: 24px;
+    align-items: center; justify-content: center;
+}
+.full.open { display: flex; }
+.full img {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    border-radius: 4px; background: #fff;
+}
+.full .backdrop { position: absolute; inset: 0; background: none; border: 0; cursor: zoom-out; }
+.full .close {
+    position: absolute; top: 10px; right: 16px; color: #fff;
+    font-size: 30px; line-height: 1; background: none; border: 0; cursor: pointer;
+}
+.full .raw {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 14px;
+}
+
+pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 16px 18px; overflow-x: auto; font-size: 14.5px; line-height: 1.7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .93em; }
+
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
+ul.plain li:last-child { border-bottom: 0; }
+ul.plain b { color: var(--text); font-weight: 600; }
+
+.faq details {
+    border-bottom: 1px solid var(--border); padding: 4px 0;
+}
+.faq summary {
+    cursor: pointer; padding: 10px 0; font-weight: 500; list-style: none;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::before { content: "+ "; color: var(--accent); }
+.faq details[open] summary::before { content: "\2212 "; }
+.faq p { margin: 0 0 12px; color: var(--muted); }
+
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 5px 5px 0; }
+.note p { margin: 0; }
+
+footer { margin-top: 64px; border-top: 1px solid var(--border); padding: 22px 0 48px; color: var(--muted); font-size: 15px; }
+footer a { color: var(--muted); }
+
+/* На телефоне шапка становится в две строки: сначала название,
+   потом меню. В одну строку оно всё равно не помещается, а перенос
+   посреди пункта читается как ошибка вёрстки. */
+@media (max-width: 720px) {
+    .top { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .top nav { margin-left: 0; width: 100%; }
+}
+
+@media (max-width: 600px) {
+    h1 { font-size: 30px; }
+    .lead { font-size: 18px; }
+    .hero { padding-top: 34px; }
+    h2 { font-size: 22px; margin-top: 40px; }
+}
+
+/* Таблица сравнения. Своих таблиц на сайте до этой страницы не было,
+   поэтому правила лежат здесь, а не в общем блоке. */
+.cmp { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 15px; }
+.cmp th, .cmp td { text-align: left; vertical-align: top; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); }
+.cmp th { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); font-weight: 600; }
+.cmp td:first-child { color: var(--text); font-weight: 600; }
+.cmp td { color: var(--muted); }
+.cmp-wrap { overflow-x: auto; margin: 18px 0 26px; }
+/* Нумерованный список: те же отбивки, что у ul.plain, но с цифрами */
+ol.steps { margin: 0 0 24px; padding-left: 22px; }
+ol.steps li { padding: 7px 0; color: var(--muted); }
+.brand a { color: inherit; text-decoration: none; display: flex;
+    align-items: center; gap: 9px; }
+</style><script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type": "Question", "name": "Can a RouterOS upgrade be rolled back?",
+     "acceptedAnswer": {"@type": "Answer", "text": "The router has /system/package/downgrade, but it installs whatever previous version is still on the disk and does not always work. It is safer not to roll back but to not rush: go in batches and take a fresh backup before installing."}},
+    {"@type": "Question", "name": "What if a site does not come back after the reboot?",
+     "acceptedAnswer": {"@type": "Answer", "text": "First find out what is actually silent. If the site answers ICMP but the API does not, the router is alive and there is nowhere to drive. If it is silent altogether, someone has to go there. That is exactly why you upgrade in batches: one bad site is a trip, ten is a day."}},
+    {"@type": "Question", "name": "Which channel, long-term or stable?",
+     "acceptedAnswer": {"@type": "Answer", "text": "long-term for production sites. It only gets fixes, without new features and the surprises that come with them."}},
+    {"@type": "Question", "name": "Do the routers need internet access?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Yes. Each device fetches the packages from MikroTik servers itself. The panel gives the order, it does not serve the files."}}
+  ]
+}
+</script>
+</head>
+<body>
+
+<header>
+    <div class="wrap top">
+        <span class="brand"><a href="../"><img class="mark" src="../brand/logo.svg" alt="" width="22" height="22"> Tikpilot</a></span>
+        <nav>
+            <a href="../">Home</a>
+            <a href="../the-dude-alternative/">The Dude alternative</a>
+            <a href="../#install">Install</a>
+            <a href="https://github.com/maximdr86/tikpilot">GitHub</a>
+            <a href="../ru/massovoe-obnovlenie-routeros/">Русский</a>
+            <button class="theme" id="theme" type="button">Dark theme</button>
+        </nav>
+    </div>
+</header>
+
+<main class="wrap">
+
+    <section class="hero">
+        <h1>Bulk RouterOS upgrade across a fleet</h1>
+        <p class="lead">
+            Upgrading one MikroTik is easy. Upgrading fifty, half of them a
+            hundred kilometres away, is frightening: any of them can stop
+            answering after the reboot. Here is what to check first and in
+            what order to work.
+        </p>
+    </section>
+
+    <h2>What people are actually afraid of</h2>
+    <p class="sub">The fear is justified, just not where it seems.</p>
+
+    <p>
+        The upgrade itself rarely bricks a router. What breaks is everything
+        around it: the disk ran out of space and the package downloaded halfway,
+        the board is still on an old bootloader, an interface came back up with
+        different settings, the provider handed out a different address. The
+        router is alive and working, but you can no longer manage it, which
+        amounts to the same thing except somebody still has to drive out there.
+    </p>
+
+    <p>
+        Hence the rules below. They are not about how to upgrade, they are about
+        not ending up with ten unreachable sites at once.
+    </p>
+
+    <h2>What to check before pressing the button</h2>
+
+    <ul class="plain">
+        <li><b>Free space.</b> The package needs room next to what is already
+        there. On boards with 16 MB of flash this is the first thing to fail.</li>
+        <li><b>Who is on which version.</b> A fleet is almost never uniform:
+        some sites were installed two years ago and never touched. Going from
+        6.x to 7.x is not the same job as 7.19 to 7.21.</li>
+        <li><b>The channel.</b> long-term for production sites: only fixes,
+        without new features and the surprises that come with them.</li>
+        <li><b>A fresh backup.</b> Binary copy and text export taken before the
+        install, not a month ago.</li>
+        <li><b>Whether anyone can get there.</b> A site nobody will reach this
+        week should be upgraded last.</li>
+    </ul>
+
+    <h2>Why batches rather than all at once</h2>
+
+    <p>
+        The temptation to select all forty-nine and go for coffee is
+        understandable, but one bad site is a trip and ten at once is a day of
+        work and an awkward conversation. A sensible order: two or three
+        non-critical sites first, look at the result, then the rest in batches
+        of five with a pause between them. The pause is not for the routers, it
+        is for you: two minutes is enough to see whether the previous batch came
+        back, and to stop if it did not.
+    </p>
+
+    <p>
+        Second rule: a maintenance window. A reboot is a minute or two without a
+        link, and during that minute the shop cannot take cards. Night is more
+        honest than any explanation afterwards.
+    </p>
+
+    <h2>How this looks in the panel</h2>
+    <p class="sub">The same order, without walking WinBox one window at a time.</p>
+
+    <ol class="steps">
+        <li><b>"Check for RouterOS updates"</b> across the fleet. It installs
+        nothing, it just asks every site for its current and available version.
+        After that you know who needs the upgrade at all.</li>
+        <li><b>"Upgrade RouterOS"</b> on the selected sites. Before installing,
+        the panel pulls a backup and an export to the server, then waits for the
+        packages to download (up to thirty minutes by default, longer on a thin
+        link), reboots and waits for the device to come back.</li>
+        <li><b>Batches of five with a two-minute pause</b> are the defaults, and
+        both are editable in the same dialog. "All at once" is available, but as
+        a deliberate choice rather than an accident.</li>
+        <li><b>Deferred start at 02:00.</b> The job waits for its time and
+        starts on its own.</li>
+        <li><b>A result per device.</b> You see which three sites out of
+        forty-nine failed and why. If the version after the reboot is not the
+        one expected, the panel says so instead of drawing a tick.</li>
+    </ol>
+
+    <div class="shot">
+        <a class="zoom" href="../screenshots/jobs.png">
+            <img src="../screenshots/jobs.png" alt="Job list: a bulk RouterOS upgrade with a result for every device" loading="lazy">
+        </a>
+        <p class="caption">
+            A job with a result per site. Taken from a live fleet of 49 routers;
+            names and addresses are replaced by the panel itself.
+        </p>
+    </div>
+
+    <h2>The RouterBOOT bootloader</h2>
+
+    <p>
+        A separate point people forget. The board firmware is not updated
+        together with RouterOS; it takes its own command and another reboot.
+        Do it only where someone can reach the site if it goes wrong: a failed
+        bootloader upgrade is fixed with netinstall, which means a cable and
+        hands. In the panel it is a separate checkbox, unticked by default.
+    </p>
+
+    <h2>When a site does not come back</h2>
+
+    <p>
+        First work out what exactly is silent. If the site answers ICMP but the
+        API does not, the router is alive and the problem is the service or the
+        link: no trip needed. The panel separates those two cases and shows them
+        differently, because the difference between them is several hours of
+        driving.
+    </p>
+
+    <p>
+        If it is silent altogether, someone has to go. The backup taken before
+        the install is on the server, so restoring is uploading a file rather
+        than configuring the site from scratch.
+    </p>
+
+    <pre class="hero-install"><code>git clone https://github.com/maximdr86/tikpilot
+cd tikpilot &amp;&amp; cp .env.example .env
+docker compose up -d</code></pre>
+
+    <div class="buttons">
+        <a class="btn primary" href="../#install">More about installing</a>
+        <a class="btn ghost" href="https://github.com/maximdr86/tikpilot">Code on GitHub</a>
+        <span class="facts">MIT · Python · no cloud · works on a network with no internet</span>
+    </div>
+
+    <h2 id="faq">Frequently asked</h2>
+
+    <h3>Can an upgrade be rolled back?</h3>
+    <p>
+        The router has <code>/system/package/downgrade</code>, but it installs
+        whatever previous version is still on the disk and does not always work.
+        Safer not to roll back but to not rush: batches, and a fresh backup
+        before installing.
+    </p>
+
+    <h3>Which channel?</h3>
+    <p>
+        long-term for production sites. Stable is for when you need a specific
+        new feature and have someone to deal with the consequences.
+    </p>
+
+    <h3>Do the routers need internet access?</h3>
+    <p>
+        Yes. Each device fetches the packages from MikroTik servers itself. The
+        panel gives the order, it does not serve the files.
+    </p>
+
+    <h3>Can scripts be run in bulk the same way?</h3>
+    <p>
+        Yes, that is the neighbouring action: the script lives in the panel's
+        library, runs on the selected sites, and there is a result for each one.
+        You can also see which sites already have the script and which do not.
+    </p>
+
+</main>
+
+<footer>
+    <div class="wrap">
+        <a href="../">Home</a> ·
+        <a href="../the-dude-alternative/">The Dude alternative</a> ·
+        <a href="https://github.com/maximdr86/tikpilot">GitHub</a> ·
+        <a href="../ru/massovoe-obnovlenie-routeros/">Русский</a>
+        <p>MIT licence. Tikpilot is not affiliated with MikroTik and is not their
+        product. MikroTik and RouterOS are trademarks of MikroTik.</p>
+        <p>The site collects anonymised visit statistics with Yandex Metrica and
+        Google Analytics, both of which use cookies. By continuing to use the site
+        you agree to this.</p>
+    </div>
+</footer>
+
+<div class="full" id="viewer">
+    <button class="backdrop" type="button" aria-label="Close"></button>
+    <img id="viewer-image" src="" alt="">
+    <button class="close" type="button" aria-label="Close">&times;</button>
+    <a class="raw" id="viewer-raw" href="" target="_blank" rel="noopener">Open the file at full size</a>
+</div>
+
+<script>
+    (function () {
+        var root = document.documentElement;
+        var button = document.getElementById("theme");
+        var dark = matchMedia("(prefers-color-scheme: dark)");
+
+        function current() {
+            return root.dataset.theme || (dark.matches ? "dark" : "light");
+        }
+        function label() {
+            button.textContent = current() === "dark" ? "Light theme" : "Dark theme";
+        }
+        button.addEventListener("click", function () {
+            var next = current() === "dark" ? "light" : "dark";
+            root.dataset.theme = next;
+            localStorage.setItem("tikpilot-theme", next);
+            label();
+        });
+        dark.addEventListener("change", label);
+        label();
+    })();
+
+    // Screenshot viewer: an own layer instead of an anchor, otherwise
+    // closing it throws the page back to the top
+    (function () {
+        var viewer = document.getElementById("viewer");
+        var image = document.getElementById("viewer-image");
+        var raw = document.getElementById("viewer-raw");
+        if (!viewer || !image || !raw) { return; }
+
+        function show(href, alt) {
+            image.src = href;
+            image.alt = alt;
+            raw.href = href;
+            viewer.classList.add("open");
+            document.body.style.overflow = "hidden";
+        }
+        function hide() {
+            viewer.classList.remove("open");
+            document.body.style.overflow = "";
+            image.src = "";
+        }
+
+        document.querySelectorAll("a.zoom").forEach(function (link) {
+            link.addEventListener("click", function (event) {
+                if (event.metaKey || event.ctrlKey || event.button !== 0) { return; }
+                event.preventDefault();
+                show(link.getAttribute("href"), link.querySelector("img").alt);
+            });
+        });
+        viewer.querySelector(".backdrop").addEventListener("click", hide);
+        viewer.querySelector(".close").addEventListener("click", hide);
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") { hide(); }
+        });
+    })();
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function(m,e,t,r,i,k,a){
+        m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();
+        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+    })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=111622992', 'ym');
+    ym(111622992, 'init', {ssr:true, webvisor:true, clickmap:true, referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/111622992" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+
+</body>
+</html>
