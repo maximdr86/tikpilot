@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-M5YT1VL1L8"></script>
+<script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-M5YT1VL1L8');
+</script>
+<title>Массовое обновление RouterOS на парке роутеров MikroTik - Tikpilot</title>
+<meta name="description" content="Как обновить RouterOS сразу на десятках MikroTik и не потерять удалённую точку: что проверить заранее, зачем обновлять пачками, что делать, если роутер не вернулся. С примерами и разбором параметров.">
+<link rel="canonical" href="https://tikpilot.ru/ru/massovoe-obnovlenie-routeros/">
+<link rel="alternate" hreflang="en" href="https://tikpilot.ru/bulk-routeros-upgrade/">
+<link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/massovoe-obnovlenie-routeros/">
+<link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/bulk-routeros-upgrade/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Массовое обновление RouterOS на парке MikroTik">
+<meta property="og:description" content="Что проверить до обновления, зачем пачки и паузы, и что делать, если удалённая точка не вернулась после перезагрузки.">
+<meta property="og:url" content="https://tikpilot.ru/ru/massovoe-obnovlenie-routeros/">
+<meta property="og:image" content="https://tikpilot.ru/screenshots/jobs.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../../brand/logo.svg">
+<style>
+:root {
+    --bg: #ffffff;
+    --bg-soft: #f4f6f6;
+    --border: #dfe4e3;
+    --text: #1d2b28;
+    --muted: #64756f;
+    --accent: #0f6156;
+    --accent-soft: #e7f1ef;
+    --code-bg: #f7f9f9;
+    --shot-bg: #f4f6f6;
+}
+html[data-theme="dark"] {
+    --bg: #121a19;
+    --bg-soft: #1a2523;
+    --border: #32433f;
+    --text: #dfe8e5;
+    --muted: #869491;
+    --accent: #2f9e8b;
+    --accent-soft: #16302b;
+    --code-bg: #16211f;
+    --shot-bg: #0e1615;
+}
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+        --bg: #121a19;
+        --bg-soft: #1a2523;
+        --border: #32433f;
+        --text: #dfe8e5;
+        --muted: #869491;
+        --accent: #2f9e8b;
+        --accent-soft: #16302b;
+        --code-bg: #16211f;
+        --shot-bg: #0e1615;
+    }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+}
+a { color: var(--accent); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+header { border-bottom: 1px solid var(--border); }
+.top { display: flex; align-items: center; gap: 14px; padding: 14px 0; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; }
+.mark { display: block; border-radius: 5px; }
+.top nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 15px; }
+.top nav a, .theme { white-space: nowrap; }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover { color: var(--text); }
+
+.hero { padding: 56px 0 8px; }
+h1 { font-size: 40px; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.02em; }
+.lead { font-size: 20px; color: var(--muted); margin: 0 0 26px; max-width: 46em; }
+.buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn {
+    display: inline-block; padding: 11px 20px; border-radius: 5px;
+    text-decoration: none; font-weight: 500; font-size: 16px;
+    border: 1px solid var(--accent);
+}
+.btn.primary { background: var(--accent); color: #fff; }
+.theme {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    color: var(--muted); font: inherit; font-size: 15px;
+}
+.theme:hover { color: var(--text); }
+.btn.ghost { color: var(--accent); }
+.facts { color: var(--muted); font-size: 15px; margin-left: 6px; }
+/* Команда установки прямо на первом экране: её ищут первой, и три
+   экрана прокрутки до неё это три лишних экрана */
+.hero-install { margin: 22px 0 20px; max-width: 46em; font-size: 13.5px; }
+
+.shot { margin: 34px 0 10px; }
+.shot img, .pair img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--shot-bg);
+}
+.zoom { display: block; cursor: zoom-in; }
+.caption { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+
+h2 { font-size: 26px; margin: 54px 0 6px; letter-spacing: -0.01em; }
+h2 + .sub { color: var(--muted); margin: 0 0 22px; }
+h2 + .grid, h2 + .pair, h2 + pre { margin-top: 22px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 22px; }
+.card { border: 1px solid var(--border); border-radius: 6px; padding: 18px 20px; background: var(--bg-soft); }
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 26px; margin-top: 24px; }
+.pair figure { margin: 0; }
+.pair figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+
+/* Просмотр во весь экран. Без JavaScript ссылки просто откроют PNG. */
+.full {
+    display: none; position: fixed; inset: 0; z-index: 20;
+    background: rgba(16, 24, 22, .88); padding: 24px;
+    align-items: center; justify-content: center;
+}
+.full.open { display: flex; }
+.full img {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    border-radius: 4px; background: #fff;
+}
+.full .backdrop { position: absolute; inset: 0; background: none; border: 0; cursor: zoom-out; }
+.full .close {
+    position: absolute; top: 10px; right: 16px; color: #fff;
+    font-size: 30px; line-height: 1; background: none; border: 0; cursor: pointer;
+}
+.full .raw {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 14px;
+}
+
+pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 16px 18px; overflow-x: auto; font-size: 14.5px; line-height: 1.7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .93em; }
+
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
+ul.plain li:last-child { border-bottom: 0; }
+ul.plain b { color: var(--text); font-weight: 600; }
+
+.faq details {
+    border-bottom: 1px solid var(--border); padding: 4px 0;
+}
+.faq summary {
+    cursor: pointer; padding: 10px 0; font-weight: 500; list-style: none;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::before { content: "+ "; color: var(--accent); }
+.faq details[open] summary::before { content: "\2212 "; }
+.faq p { margin: 0 0 12px; color: var(--muted); }
+
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 5px 5px 0; }
+.note p { margin: 0; }
+
+footer { margin-top: 64px; border-top: 1px solid var(--border); padding: 22px 0 48px; color: var(--muted); font-size: 15px; }
+footer a { color: var(--muted); }
+
+/* На телефоне шапка становится в две строки: сначала название,
+   потом меню. В одну строку оно всё равно не помещается, а перенос
+   посреди пункта читается как ошибка вёрстки. */
+@media (max-width: 720px) {
+    .top { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .top nav { margin-left: 0; width: 100%; }
+}
+
+@media (max-width: 600px) {
+    h1 { font-size: 30px; }
+    .lead { font-size: 18px; }
+    .hero { padding-top: 34px; }
+    h2 { font-size: 22px; margin-top: 40px; }
+}
+
+/* Таблица сравнения. Своих таблиц на сайте до этой страницы не было,
+   поэтому правила лежат здесь, а не в общем блоке. */
+.cmp { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 15px; }
+.cmp th, .cmp td { text-align: left; vertical-align: top; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); }
+.cmp th { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); font-weight: 600; }
+.cmp td:first-child { color: var(--text); font-weight: 600; }
+.cmp td { color: var(--muted); }
+.cmp-wrap { overflow-x: auto; margin: 18px 0 26px; }
+/* Нумерованный список: те же отбивки, что у ul.plain, но с цифрами */
+ol.steps { margin: 0 0 24px; padding-left: 22px; }
+ol.steps li { padding: 7px 0; color: var(--muted); }
+.brand a { color: inherit; text-decoration: none; display: flex;
+    align-items: center; gap: 9px; }
+</style><script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type": "Question", "name": "Можно ли откатить обновление RouterOS?",
+     "acceptedAnswer": {"@type": "Answer", "text": "На самом роутере есть /system/package/downgrade, но он ставит предыдущую версию из тех, что лежат на диске, и работает не всегда. Надёжнее не откатывать, а не спешить: обновлять пачками и держать свежий бэкап до установки."}},
+    {"@type": "Question", "name": "Что делать, если точка не вернулась после перезагрузки?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Сначала убедиться, что дело в роутере, а не в канале: если площадка отвечает на ping, а API молчит, ехать некуда. Если молчит совсем, нужен человек на месте. Именно поэтому обновляют пачками, а не всё сразу: одна проблемная точка это выезд, десять это день."}},
+    {"@type": "Question", "name": "Какой канал выбрать, long-term или stable?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Для рабочих точек long-term. Он получает только исправления, без новых возможностей и связанных с ними сюрпризов."}},
+    {"@type": "Question", "name": "Нужен ли роутерам доступ в интернет?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Да, за пакетами устройство ходит на серверы MikroTik само. Панель командует, но не раздаёт файлы."}}
+  ]
+}
+</script>
+</head>
+<body>
+
+<header>
+    <div class="wrap top">
+        <span class="brand"><a href="../"><img class="mark" src="../../brand/logo.svg" alt="" width="22" height="22"> Tikpilot</a></span>
+        <nav>
+            <a href="../">Главная</a>
+            <a href="../alternativa-the-dude/">Замена The Dude</a>
+            <a href="../#install">Установка</a>
+            <a href="https://github.com/maximdr86/tikpilot">GitHub</a>
+            <a href="../../bulk-routeros-upgrade/">English</a>
+            <button class="theme" id="theme" type="button">Тёмная тема</button>
+        </nav>
+    </div>
+</header>
+
+<main class="wrap">
+
+    <section class="hero">
+        <h1>Массовое обновление RouterOS на парке роутеров</h1>
+        <p class="lead">
+            Обновить один MikroTik просто. Обновить полсотни, половина из
+            которых стоит за сто километров, страшно: до любой из них можно
+            перестать доставать после перезагрузки. Разбор, что проверить
+            заранее и в каком порядке действовать.
+        </p>
+    </section>
+
+    <h2>Чего боятся на самом деле</h2>
+    <p class="sub">Страх обоснованный, но не там, где кажется.</p>
+
+    <p>
+        Само обновление RouterOS редко ломает роутер. Ломает то, что вокруг:
+        закончилось место на диске и пакет скачался наполовину, на плате
+        осталась старая версия загрузчика, после перезагрузки поднялся
+        интерфейс с другими настройками, провайдер на площадке выдал другой
+        адрес. Роутер при этом жив и работает, но управлять им больше нельзя,
+        а это то же самое, что не работает, только ехать всё равно надо.
+    </p>
+
+    <p>
+        Отсюда и правила ниже. Они не про то, как обновлять, а про то, как не
+        оказаться с десятью недоступными точками одновременно.
+    </p>
+
+    <h2>Что проверить до того, как нажимать</h2>
+
+    <ul class="plain">
+        <li><b>Свободное место.</b> Пакету нужно место рядом с уже занятым.
+        На платах с 16 МБ флеш-памяти это первая причина неудачи.</li>
+        <li><b>Кто на какой версии сейчас.</b> Парк почти никогда не однороден:
+        часть точек ставили два года назад и не трогали. Обновление с 6.x
+        на 7.x это не то же самое, что с 7.19 на 7.21.</li>
+        <li><b>Канал.</b> Для рабочих точек long-term: он получает только
+        исправления, без новых возможностей и связанных с ними сюрпризов.</li>
+        <li><b>Свежий бэкап.</b> Двоичная копия и текстовый экспорт, снятые
+        до установки, а не месяц назад.</li>
+        <li><b>Есть ли кому доехать.</b> Точку, до которой в ближайшую неделю
+        никто не доберётся, лучше обновлять последней.</li>
+    </ul>
+
+    <h2>Почему пачками, а не всё сразу</h2>
+
+    <p>
+        Соблазн выбрать все сорок девять и уйти пить чай понятен, но одна
+        неудачная точка это выезд, а десять одновременно это день работы и
+        разговор с начальством. Разумный порядок такой: сначала две-три
+        некритичные площадки, посмотреть результат, потом остальные пачками
+        по пять с паузой между ними. Пауза нужна не роутерам, а вам: за две
+        минуты видно, вернулась ли предыдущая пачка, и есть время остановиться.
+    </p>
+
+    <p>
+        Второе правило: окно обслуживания. Перезагрузка это минута-две без
+        связи, и в магазине в это время не проходят карты. Ночь в этом смысле
+        честнее любых объяснений постфактум.
+    </p>
+
+    <h2>Как это выглядит в панели</h2>
+    <p class="sub">Тот же порядок, но без обхода WinBox по одному окну.</p>
+
+    <ol class="steps">
+        <li><b>«Проверить обновления RouterOS»</b> на весь парк. Ничего не
+        устанавливает, только спрашивает у каждой точки текущую и доступную
+        версию. После этого видно, кому обновление вообще нужно.</li>
+        <li><b>«Обновить RouterOS»</b> на выбранных. Перед установкой панель
+        снимает бэкап и экспорт на сервер, потом ждёт загрузки пакетов
+        (по умолчанию до тридцати минут, на тонком канале дольше),
+        перезагружает и ждёт возврата.</li>
+        <li><b>Пачками по пять с паузой в две минуты</b> — значения по
+        умолчанию, меняются в том же окне. Можно поставить «все сразу», но
+        это осознанное решение, а не случайность.</li>
+        <li><b>Отложенный запуск на 02:00.</b> Задача ждёт указанного времени
+        и стартует сама.</li>
+        <li><b>Результат построчно.</b> Видно, какие три точки из сорока девяти
+        не прошли и почему. Если после перезагрузки версия оказалась не той,
+        которую ждали, панель говорит об этом прямо, а не рисует галочку.</li>
+    </ol>
+
+    <div class="shot">
+        <a class="zoom" href="../../screenshots/jobs.png">
+            <img src="../../screenshots/jobs.png" alt="Список задач: массовое обновление RouterOS с результатом по каждому устройству" loading="lazy">
+        </a>
+        <p class="caption">
+            Задача с результатом по каждой точке. Снимок с живого парка
+            из 49 роутеров, названия и адреса подменены самой панелью.
+        </p>
+    </div>
+
+    <h2>Загрузчик RouterBOOT</h2>
+
+    <p>
+        Отдельный пункт, о котором забывают. Прошивка платы обновляется не
+        вместе с RouterOS, а отдельной командой и ещё одной перезагрузкой.
+        Делать это стоит только тогда, когда до точки в случае чего можно
+        доехать: неудачное обновление загрузчика лечится netinstall, то есть
+        кабелем и руками. В панели это отдельная галочка, по умолчанию снятая.
+    </p>
+
+    <h2>Если точка не вернулась</h2>
+
+    <p>
+        Первым делом понять, что именно молчит. Если площадка отвечает на ping,
+        а API нет, роутер жив, и дело в сервисе или в канале: ехать не нужно.
+        Панель разделяет эти два случая и показывает их по-разному, потому что
+        разница между ними это несколько часов дороги.
+    </p>
+
+    <p>
+        Если молчит совсем, нужен человек на месте. Бэкап, снятый перед
+        установкой, лежит на сервере, и восстановление сводится к загрузке
+        файла, а не к настройке точки с нуля.
+    </p>
+
+    <pre class="hero-install"><code>git clone https://github.com/maximdr86/tikpilot
+cd tikpilot &amp;&amp; cp .env.example .env
+docker compose up -d</code></pre>
+
+    <div class="buttons">
+        <a class="btn primary" href="../#install">Подробнее про установку</a>
+        <a class="btn ghost" href="https://github.com/maximdr86/tikpilot">Код на GitHub</a>
+        <span class="facts">MIT · Python · без облака · работает в сети без интернета</span>
+    </div>
+
+    <h2 id="faq">Частые вопросы</h2>
+
+    <h3>Можно ли откатить обновление?</h3>
+    <p>
+        На самом роутере есть <code>/system/package/downgrade</code>, но он
+        ставит предыдущую версию из тех, что лежат на диске, и работает не
+        всегда. Надёжнее не откатывать, а не спешить: пачки и свежий бэкап
+        до установки.
+    </p>
+
+    <h3>Какой канал выбрать?</h3>
+    <p>
+        Для рабочих точек long-term. Stable берут там, где нужна конкретная
+        новая возможность и есть кому чинить последствия.
+    </p>
+
+    <h3>Нужен ли роутерам доступ в интернет?</h3>
+    <p>
+        Да, за пакетами устройство ходит на серверы MikroTik само. Панель
+        командует, но файлы не раздаёт.
+    </p>
+
+    <h3>А массово запускать скрипты так же можно?</h3>
+    <p>
+        Да, это соседнее действие: скрипт хранится в библиотеке панели,
+        запускается на выбранных точках, и по каждой видно результат.
+        Отдельно видно, на каких точках скрипт лежит, а на каких его нет.
+    </p>
+
+</main>
+
+<footer>
+    <div class="wrap">
+        <a href="../">Главная</a> ·
+        <a href="../alternativa-the-dude/">Замена The Dude</a> ·
+        <a href="https://github.com/maximdr86/tikpilot">GitHub</a> ·
+        <a href="../../bulk-routeros-upgrade/">English</a>
+        <p>Лицензия MIT. Tikpilot не связан с MikroTik и не является её продуктом.
+        MikroTik и RouterOS это товарные знаки MikroTik.</p>
+        <p>Сайт собирает обезличенную статистику посещений через Яндекс.Метрику
+        и Google Analytics, они используют куки. Продолжая пользоваться сайтом,
+        вы соглашаетесь с этим.</p>
+    </div>
+</footer>
+
+<div class="full" id="viewer">
+    <button class="backdrop" type="button" aria-label="Закрыть"></button>
+    <img id="viewer-image" src="" alt="">
+    <button class="close" type="button" aria-label="Закрыть">&times;</button>
+    <a class="raw" id="viewer-raw" href="" target="_blank" rel="noopener">Открыть файл в полном размере</a>
+</div>
+
+<script>
+    (function () {
+        var root = document.documentElement;
+        var button = document.getElementById("theme");
+        var dark = matchMedia("(prefers-color-scheme: dark)");
+
+        function current() {
+            return root.dataset.theme || (dark.matches ? "dark" : "light");
+        }
+        function label() {
+            button.textContent = current() === "dark" ? "Светлая тема" : "Тёмная тема";
+        }
+        button.addEventListener("click", function () {
+            var next = current() === "dark" ? "light" : "dark";
+            root.dataset.theme = next;
+            localStorage.setItem("tikpilot-theme", next);
+            label();
+        });
+        dark.addEventListener("change", label);
+        label();
+    })();
+
+    // Просмотр скриншота: свой слой вместо якоря, иначе закрытие
+    // отматывает страницу в начало
+    (function () {
+        var viewer = document.getElementById("viewer");
+        var image = document.getElementById("viewer-image");
+        var raw = document.getElementById("viewer-raw");
+        if (!viewer || !image || !raw) { return; }
+
+        function show(href, alt) {
+            image.src = href;
+            image.alt = alt;
+            raw.href = href;
+            viewer.classList.add("open");
+            document.body.style.overflow = "hidden";
+        }
+        function hide() {
+            viewer.classList.remove("open");
+            document.body.style.overflow = "";
+            image.src = "";
+        }
+
+        document.querySelectorAll("a.zoom").forEach(function (link) {
+            link.addEventListener("click", function (event) {
+                if (event.metaKey || event.ctrlKey || event.button !== 0) { return; }
+                event.preventDefault();
+                show(link.getAttribute("href"), link.querySelector("img").alt);
+            });
+        });
+        viewer.querySelector(".backdrop").addEventListener("click", hide);
+        viewer.querySelector(".close").addEventListener("click", hide);
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") { hide(); }
+        });
+    })();
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function(m,e,t,r,i,k,a){
+        m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();
+        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+    })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=111622992', 'ym');
+    ym(111622992, 'init', {ssr:true, webvisor:true, clickmap:true, referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/111622992" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+
+</body>
+</html>
