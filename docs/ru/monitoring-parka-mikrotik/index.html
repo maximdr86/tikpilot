@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-M5YT1VL1L8"></script>
+<script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-M5YT1VL1L8');
+</script>
+<title>Мониторинг парка роутеров MikroTik на своём сервере - Tikpilot</title>
+<meta name="description" content="Как следить за полусотней MikroTik на удалённых площадках: что считать недоступностью, почему пороги без выдержки будят зря, откуда брать задержку и потери и как не утонуть в уведомлениях. Self-hosted, MIT.">
+<link rel="canonical" href="https://tikpilot.ru/ru/monitoring-parka-mikrotik/">
+<link rel="alternate" hreflang="en" href="https://tikpilot.ru/mikrotik-fleet-monitoring/">
+<link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/monitoring-parka-mikrotik/">
+<link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/mikrotik-fleet-monitoring/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Мониторинг парка роутеров MikroTik">
+<meta property="og:description" content="Что считать недоступностью, зачем выдержка у порогов, откуда брать задержку и потери и как не утонуть в уведомлениях.">
+<meta property="og:url" content="https://tikpilot.ru/ru/monitoring-parka-mikrotik/">
+<meta property="og:image" content="https://tikpilot.ru/screenshots/monitoring.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../../brand/logo.svg">
+<style>
+:root {
+    --bg: #ffffff;
+    --bg-soft: #f4f6f6;
+    --border: #dfe4e3;
+    --text: #1d2b28;
+    --muted: #64756f;
+    --accent: #0f6156;
+    --accent-soft: #e7f1ef;
+    --code-bg: #f7f9f9;
+    --shot-bg: #f4f6f6;
+}
+html[data-theme="dark"] {
+    --bg: #121a19;
+    --bg-soft: #1a2523;
+    --border: #32433f;
+    --text: #dfe8e5;
+    --muted: #869491;
+    --accent: #2f9e8b;
+    --accent-soft: #16302b;
+    --code-bg: #16211f;
+    --shot-bg: #0e1615;
+}
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+        --bg: #121a19;
+        --bg-soft: #1a2523;
+        --border: #32433f;
+        --text: #dfe8e5;
+        --muted: #869491;
+        --accent: #2f9e8b;
+        --accent-soft: #16302b;
+        --code-bg: #16211f;
+        --shot-bg: #0e1615;
+    }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+}
+a { color: var(--accent); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+header { border-bottom: 1px solid var(--border); }
+.top { display: flex; align-items: center; gap: 14px; padding: 14px 0; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; }
+.mark { display: block; border-radius: 5px; }
+.top nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 15px; }
+.top nav a, .theme { white-space: nowrap; }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover { color: var(--text); }
+
+.hero { padding: 56px 0 8px; }
+h1 { font-size: 40px; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.02em; }
+.lead { font-size: 20px; color: var(--muted); margin: 0 0 26px; max-width: 46em; }
+.buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn {
+    display: inline-block; padding: 11px 20px; border-radius: 5px;
+    text-decoration: none; font-weight: 500; font-size: 16px;
+    border: 1px solid var(--accent);
+}
+.btn.primary { background: var(--accent); color: #fff; }
+.theme {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    color: var(--muted); font: inherit; font-size: 15px;
+}
+.theme:hover { color: var(--text); }
+.btn.ghost { color: var(--accent); }
+.facts { color: var(--muted); font-size: 15px; margin-left: 6px; }
+/* Команда установки прямо на первом экране: её ищут первой, и три
+   экрана прокрутки до неё это три лишних экрана */
+.hero-install { margin: 22px 0 20px; max-width: 46em; font-size: 13.5px; }
+
+.shot { margin: 34px 0 10px; }
+.shot img, .pair img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--shot-bg);
+}
+.zoom { display: block; cursor: zoom-in; }
+.caption { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+
+h2 { font-size: 26px; margin: 54px 0 6px; letter-spacing: -0.01em; }
+h2 + .sub { color: var(--muted); margin: 0 0 22px; }
+h2 + .grid, h2 + .pair, h2 + pre { margin-top: 22px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 22px; }
+.card { border: 1px solid var(--border); border-radius: 6px; padding: 18px 20px; background: var(--bg-soft); }
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 26px; margin-top: 24px; }
+.pair figure { margin: 0; }
+.pair figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+
+/* Просмотр во весь экран. Без JavaScript ссылки просто откроют PNG. */
+.full {
+    display: none; position: fixed; inset: 0; z-index: 20;
+    background: rgba(16, 24, 22, .88); padding: 24px;
+    align-items: center; justify-content: center;
+}
+.full.open { display: flex; }
+.full img {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    border-radius: 4px; background: #fff;
+}
+.full .backdrop { position: absolute; inset: 0; background: none; border: 0; cursor: zoom-out; }
+.full .close {
+    position: absolute; top: 10px; right: 16px; color: #fff;
+    font-size: 30px; line-height: 1; background: none; border: 0; cursor: pointer;
+}
+.full .raw {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 14px;
+}
+
+pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 16px 18px; overflow-x: auto; font-size: 14.5px; line-height: 1.7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .93em; }
+
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
+ul.plain li:last-child { border-bottom: 0; }
+ul.plain b { color: var(--text); font-weight: 600; }
+
+.faq details {
+    border-bottom: 1px solid var(--border); padding: 4px 0;
+}
+.faq summary {
+    cursor: pointer; padding: 10px 0; font-weight: 500; list-style: none;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::before { content: "+ "; color: var(--accent); }
+.faq details[open] summary::before { content: "\2212 "; }
+.faq p { margin: 0 0 12px; color: var(--muted); }
+
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 5px 5px 0; }
+.note p { margin: 0; }
+
+footer { margin-top: 64px; border-top: 1px solid var(--border); padding: 22px 0 48px; color: var(--muted); font-size: 15px; }
+footer a { color: var(--muted); }
+
+/* На телефоне шапка становится в две строки: сначала название,
+   потом меню. В одну строку оно всё равно не помещается, а перенос
+   посреди пункта читается как ошибка вёрстки. */
+@media (max-width: 720px) {
+    .top { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .top nav { margin-left: 0; width: 100%; }
+}
+
+@media (max-width: 600px) {
+    h1 { font-size: 30px; }
+    .lead { font-size: 18px; }
+    .hero { padding-top: 34px; }
+    h2 { font-size: 22px; margin-top: 40px; }
+}
+
+.cmp { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 15px; }
+.cmp th, .cmp td { text-align: left; vertical-align: top; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); }
+.cmp th { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); font-weight: 600; }
+.cmp td:first-child { color: var(--text); font-weight: 600; }
+.cmp td { color: var(--muted); }
+.cmp-wrap { overflow-x: auto; margin: 18px 0 26px; }
+ol.steps { margin: 0 0 24px; padding-left: 22px; }
+ol.steps li { padding: 7px 0; color: var(--muted); }
+.brand a { color: inherit; text-decoration: none; display: flex;
+    align-items: center; gap: 9px; }
+</style><script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type": "Question", "name": "Чем это отличается от Zabbix?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Zabbix универсален и следит за чем угодно по SNMP и агентам, но его надо настраивать. Здесь всё только про MikroTik и работает сразу после того, как заведены точки. Если у вас уже есть Zabbix и он настроен, менять его на это незачем."}},
+    {"@type": "Question", "name": "Нужен ли SNMP на роутерах?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Нет. Панель ходит по API RouterOS, тому же, через который выполняет действия. Ни SNMP, ни агента, ни отдельного сервиса включать не нужно."}},
+    {"@type": "Question", "name": "Почему точка «в сети», хотя панель к ней не подключается?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Потому что это разные вопросы. Площадка жива, если отвечает на ping, и статус про это. То, что до её API не достучаться, показывается отдельной отметкой: чинить надо канал или сервис, а ехать никуда не нужно."}},
+    {"@type": "Question", "name": "Сколько ресурсов это ест?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Виртуалка с одним ядром и гигабайтом памяти. Панель занимает около 60 МиБ, база растёт примерно на 1,6 МиБ в сутки и потом перестаёт: старые записи чистятся сами."}}
+  ]
+}
+</script>
+</head>
+<body>
+
+<header>
+    <div class="wrap top">
+        <span class="brand"><a href="../"><img class="mark" src="../../brand/logo.svg" alt="" width="22" height="22"> Tikpilot</a></span>
+        <nav>
+            <a href="../">Главная</a>
+            <a href="../alternativa-the-dude/">Замена The Dude</a>
+            <a href="../bekapy-konfigov-mikrotik/">Бэкапы</a>
+            <a href="https://github.com/maximdr86/tikpilot">GitHub</a>
+            <a href="../../mikrotik-fleet-monitoring/">English</a>
+            <button class="theme" id="theme" type="button">Тёмная тема</button>
+        </nav>
+    </div>
+</header>
+
+<main class="wrap">
+
+    <section class="hero">
+        <h1>Мониторинг парка роутеров MikroTik</h1>
+        <p class="lead">
+            Полсотни площадок, у каждой свой провайдер, и все они иногда
+            моргают. Разбор: что считать недоступностью, почему пороги без
+            выдержки будят зря и как получать уведомления, которые не хочется
+            выключить на второй день.
+        </p>
+    </section>
+
+    <h2>Первый вопрос: что значит «не работает»</h2>
+
+    <p>
+        Это выглядит как придирка к словам, пока не столкнёшься. Точка может
+        не отвечать на запросы панели и при этом прекрасно работать: касса
+        печатает, люди в интернете, WinBox открыт у коллеги. Просто до
+        управляющего интерфейса не достучаться, потому что захлебнулся канал
+        или упал сервис на роутере.
+    </p>
+
+    <p>
+        Разница между этими случаями это несколько часов дороги. В одном надо
+        ехать или звонить на площадку, в другом чинить связь, сидя на месте.
+        Мониторинг, который валит их в одну кучу и пишет «оффлайн», заставляет
+        выяснять это вручную каждый раз.
+    </p>
+
+    <p>
+        Поэтому правильный порядок вопросов такой: жива ли площадка вообще
+        (на это отвечает ping) и только потом, управляется ли она. Первое это
+        статус, второе отдельная отметка рядом с ним.
+    </p>
+
+    <h2>Второй вопрос: выдержка</h2>
+
+    <p>
+        Порог без выдержки это будильник, который срабатывает от сквозняка.
+        Канал на площадке моргнул на пятнадцать секунд, пришло уведомление,
+        через минуту второе о восстановлении. Три такие точки в парке, и
+        уведомления начинают уходить в архив не глядя, а вместе с ними уйдёт
+        и то единственное, ради которого всё затевалось.
+    </p>
+
+    <p>
+        Поэтому у правила должно быть два числа, а не одно: порог и время,
+        которое он должен держаться. «Не отвечает дольше пятнадцати минут»
+        полезно, «не отвечает» бесполезно. Отдельно стоит завести тихие часы
+        и дайджест, чтобы ночью приходило одно сообщение вместо сорока.
+    </p>
+
+    <h2>Что стоит мерить, кроме доступности</h2>
+
+    <ul class="plain">
+        <li><b>Задержка и потери,</b> померенные самим роутером до внешней цели.
+        Меряет площадка, а не сервер: иначе вы измеряете свой канал до неё,
+        а не её канал наружу.</li>
+        <li><b>Скорость на аплинке</b> как средняя между обходами. Всплеск за
+        секунду ничего не говорит, а средняя за пять минут показывает, что
+        канал забит.</li>
+        <li><b>Свободная память</b> долей от объёма платы, а не в мегабайтах.
+        Одиннадцать мегабайт это треть hAP lite и последние крохи на CCR.</li>
+        <li><b>Загрузка процессора</b> в среднем за полчаса, а не мгновенная.</li>
+        <li><b>Возраст последнего бэкапа</b> и замолчавший syslog. Формально не
+        мониторинг, а по факту то же самое: что-то сломалось и молчит.</li>
+        <li><b>Место на диске самого сервера мониторинга.</b> Классика жанра:
+        закончилось место, база перестала писаться, и мониторинг молчит.</li>
+    </ul>
+
+    <div class="shot">
+        <a class="zoom" href="../../screenshots/monitoring.png">
+            <img src="../../screenshots/monitoring.png" alt="Страница мониторинга: карта парка по группам, доступность за период и лента событий" loading="lazy">
+        </a>
+        <p class="caption">
+            Снимок с живого парка из 49 роутеров, названия и адреса подменены
+            самой панелью.
+        </p>
+    </div>
+
+    <h2>Третий вопрос: куда смотреть утром</h2>
+
+    <p>
+        Дашборд, на котором всё зелёное, читают неделю, а потом перестают.
+        Полезнее обратное: список того, за что хвататься сегодня, и пустота,
+        когда хвататься не за что. Недоступные и мигающие точки, потери,
+        старые бэкапы, замолчавший журнал, нехватка памяти, открытые наружу
+        сервисы, доступные обновления — всё одним списком, отсортированным по
+        серьёзности. Когда всё спокойно, блока просто нет.
+    </p>
+
+    <h2>Отчёты, которые спросят</h2>
+
+    <p>
+        Рано или поздно приходит вопрос «а сколько эта точка не работала за
+        месяц», и задаёт его не технарь, а арендатор канала или начальник.
+        Собирать такую справку руками из истории событий это полдня. Печатный
+        отчёт с доступностью в процентах, журналом падений с датами и трафиком
+        за период закрывает разговор за минуту.
+    </p>
+
+    <p>
+        Важная деталь, на которой мы сами обожглись: точке нельзя засчитывать
+        время до того, как она появилась в системе. Иначе площадка, заведённая
+        вчера, показывает безупречные сто процентов за месяц, и это не
+        измерение, а отсутствие записей.
+    </p>
+
+    <pre class="hero-install"><code>git clone https://github.com/maximdr86/tikpilot
+cd tikpilot &amp;&amp; cp .env.example .env
+docker compose up -d</code></pre>
+
+    <div class="buttons">
+        <a class="btn primary" href="../#install">Подробнее про установку</a>
+        <a class="btn ghost" href="https://github.com/maximdr86/tikpilot">Код на GitHub</a>
+        <span class="facts">MIT · Python · без облака · работает в сети без интернета</span>
+    </div>
+
+    <h2 id="faq">Частые вопросы</h2>
+
+    <h3>Чем это отличается от Zabbix?</h3>
+    <p>
+        Zabbix универсален и следит за чем угодно, но его надо настраивать.
+        Здесь всё только про MikroTik и работает сразу, как заведены точки.
+        Если Zabbix у вас уже настроен, менять его на это незачем.
+    </p>
+
+    <h3>Нужен ли SNMP?</h3>
+    <p>
+        Нет. Панель ходит по API RouterOS, тому же, через который выполняет
+        массовые действия.
+    </p>
+
+    <h3>Сколько это ест ресурсов?</h3>
+    <p>
+        Виртуалки с одним ядром и гигабайтом памяти хватает с запасом.
+        Узкое место не сервер, а каналы до площадок.
+    </p>
+
+    <h3>Можно ли дать доступ подрядчику?</h3>
+    <p>
+        Да, права выдаются поштучно, а учётную запись можно ограничить
+        конкретными группами или точками. Есть и публичная ссылка на лист
+        состояния без входа: только имена площадок и «в сети или нет».
+    </p>
+
+</main>
+
+<footer>
+    <div class="wrap">
+        <a href="../">Главная</a> ·
+        <a href="../bekapy-konfigov-mikrotik/">Бэкапы</a> ·
+        <a href="https://github.com/maximdr86/tikpilot">GitHub</a> ·
+        <a href="../../mikrotik-fleet-monitoring/">English</a>
+        <p>Лицензия MIT. Tikpilot не связан с MikroTik и не является её продуктом.
+        MikroTik и RouterOS это товарные знаки MikroTik.</p>
+        <p>Сайт собирает обезличенную статистику посещений через Яндекс.Метрику
+        и Google Analytics, они используют куки. Продолжая пользоваться сайтом,
+        вы соглашаетесь с этим.</p>
+    </div>
+</footer>
+
+<div class="full" id="viewer">
+    <button class="backdrop" type="button" aria-label="Закрыть"></button>
+    <img id="viewer-image" src="" alt="">
+    <button class="close" type="button" aria-label="Закрыть">&times;</button>
+    <a class="raw" id="viewer-raw" href="" target="_blank" rel="noopener">Открыть файл в полном размере</a>
+</div>
+
+<script>
+    (function () {
+        var root = document.documentElement;
+        var button = document.getElementById("theme");
+        var dark = matchMedia("(prefers-color-scheme: dark)");
+
+        function current() {
+            return root.dataset.theme || (dark.matches ? "dark" : "light");
+        }
+        function label() {
+            button.textContent = current() === "dark" ? "Светлая тема" : "Тёмная тема";
+        }
+        button.addEventListener("click", function () {
+            var next = current() === "dark" ? "light" : "dark";
+            root.dataset.theme = next;
+            localStorage.setItem("tikpilot-theme", next);
+            label();
+        });
+        dark.addEventListener("change", label);
+        label();
+    })();
+
+    // Просмотр скриншота: свой слой вместо якоря, иначе закрытие
+    // отматывает страницу в начало
+    (function () {
+        var viewer = document.getElementById("viewer");
+        var image = document.getElementById("viewer-image");
+        var raw = document.getElementById("viewer-raw");
+        if (!viewer || !image || !raw) { return; }
+
+        function show(href, alt) {
+            image.src = href;
+            image.alt = alt;
+            raw.href = href;
+            viewer.classList.add("open");
+            document.body.style.overflow = "hidden";
+        }
+        function hide() {
+            viewer.classList.remove("open");
+            document.body.style.overflow = "";
+            image.src = "";
+        }
+
+        document.querySelectorAll("a.zoom").forEach(function (link) {
+            link.addEventListener("click", function (event) {
+                if (event.metaKey || event.ctrlKey || event.button !== 0) { return; }
+                event.preventDefault();
+                show(link.getAttribute("href"), link.querySelector("img").alt);
+            });
+        });
+        viewer.querySelector(".backdrop").addEventListener("click", hide);
+        viewer.querySelector(".close").addEventListener("click", hide);
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") { hide(); }
+        });
+    })();
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function(m,e,t,r,i,k,a){
+        m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();
+        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+    })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=111622992', 'ym');
+    ym(111622992, 'init', {ssr:true, webvisor:true, clickmap:true, referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/111622992" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+
+</body>
+</html>
