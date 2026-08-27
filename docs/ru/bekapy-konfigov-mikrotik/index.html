@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-M5YT1VL1L8"></script>
+<script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-M5YT1VL1L8');
+</script>
+<title>Автоматические бэкапы конфигов MikroTik по расписанию - Tikpilot</title>
+<meta name="description" content="Как снимать резервные копии конфигураций со всех роутеров MikroTik по расписанию: чем binary отличается от export, сколько копий хранить, где их держать и как сравнить вчерашний конфиг с сегодняшним.">
+<link rel="canonical" href="https://tikpilot.ru/ru/bekapy-konfigov-mikrotik/">
+<link rel="alternate" hreflang="en" href="https://tikpilot.ru/mikrotik-config-backup/">
+<link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/bekapy-konfigov-mikrotik/">
+<link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/mikrotik-config-backup/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Автоматические бэкапы конфигов MikroTik">
+<meta property="og:description" content="Binary или export, сколько копий хранить, где их держать и как увидеть, что именно изменилось со вчера.">
+<meta property="og:url" content="https://tikpilot.ru/ru/bekapy-konfigov-mikrotik/">
+<meta property="og:image" content="https://tikpilot.ru/screenshots/backups.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../../brand/logo.svg">
+<style>
+:root {
+    --bg: #ffffff;
+    --bg-soft: #f4f6f6;
+    --border: #dfe4e3;
+    --text: #1d2b28;
+    --muted: #64756f;
+    --accent: #0f6156;
+    --accent-soft: #e7f1ef;
+    --code-bg: #f7f9f9;
+    --shot-bg: #f4f6f6;
+}
+html[data-theme="dark"] {
+    --bg: #121a19;
+    --bg-soft: #1a2523;
+    --border: #32433f;
+    --text: #dfe8e5;
+    --muted: #869491;
+    --accent: #2f9e8b;
+    --accent-soft: #16302b;
+    --code-bg: #16211f;
+    --shot-bg: #0e1615;
+}
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+        --bg: #121a19;
+        --bg-soft: #1a2523;
+        --border: #32433f;
+        --text: #dfe8e5;
+        --muted: #869491;
+        --accent: #2f9e8b;
+        --accent-soft: #16302b;
+        --code-bg: #16211f;
+        --shot-bg: #0e1615;
+    }
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+}
+a { color: var(--accent); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+header { border-bottom: 1px solid var(--border); }
+.top { display: flex; align-items: center; gap: 14px; padding: 14px 0; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; }
+.mark { display: block; border-radius: 5px; }
+.top nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 15px; }
+.top nav a, .theme { white-space: nowrap; }
+.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a:hover { color: var(--text); }
+
+.hero { padding: 56px 0 8px; }
+h1 { font-size: 40px; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.02em; }
+.lead { font-size: 20px; color: var(--muted); margin: 0 0 26px; max-width: 46em; }
+.buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn {
+    display: inline-block; padding: 11px 20px; border-radius: 5px;
+    text-decoration: none; font-weight: 500; font-size: 16px;
+    border: 1px solid var(--accent);
+}
+.btn.primary { background: var(--accent); color: #fff; }
+.theme {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    color: var(--muted); font: inherit; font-size: 15px;
+}
+.theme:hover { color: var(--text); }
+.btn.ghost { color: var(--accent); }
+.facts { color: var(--muted); font-size: 15px; margin-left: 6px; }
+/* Команда установки прямо на первом экране: её ищут первой, и три
+   экрана прокрутки до неё это три лишних экрана */
+.hero-install { margin: 22px 0 20px; max-width: 46em; font-size: 13.5px; }
+
+.shot { margin: 34px 0 10px; }
+.shot img, .pair img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--shot-bg);
+}
+.zoom { display: block; cursor: zoom-in; }
+.caption { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+
+h2 { font-size: 26px; margin: 54px 0 6px; letter-spacing: -0.01em; }
+h2 + .sub { color: var(--muted); margin: 0 0 22px; }
+h2 + .grid, h2 + .pair, h2 + pre { margin-top: 22px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 22px; }
+.card { border: 1px solid var(--border); border-radius: 6px; padding: 18px 20px; background: var(--bg-soft); }
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 26px; margin-top: 24px; }
+.pair figure { margin: 0; }
+.pair figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+
+/* Просмотр во весь экран. Без JavaScript ссылки просто откроют PNG. */
+.full {
+    display: none; position: fixed; inset: 0; z-index: 20;
+    background: rgba(16, 24, 22, .88); padding: 24px;
+    align-items: center; justify-content: center;
+}
+.full.open { display: flex; }
+.full img {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    border-radius: 4px; background: #fff;
+}
+.full .backdrop { position: absolute; inset: 0; background: none; border: 0; cursor: zoom-out; }
+.full .close {
+    position: absolute; top: 10px; right: 16px; color: #fff;
+    font-size: 30px; line-height: 1; background: none; border: 0; cursor: pointer;
+}
+.full .raw {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 14px;
+}
+
+pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 16px 18px; overflow-x: auto; font-size: 14.5px; line-height: 1.7;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .93em; }
+
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 9px 0; border-bottom: 1px solid var(--border); color: var(--muted); }
+ul.plain li:last-child { border-bottom: 0; }
+ul.plain b { color: var(--text); font-weight: 600; }
+
+.faq details {
+    border-bottom: 1px solid var(--border); padding: 4px 0;
+}
+.faq summary {
+    cursor: pointer; padding: 10px 0; font-weight: 500; list-style: none;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::before { content: "+ "; color: var(--accent); }
+.faq details[open] summary::before { content: "\2212 "; }
+.faq p { margin: 0 0 12px; color: var(--muted); }
+
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 5px 5px 0; }
+.note p { margin: 0; }
+
+footer { margin-top: 64px; border-top: 1px solid var(--border); padding: 22px 0 48px; color: var(--muted); font-size: 15px; }
+footer a { color: var(--muted); }
+
+/* На телефоне шапка становится в две строки: сначала название,
+   потом меню. В одну строку оно всё равно не помещается, а перенос
+   посреди пункта читается как ошибка вёрстки. */
+@media (max-width: 720px) {
+    .top { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .top nav { margin-left: 0; width: 100%; }
+}
+
+@media (max-width: 600px) {
+    h1 { font-size: 30px; }
+    .lead { font-size: 18px; }
+    .hero { padding-top: 34px; }
+    h2 { font-size: 22px; margin-top: 40px; }
+}
+
+.cmp { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 15px; }
+.cmp th, .cmp td { text-align: left; vertical-align: top; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); }
+.cmp th { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); font-weight: 600; }
+.cmp td:first-child { color: var(--text); font-weight: 600; }
+.cmp td { color: var(--muted); }
+.cmp-wrap { overflow-x: auto; margin: 18px 0 26px; }
+ol.steps { margin: 0 0 24px; padding-left: 22px; }
+ol.steps li { padding: 7px 0; color: var(--muted); }
+.brand a { color: inherit; text-decoration: none; display: flex;
+    align-items: center; gap: 9px; }
+</style><script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type": "Question", "name": "Чем binary-бэкап отличается от export?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Binary это слепок всей системы, включая пароли и ключи, но восстанавливается он только на ту же модель и обычно на ту же версию RouterOS. Export это текст: читается глазами, сравнивается построчно, переносится на другую железку, но пароли в него по умолчанию не попадают. Поэтому снимают оба."}},
+    {"@type": "Question", "name": "Сколько копий хранить?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Две недели ежедневных копий на точку это разумная отправная точка: поломку конфигурации замечают обычно в течение нескольких дней. Место это почти не занимает: текстовый export роутера весит десятки килобайт."}},
+    {"@type": "Question", "name": "Что будет, если сервер с бэкапами умрёт?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Пропадёт ровно то, ради чего копии и снимались. Поэтому отдельно снимается архив самой панели с базой и ключом шифрования, и его надо держать не на том же сервере."}},
+    {"@type": "Question", "name": "Нужно ли шифровать бэкапы?",
+     "acceptedAnswer": {"@type": "Answer", "text": "Пароль бэкапа задаётся при снятии. Без него binary-копия лежит открытой, а в ней пароли Wi-Fi и учётные записи роутера. Если сервер с копиями доступен не только вам, пароль обязателен."}}
+  ]
+}
+</script>
+</head>
+<body>
+
+<header>
+    <div class="wrap top">
+        <span class="brand"><a href="../"><img class="mark" src="../../brand/logo.svg" alt="" width="22" height="22"> Tikpilot</a></span>
+        <nav>
+            <a href="../">Главная</a>
+            <a href="../alternativa-the-dude/">Замена The Dude</a>
+            <a href="../massovoe-obnovlenie-routeros/">Обновление RouterOS</a>
+            <a href="https://github.com/maximdr86/tikpilot">GitHub</a>
+            <a href="../../mikrotik-config-backup/">English</a>
+            <button class="theme" id="theme" type="button">Тёмная тема</button>
+        </nav>
+    </div>
+</header>
+
+<main class="wrap">
+
+    <section class="hero">
+        <h1>Автоматические бэкапы конфигов MikroTik</h1>
+        <p class="lead">
+            Копия настроек нужна не тогда, когда роутер сгорел. Она нужна,
+            когда кто-то что-то поменял неделю назад, и теперь непонятно, что
+            именно. Разбор: что снимать, как часто, сколько хранить и как
+            потом найти изменение.
+        </p>
+    </section>
+
+    <h2>Binary или export</h2>
+    <p class="sub">Это не выбор, это два разных инструмента.</p>
+
+    <div class="cmp-wrap">
+    <table class="cmp">
+        <thead>
+        <tr><th></th><th>Binary (.backup)</th><th>Export (.rsc)</th></tr>
+        </thead>
+        <tbody>
+        <tr><td>Что внутри</td>
+            <td>Слепок всей системы, включая пароли, ключи и сертификаты</td>
+            <td>Текст команд, которыми конфигурация воспроизводится</td></tr>
+        <tr><td>Читается глазами</td><td>Нет</td><td>Да</td></tr>
+        <tr><td>Сравнивается построчно</td><td>Нет</td><td>Да</td></tr>
+        <tr><td>Переносится на другую модель</td>
+            <td>Нет, только на такую же и обычно ту же версию</td>
+            <td>Да, с правками под другие имена интерфейсов</td></tr>
+        <tr><td>Пароли внутри</td>
+            <td>Есть всегда</td>
+            <td>Нет, если не указать show-sensitive</td></tr>
+        <tr><td>Когда спасает</td>
+            <td>Железка умерла, нужна такая же и быстро</td>
+            <td>Надо понять, что изменилось, или собрать точку заново</td></tr>
+        </tbody>
+    </table>
+    </div>
+
+    <p>
+        Вывод простой: снимать надо оба. Binary для восстановления, export для
+        понимания. По отдельности каждый закрывает половину случаев.
+    </p>
+
+    <h2>Как часто и сколько хранить</h2>
+
+    <p>
+        Ежедневно, ночью, и держать копии за две недели. Логика в том, что
+        поломанную конфигурацию замечают не сразу: неделя это обычный срок
+        между «кто-то поправил правило файрвола» и «а почему у нас касса не
+        печатает». Если копий только за вчера, откатываться будет не к чему.
+    </p>
+
+    <p>
+        Место это почти не занимает. Текстовый экспорт роутера весит десятки
+        килобайт, двоичная копия сотню-другую. Для полусотни точек четырнадцать
+        ежедневных копий это порядка сотни мегабайт, то есть ничего.
+    </p>
+
+    <h2>Где их держать</h2>
+
+    <p>
+        Не на самом роутере. Копия, лежащая на флеш-памяти той же коробки,
+        бесполезна ровно в том случае, ради которого её снимали. Панель после
+        скачивания по умолчанию удаляет файлы с устройства, чтобы не забивать
+        и без того небольшой диск.
+    </p>
+
+    <p>
+        И не только на сервере с панелью. Если он умрёт, пропадёт всё сразу:
+        и копии, и база с историей. Поэтому отдельно снимается архив самой
+        панели, с базой, настройками и ключом шифрования, и вот его надо
+        держать где-то ещё. Ключ важнее остального: без него пароли устройств
+        в базе не расшифровать.
+    </p>
+
+    <h2>Как это устроено в панели</h2>
+
+    <ul class="plain">
+        <li><b>Правило расписания:</b> что снимать (весь парк, группа или сама
+        панель), в какое время, по каким дням и сколько последних копий держать.
+        По умолчанию 03:00 и четырнадцать копий.</li>
+        <li><b>Оба формата сразу,</b> двоичный и текстовый, каждый отдельным
+        файлом.</li>
+        <li><b>Пароль бэкапа</b> задаётся в правиле. Пусто означает без
+        шифрования, и это осознанный выбор, а не умолчание по недосмотру.</li>
+        <li><b>Старые копии убираются сами,</b> по числу, а не по возрасту:
+        точка, которая месяц лежала и не отвечала, не останется совсем без
+        копий.</li>
+        <li><b>Сравнение любых двух конфигураций</b> одной точки построчно:
+        видно, что именно добавилось и что исчезло.</li>
+        <li><b>Поиск по всем сохранённым конфигурациям сразу.</b> Отвечает на
+        вопросы вида «где ещё остался старый адрес сервера» и «на каких
+        площадках есть это правило».</li>
+    </ul>
+
+    <div class="shot">
+        <a class="zoom" href="../../screenshots/backups.png">
+            <img src="../../screenshots/backups.png" alt="Раздел бэкапов: правила расписания и список копий по точкам" loading="lazy">
+        </a>
+        <p class="caption">
+            Снимок с живого парка из 49 роутеров, названия и адреса подменены
+            самой панелью.
+        </p>
+    </div>
+
+    <h2>Проверка, о которой забывают</h2>
+
+    <p>
+        Бэкап, который никто не пробовал восстановить, это не бэкап, а надежда.
+        Раз в квартал стоит взять копию случайной точки и развернуть её на
+        запасной коробке той же модели. Заодно выяснится, что binary с версии
+        7.14 не встаёт на 7.21, и что половина точек снимает копии в три часа
+        ночи, когда провайдер на площадке уводит канал на профилактику.
+    </p>
+
+    <p>
+        Панель показывает возраст последней копии по каждой точке и поднимает
+        в блок «требует внимания» те, у которых копии старше недели или нет
+        вовсе. Это не отменяет проверку восстановлением, но закрывает более
+        частый случай: копии не снимались, и никто не заметил.
+    </p>
+
+    <pre class="hero-install"><code>git clone https://github.com/maximdr86/tikpilot
+cd tikpilot &amp;&amp; cp .env.example .env
+docker compose up -d</code></pre>
+
+    <div class="buttons">
+        <a class="btn primary" href="../#install">Подробнее про установку</a>
+        <a class="btn ghost" href="https://github.com/maximdr86/tikpilot">Код на GitHub</a>
+        <span class="facts">MIT · Python · без облака · работает в сети без интернета</span>
+    </div>
+
+    <h2 id="faq">Частые вопросы</h2>
+
+    <h3>Можно ли обойтись только export?</h3>
+    <p>
+        Можно, но восстановление точки после смерти железки займёт вечер вместо
+        десяти минут, и сертификаты придётся выпускать заново.
+    </p>
+
+    <h3>Нужно ли шифровать копии?</h3>
+    <p>
+        Если сервер с ними доступен не только вам, обязательно: в двоичной
+        копии лежат пароли Wi-Fi и учётные записи роутера.
+    </p>
+
+    <h3>Что снимать с точки, которая почти всегда недоступна?</h3>
+    <p>
+        Ничего особенного. Правило отработает в следующий раз, когда точка будет
+        на связи, а панель покажет, что копия старая.
+    </p>
+
+    <h3>Как быть с паролями в текстовом экспорте?</h3>
+    <p>
+        По умолчанию их там нет. Галочка <code>show-sensitive</code> существует,
+        но включать её стоит, только понимая, что дальше этот файл живёт как
+        секрет.
+    </p>
+
+</main>
+
+<footer>
+    <div class="wrap">
+        <a href="../">Главная</a> ·
+        <a href="../massovoe-obnovlenie-routeros/">Обновление RouterOS</a> ·
+        <a href="https://github.com/maximdr86/tikpilot">GitHub</a> ·
+        <a href="../../mikrotik-config-backup/">English</a>
+        <p>Лицензия MIT. Tikpilot не связан с MikroTik и не является её продуктом.
+        MikroTik и RouterOS это товарные знаки MikroTik.</p>
+        <p>Сайт собирает обезличенную статистику посещений через Яндекс.Метрику
+        и Google Analytics, они используют куки. Продолжая пользоваться сайтом,
+        вы соглашаетесь с этим.</p>
+    </div>
+</footer>
+
+<div class="full" id="viewer">
+    <button class="backdrop" type="button" aria-label="Закрыть"></button>
+    <img id="viewer-image" src="" alt="">
+    <button class="close" type="button" aria-label="Закрыть">&times;</button>
+    <a class="raw" id="viewer-raw" href="" target="_blank" rel="noopener">Открыть файл в полном размере</a>
+</div>
+
+<script>
+    (function () {
+        var root = document.documentElement;
+        var button = document.getElementById("theme");
+        var dark = matchMedia("(prefers-color-scheme: dark)");
+
+        function current() {
+            return root.dataset.theme || (dark.matches ? "dark" : "light");
+        }
+        function label() {
+            button.textContent = current() === "dark" ? "Светлая тема" : "Тёмная тема";
+        }
+        button.addEventListener("click", function () {
+            var next = current() === "dark" ? "light" : "dark";
+            root.dataset.theme = next;
+            localStorage.setItem("tikpilot-theme", next);
+            label();
+        });
+        dark.addEventListener("change", label);
+        label();
+    })();
+
+    // Просмотр скриншота: свой слой вместо якоря, иначе закрытие
+    // отматывает страницу в начало
+    (function () {
+        var viewer = document.getElementById("viewer");
+        var image = document.getElementById("viewer-image");
+        var raw = document.getElementById("viewer-raw");
+        if (!viewer || !image || !raw) { return; }
+
+        function show(href, alt) {
+            image.src = href;
+            image.alt = alt;
+            raw.href = href;
+            viewer.classList.add("open");
+            document.body.style.overflow = "hidden";
+        }
+        function hide() {
+            viewer.classList.remove("open");
+            document.body.style.overflow = "";
+            image.src = "";
+        }
+
+        document.querySelectorAll("a.zoom").forEach(function (link) {
+            link.addEventListener("click", function (event) {
+                if (event.metaKey || event.ctrlKey || event.button !== 0) { return; }
+                event.preventDefault();
+                show(link.getAttribute("href"), link.querySelector("img").alt);
+            });
+        });
+        viewer.querySelector(".backdrop").addEventListener("click", hide);
+        viewer.querySelector(".close").addEventListener("click", hide);
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") { hide(); }
+        });
+    })();
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function(m,e,t,r,i,k,a){
+        m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();
+        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+    })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=111622992', 'ym');
+    ym(111622992, 'init', {ssr:true, webvisor:true, clickmap:true, referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/111622992" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+
+</body>
+</html>

@@ -55,4 +55,40 @@
         <xhtml:link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/massovoe-obnovlenie-routeros/"/>
         <xhtml:link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/bulk-routeros-upgrade/"/>
     </url>
+    <url>
+        <loc>https://tikpilot.ru/mikrotik-config-backup/</loc>
+        <lastmod>2026-08-26</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+        <xhtml:link rel="alternate" hreflang="en" href="https://tikpilot.ru/mikrotik-config-backup/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/bekapy-konfigov-mikrotik/"/>
+        <xhtml:link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/mikrotik-config-backup/"/>
+    </url>
+    <url>
+        <loc>https://tikpilot.ru/ru/bekapy-konfigov-mikrotik/</loc>
+        <lastmod>2026-08-26</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+        <xhtml:link rel="alternate" hreflang="en" href="https://tikpilot.ru/mikrotik-config-backup/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/bekapy-konfigov-mikrotik/"/>
+        <xhtml:link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/mikrotik-config-backup/"/>
+    </url>
+    <url>
+        <loc>https://tikpilot.ru/mikrotik-fleet-monitoring/</loc>
+        <lastmod>2026-08-26</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+        <xhtml:link rel="alternate" hreflang="en" href="https://tikpilot.ru/mikrotik-fleet-monitoring/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/monitoring-parka-mikrotik/"/>
+        <xhtml:link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/mikrotik-fleet-monitoring/"/>
+    </url>
+    <url>
+        <loc>https://tikpilot.ru/ru/monitoring-parka-mikrotik/</loc>
+        <lastmod>2026-08-26</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+        <xhtml:link rel="alternate" hreflang="en" href="https://tikpilot.ru/mikrotik-fleet-monitoring/"/>
+        <xhtml:link rel="alternate" hreflang="ru" href="https://tikpilot.ru/ru/monitoring-parka-mikrotik/"/>
+        <xhtml:link rel="alternate" hreflang="x-default" href="https://tikpilot.ru/mikrotik-fleet-monitoring/"/>
+    </url>
 </urlset>
