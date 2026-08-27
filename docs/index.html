@@ -3,6 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-M5YT1VL1L8"></script>
+<script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-M5YT1VL1L8');
+</script>
+
 <title>Tikpilot - central management for a MikroTik fleet, self-hosted and open source</title>
 <meta name="description" content="Central management for a fleet of MikroTik routers from one window: monitoring with thresholds and Telegram alerts, bulk RouterOS upgrades and scripts, scheduled backups with diffs, syslog, WireGuard. Self-hosted, no cloud, MIT.">
 <link rel="canonical" href="https://tikpilot.ru/">
@@ -497,8 +506,9 @@ docker compose up -d</pre>
         <a href="https://github.com/maximdr86/tikpilot/issues">Questions and bugs</a> ·
         <a href="ru/">Русский</a>
         <p>MIT licence. Tikpilot is not affiliated with MikroTik and is not their product.</p>
-        <p>The site collects anonymised visit statistics with Yandex Metrica, which uses cookies.
-        By continuing to use the site you agree to this.</p>
+        <p>The site collects anonymised visit statistics with Yandex Metrica and
+        Google Analytics, both of which use cookies. By continuing to use the site
+        you agree to this.</p>
     </div>
 </footer>
 
