@@ -2117,5 +2117,5 @@
   "Первая строка файла это заголовки. Распознаются колонки: <span class=\"mono\">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>. Разделитель (<span class=\"mono\">,</span> или <span class=\"mono\">;</span>) определяется автоматически. Несуществующие группы создаются на лету.": "The first line of the file is the header. Recognised columns: <span class=\"mono\">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>. The separator (<span class=\"mono\">,</span> or <span class=\"mono\">;</span>) is detected automatically. Groups that do not exist are created on the fly.",
   "Скачать файлом": "Download as file",
   "Файл сохранён: %s": "Saved as %s",
-  "Мало места на диске": "Low disk space"
+  "Мало места на роутерах": "Low disk space on routers"
 }

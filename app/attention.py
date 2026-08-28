@@ -423,7 +423,10 @@ def _check_router_space(scope: tuple[str, list[Any]]) -> Item | None:
         key="space",
         level="warn",
         group="resources",
-        title="Мало места на диске",
+        # Название своё, а не «Мало места на диске»: так называется
+        # проверка диска самой панели, и на дашборде две одинаковые
+        # строки не дали бы понять, о чьём диске речь
+        title="Мало места на роутерах",
         detail=f"{_names(rows)} · меньше всех у {worst['name']}, "
                f"{worst['free_mib']:g} МиБ, это {worst['free_percent']:g}% от диска."
                f" Обновление RouterOS на такой точке может не встать",
