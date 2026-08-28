@@ -644,17 +644,27 @@ def test_small_flash_device_is_not_blocked_in_advance(client, router):
     Сколько места нужно на самом деле, знает только RouterOS.
     """
     router.latest_version = "7.20.1"
-    router.free_space = 1_500_000          # ~1,4 МиБ, как на 16-мегабайтном устройстве
     router.reboot_seconds = 1.0
     device_id = _add_device(client, router, "small-flash")
 
-    job = _run_and_wait(client, "upgrade_ros", [device_id],
-                        {"channel": "", "make_backup": "", "wait_back": "40",
-                         "download_timeout": "20", "batch_size": "0"})
-    item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job["id"],))
+    # Заглушка одна на весь прогон, поэтому подменённое место надо вернуть:
+    # иначе все точки, заведённые дальше, окажутся с забитым диском, и
+    # проверка «мало места на роутерах» начнёт срабатывать в чужих тестах.
+    # Ровно на этом однажды покраснел CI, а разбитый на куски прогон
+    # ничего не заметил: тесты попали в разные куски
+    was_free, was_total = router.free_space, router.total_space
+    router.free_space = 1_500_000      # ~1,4 МиБ, как на 16-мегабайтном устройстве
+    router.total_space = 16 * 1024 * 1024
+    try:
+        job = _run_and_wait(client, "upgrade_ros", [device_id],
+                            {"channel": "", "make_backup": "", "wait_back": "40",
+                             "download_timeout": "20", "batch_size": "0"})
+        item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job["id"],))
 
-    assert item["status"] == "ok", item["result"]
-    assert router.version == "7.20.1"
+        assert item["status"] == "ok", item["result"]
+        assert router.version == "7.20.1"
+    finally:
+        router.free_space, router.total_space = was_free, was_total
 
 
 def test_disk_space_error_explains_what_to_do(client, router):
