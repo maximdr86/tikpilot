@@ -155,6 +155,14 @@
   "WireGuard · Tikpilot": "WireGuard · Tikpilot",
   "__patterns__": [
     [
+      "^(.*) · меньше всех у (.+?), ([\\d.,]+) МиБ, это ([\\d.,]+)% от диска\\. Обновление RouterOS на такой точке может не встать$",
+      "\\1 · lowest on \\2, \\3 MiB, which is \\4% of the disk. A RouterOS upgrade may not fit on such a site"
+    ],
+    [
+      "^(.*) · меньше всех у (.+?), ([\\d.,]+) МиБ, это ([\\d.,]+)% от платы$",
+      "\\1 · lowest on \\2, \\3 MiB, which is \\4% of the board"
+    ],
+    [
       "^До (.+?) \\((.+?)\\): приём (.+?), передача (.+?) Мбит/с, за (.+?), потеряно пакетов (\\d+)$",
       "To \\1 (\\2): rx \\3, tx \\4 Mbit/s, in \\5, lost packets \\6"
     ],
@@ -2108,5 +2116,6 @@
   "Скачивание бэкапов": "Downloading backups",
   "Первая строка файла это заголовки. Распознаются колонки: <span class=\"mono\">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>. Разделитель (<span class=\"mono\">,</span> или <span class=\"mono\">;</span>) определяется автоматически. Несуществующие группы создаются на лету.": "The first line of the file is the header. Recognised columns: <span class=\"mono\">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>. The separator (<span class=\"mono\">,</span> or <span class=\"mono\">;</span>) is detected automatically. Groups that do not exist are created on the fly.",
   "Скачать файлом": "Download as file",
-  "Файл сохранён: %s": "Saved as %s"
+  "Файл сохранён: %s": "Saved as %s",
+  "Мало места на диске": "Low disk space"
 }

@@ -131,8 +131,17 @@ class FakeRouter:
         # Подключённые по воздуху. Старый пакет wireless и новый wifi
         # отдают одно и то же разными командами.
         self.wireless_registrations: list[dict[str, str]] = [
+            # `ssid` тут намеренно нет: настоящая таблица регистрации его
+            # не содержит, имя сети лежит на самом интерфейсе. Пока заглушка
+            # его присылала, панель читала выдумку, и колонка «сеть» была
+            # пустой на живом железе, а тесты этого не видели
             {".id": "*1", "mac-address": "B0:FC:0D:F3:56:8F", "interface": "wlan1",
-             "ssid": "Magazin", "signal-strength": "-64"},
+             "signal-strength": "-64", "tx-rate": "144.4Mbps", "uptime": "4h12m"},
+        ]
+        # Беспроводные интерфейсы: здесь и живёт имя сети
+        self.wireless: list[dict[str, str]] = [
+            {".id": "*1", "name": "wlan1", "ssid": "Magazin", "band": "2ghz-b/g/n",
+             "frequency": "2442", "disabled": "false", "running": "true"},
         ]
         self.ip_addresses: list[dict[str, str]] = [
             {".id": "*1", "address": "10.0.0.1/24", "interface": "ether1"},
@@ -237,6 +246,7 @@ class FakeRouter:
         self.download_error = False
         self._download_done_at = 0.0
         self.free_space = 128 * 1024 * 1024
+        self.total_space = 1024 * 1024 * 1024
         # Задержка между командой reboot и реальным пропаданием связи
         self.reboot_delay = 0.0
         # Сколько секунд после /system/package/update/install устройство
@@ -395,6 +405,9 @@ class FakeRouter:
                 "free-memory": "1073741824",
                 "total-memory": "2147483648",
                 "free-hdd-space": str(self.free_space),
+                # Объём диска настоящий роутер сообщает вместе со свободным:
+                # без него «свободно 2 МиБ» ничего не значит
+                "total-hdd-space": str(self.total_space),
             }]
 
         # ----------------------------------------------------- обновления
@@ -714,6 +727,15 @@ class FakeRouter:
 
         if cmd == "/interface/wireless/registration-table/print":
             return list(self.wireless_registrations)
+
+        if cmd == "/interface/wireless/print":
+            if not self.wireless:
+                raise _Trap("no such command prefix")
+            return list(self.wireless)
+
+        if cmd == "/interface/wifi/print":
+            # Нового пакета wifi на этом «устройстве» нет
+            raise _Trap("no such command prefix")
 
         if cmd == "/interface/wifi/registration-table/print":
             # Нового пакета wifi на этом «устройстве» нет: так же ведёт
