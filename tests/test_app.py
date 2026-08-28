@@ -3153,6 +3153,69 @@ def test_existing_admins_keep_full_access_after_upgrade(tmp_path):
     assert row[0] == "full"
 
 
+def test_reality_check_asks_only_for_reading():
+    """
+    Сверка с настоящим роутером не может ничего изменить.
+
+    Скрипт наводят на рабочую точку парка, поэтому право на ошибку тут
+    нулевое. Разрешены только `print`, `monitor` и `export`, и список
+    команд проверяется этим же правилом до отправки. Тест следит, чтобы
+    в список не заехало что-то с `set`, `add` или `remove`.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "reality_check", Path("tools/reality_check.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.COMMANDS, "список команд пуст"
+    # Сравниваем последнее слово пути, а не вхождение: «/ip/address/print»
+    # содержит «add» внутри слова «address», и наивная проверка ловит его
+    doing = {"set", "add", "remove", "run", "reboot", "upgrade", "load", "save"}
+    for command, _args in module.COMMANDS:
+        assert module.READ_ONLY.match(command), command
+        assert command.rsplit("/", 1)[-1] not in doing, command
+
+    # И само правило не должно пропускать изменяющие команды
+    for danger in ("/system/reboot", "/ip/address/add", "/system/script/run",
+                   "/system/identity/set", "/file/remove"):
+        assert not module.READ_ONLY.match(danger), danger
+
+
+def test_reality_check_takes_the_fleet_from_the_panel(client, router):
+    """
+    Обход парка берёт точки из базы и расшифровывает пароли на месте.
+
+    Смысл режима в том, чтобы не задавать три переменные на каждую из
+    полусотни точек: адреса, логины и пароли у панели уже есть. Выключенные
+    точки пропускаются, их и панель не опрашивает.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    from app.database import execute
+
+    spec = importlib.util.spec_from_file_location(
+        "reality_check_fleet", Path("tools/reality_check.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    alive = _add_device(client, router, "обход-живая")
+    sleeping = _add_device(client, router, "обход-выключенная")
+    execute("UPDATE devices SET enabled = 0 WHERE id = ?", (sleeping,))
+
+    fleet = {row["name"]: row for row in module.fleet_from_db()}
+    assert "обход-живая" in fleet
+    assert "обход-выключенная" not in fleet, "выключенную точку опрашивать незачем"
+
+    # Пароль расшифрован тем же ключом, что и везде: скрипт ходит
+    # настоящей учёткой, а не просит вводить её руками
+    assert fleet["обход-живая"]["password"] == "s3cret"
+    assert "password_enc" not in fleet["обход-живая"]
+
+
 def test_every_permission_is_actually_checked():
     """
     Каждое право из списка где-то проверяется.
@@ -9230,6 +9293,90 @@ def test_clients_are_collected_and_remembered(client, router):
     page = client.get(f"/clients?seen=gone&device_id={device_id}")
     assert "c0:56:e3:11:22:33" in page.text
     assert "bc:24:11:f0:70:db" not in page.text
+
+
+def test_wireless_ssid_comes_from_the_interface():
+    """
+    Имя сети берётся у интерфейса, а не из записи регистрации.
+
+    Нашлось сверкой с настоящим RB4011: в таблице регистрации поля `ssid`
+    нет вовсе, там `interface`, уровень сигнала и скорости. Заглушка его
+    присылала, панель читала, и на живом железе колонка «сеть» была пустой
+    всегда. Тесты этого не видели: ошибка сидела в заглушке и в коде
+    одновременно.
+    """
+    from app.clients import merge
+
+    # Запись регистрации ровно такая, как её отдаёт настоящий роутер
+    air = [{"mac-address": "C0:56:E3:11:22:33", "interface": "wlan1",
+            "signal-strength": "-64", "tx-rate": "144.4Mbps"}]
+    radios = [{"name": "wlan1", "ssid": "Magazin", "band": "2ghz-b/g/n"}]
+
+    rows = merge(wireless=air, radios=radios)
+    assert len(rows) == 1
+    assert rows[0]["ssid"] == "Magazin"
+    assert rows[0]["link"] == "wireless"
+
+    # Без списка интерфейсов сеть просто неизвестна, но клиент остаётся
+    rows = merge(wireless=air)
+    assert rows[0]["ssid"] == ""
+    assert rows[0]["link"] == "wireless"
+
+
+def test_zero_mac_is_not_a_client():
+    """
+    Адрес из одних нулей это не клиент.
+
+    Мост такие записи заводит, и в списке клиентов живой точки первой
+    строкой стоял `00:00:00:00:00:00` без имени, адреса и производителя.
+    Широковещательный адрес отбрасываем заодно.
+    """
+    from app.clients import merge, normalize_mac
+
+    assert normalize_mac("00:00:00:00:00:00") == ""
+    assert normalize_mac("FF:FF:FF:FF:FF:FF") == ""
+    assert normalize_mac("B0:FC:0D:F3:56:8F") == "b0:fc:0d:f3:56:8f"
+
+    hosts = [{"mac-address": "00:00:00:00:00:00", "on-interface": "ether4"},
+             {"mac-address": "BC:24:11:F0:70:DB", "on-interface": "ether3"}]
+    macs = {row["mac"] for row in merge(hosts=hosts)}
+    assert macs == {"bc:24:11:f0:70:db"}
+
+
+def test_router_disk_is_judged_as_a_share(client, router):
+    """
+    Место на диске роутера считается долей, а не мегабайтами.
+
+    Та же история, что была с памятью: 2 МиБ свободных на плате с 16 МБ
+    флеша означают, что обновление не встанет, а на плате со 128 МБ это
+    обычное дело. Объём диска роутер сообщает полем `total-hdd-space`,
+    и до сверки с настоящей коробкой мы его не читали вовсе.
+    """
+    from app import attention, monitor
+    from app.database import query_one
+
+    device_id = _add_device(client, router, "тесный-диск")
+
+    # Плата на 16 МБ, свободно чуть меньше мегабайта
+    router.total_space = 16 * 1024 * 1024
+    router.free_space = 900 * 1024
+    monitor.run_cycle(full=True)
+
+    row = query_one("SELECT free_space, total_space FROM devices WHERE id = ?",
+                    (device_id,))
+    assert row["total_space"] == 16 * 1024 * 1024, "объём диска не записан"
+    assert 0 < row["free_space"] < 1024 * 1024
+
+    one: tuple[str, list] = (" AND d.id = ?", [device_id])
+    item = next((i for i in attention.collect(one) if i.key == "space"), None)
+    assert item is not None, "мало места на диске не замечено"
+    assert "тесный-диск" in item.detail
+
+    # Просторная плата в блок не попадает
+    router.total_space = 1024 * 1024 * 1024
+    router.free_space = 512 * 1024 * 1024
+    monitor.run_cycle(full=True)
+    assert not any(i.key == "space" for i in attention.collect(one))
 
 
 def test_clients_are_wired_or_wireless(client, router):

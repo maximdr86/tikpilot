@@ -1365,6 +1365,46 @@ There is also a test that monitoring does not multiply connections: ten checks
 in a row must cost exactly one connection and one login, and a whole bulk action
 must cost none.
 
+### Checking the stub against a real router
+
+The stub has a built-in flaw: it knows exactly what we put into it, and it lies
+in the same places where we were wrong. That has happened twice already, with
+the `bsd-syslog` format and with the shape of `/system/health` across RouterOS
+versions: the mistake lived in the stub and in the code at the same time, so the
+tests stayed green.
+
+`tools/reality_check.py` asks a live router the same commands the panel asks and
+compares the set of fields in the answers against what the stub returns. Values
+are not compared; the key names are what matter:
+
+```bash
+ROUTER_HOST=10.0.0.1 ROUTER_USER=tikpilot ROUTER_PASSWORD=secret \
+    python tools/reality_check.py
+```
+
+The dangerous half of the report is the second one: fields the stub has and the
+router never sends. That means the panel parses fiction, and that branch has
+never worked on a live site. The script then runs the inventory, client and
+traffic collectors and prints what came out.
+
+The `--all` flag takes the sites from the panel's own database and walks the
+whole fleet:
+
+```bash
+python tools/reality_check.py --all check-fleet.txt
+```
+
+One run then covers the models you do not have at hand individually: wireless
+here, LTE there, PoE and sensors elsewhere. The summary shows which mismatches
+are common to every box and which belong to a single model: the first is about
+the stub, the second about the hardware. Passwords come from the database and
+are decrypted on the same machine; they never reach the screen or the report.
+
+Reading only: `print`, `monitor` and `export`; anything else is refused before
+it reaches the device, so it is safe to point at a production site. A CHR will
+not cover everything: a virtual machine has no PoE, wireless, LTE or sensors,
+and those branches of the stub can only be checked against real hardware.
+
 ---
 
 ## Changelog

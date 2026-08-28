@@ -353,6 +353,11 @@ CREATE TABLE IF NOT EXISTS devices (
     free_memory   TEXT NOT NULL DEFAULT '',
     -- Всего памяти на плате, байты: свободную память судим долей от неё
     total_memory  INTEGER NOT NULL DEFAULT 0,
+    -- Свободно и всего на диске, байты. Свободное место тоже имеет смысл
+    -- только долей: 2 МиБ на плате с 16 МБ флеша это отказ обновления,
+    -- а на плате со 128 МБ обычное дело
+    free_space    INTEGER NOT NULL DEFAULT 0,
+    total_space   INTEGER NOT NULL DEFAULT 0,
     architecture  TEXT NOT NULL DEFAULT '',   -- arm, mipsbe, tile, x86 ...
     latest_version TEXT NOT NULL DEFAULT '',  -- доступная версия по данным MikroTik
     update_status TEXT NOT NULL DEFAULT '',   -- ответ check-for-updates
@@ -716,6 +721,9 @@ MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         # памяти долей, а не абсолютным числом: 11 МиБ это треть hAP lite
         # и последние крохи на CCR
         ("total_memory", "INTEGER NOT NULL DEFAULT 0"),
+        # Место на диске роутера: свободное и всего, байты
+        ("free_space", "INTEGER NOT NULL DEFAULT 0"),
+        ("total_space", "INTEGER NOT NULL DEFAULT 0"),
         ("latest_version", "TEXT NOT NULL DEFAULT ''"),
         ("update_status", "TEXT NOT NULL DEFAULT ''"),
         ("update_channel", "TEXT NOT NULL DEFAULT ''"),
@@ -882,6 +890,7 @@ def save_device_info(device_id: int, info: dict[str, Any]) -> None:
     execute(
         "UPDATE devices SET ros_version=?, board_name=?, identity=?, uptime=?, "
         "cpu_load=?, free_memory=?, total_memory=COALESCE(NULLIF(?, 0), total_memory), "
+        "free_space=?, total_space=COALESCE(NULLIF(?, 0), total_space), "
         "architecture=?, last_check=?, last_seen=?, "
         "last_error='', fail_streak=0, updated_at=? WHERE id=?",
         (
@@ -895,6 +904,10 @@ def save_device_info(device_id: int, info: dict[str, Any]) -> None:
             # сохраняется. Объём памяти не меняется, и терять его из-за
             # одного неполного ответа незачем
             _as_bytes(info.get("total_memory_bytes")),
+            _as_bytes(info.get("free_space_bytes")),
+            # Объём диска, как и памяти, не меняется: неполный ответ
+            # не должен его стирать
+            _as_bytes(info.get("total_space_bytes")),
             info.get("architecture", ""),
             now,
             now,

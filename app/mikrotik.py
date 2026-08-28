@@ -244,6 +244,10 @@ class MikroTik:
             # не значат ничего: на hAP lite с его 32 МиБ это треть,
             # а на CCR с гигабайтом это повод ехать
             info["total_memory_bytes"] = str(r.get("total-memory", "") or "")
+            # То же самое про диск. «Свободно 2 МиБ» на плате с 16 МБ
+            # флеша означает, что обновление не встанет, а на плате
+            # со 128 МБ это просто цифра
+            info["total_space_bytes"] = str(r.get("total-hdd-space", "") or "")
         try:
             ident = self.cmd("/system/identity/print")
             if ident:

@@ -80,6 +80,13 @@ MEMORY_PERCENT = 15.0
 #: всего: старые записи до этой версии и те, кого ни разу не опросили.
 MEMORY_MIB = 16.0
 
+#: Свободное место на диске роутера, доля от объёма. Та же логика, что
+#: и с памятью: 2 МиБ на плате с 16 МБ флеша означают, что обновление
+#: не встанет, а на плате со 128 МБ это обычное дело. Забитый диск это
+#: первая причина неудачного обновления RouterOS, и узнавать о нём
+#: лучше заранее, а не когда половина парка не вернулась.
+SPACE_PERCENT = 10.0
+
 #: Сколько имён показывать в пояснении, прежде чем написать «и ещё N».
 NAMES_SHOWN = 3
 
@@ -388,6 +395,43 @@ def _check_memory(scope: tuple[str, list[Any]]) -> Item | None:
     )
 
 
+def _check_router_space(scope: tuple[str, list[Any]]) -> Item | None:
+    """
+    Мало места на диске самого роутера.
+
+    Считается долей, а не мегабайтами, по той же причине, что и память.
+    Платы, которые объём диска не сообщили, пропускаются: гадать не по чему,
+    а ложная тревога хуже молчания.
+
+    Данные берутся из карточки, а не из метрик: объём диска меняется редко,
+    отдельный ряд наблюдений тут не нужен.
+    """
+    rows = [dict(r) for r in query(
+        "SELECT d.id, d.name,"
+        "       ROUND(d.free_space / 1048576.0, 1) AS free_mib,"
+        "       ROUND(100.0 * d.free_space / d.total_space, 1) AS free_percent"
+        " FROM devices d"
+        f" WHERE d.enabled = 1 AND d.total_space > 0 AND d.free_space > 0{scope[0]}"
+        f" AND (100.0 * d.free_space / d.total_space) <= {SPACE_PERCENT}"
+        " ORDER BY free_percent",
+        tuple(scope[1]),
+    )]
+    if not rows:
+        return None
+    worst = rows[0]
+    return Item(
+        key="space",
+        level="warn",
+        group="resources",
+        title="Мало места на диске",
+        detail=f"{_names(rows)} · меньше всех у {worst['name']}, "
+               f"{worst['free_mib']:g} МиБ, это {worst['free_percent']:g}% от диска."
+               f" Обновление RouterOS на такой точке может не встать",
+        count=len(rows),
+        devices=rows,
+    )
+
+
 def _check_panel_disk(scope: tuple[str, list[Any]]) -> Item | None:
     """
     Место на диске самой панели.
@@ -482,6 +526,7 @@ CHECKS: tuple[Callable[[tuple[str, list[Any]]], Item | None], ...] = (
     _check_syslog,
     _check_cpu,
     _check_memory,
+    _check_router_space,
     _check_risky_services,
     _check_jobs,
     _check_updates,

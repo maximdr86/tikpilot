@@ -73,6 +73,11 @@ def normalize_mac(value: Any) -> str:
     text = re.sub(r"[^0-9a-fA-F]", "", str(value or "")).lower()
     if len(text) != 12:
         return ""
+    # Все нули это не адрес, а заглушка. Мост такие записи заводит, и на
+    # живой точке в списке клиентов появлялась строка без имени, адреса
+    # и производителя. Заодно отсеиваем широковещательный адрес
+    if text in ("000000000000", "ffffffffffff"):
+        return ""
     return ":".join(text[i:i + 2] for i in range(0, 12, 2))
 
 
@@ -189,7 +194,8 @@ def uplink_ports(arp: Iterable[dict[str, Any]] = (),
 
 def merge(leases: Iterable[dict[str, Any]] = (), arp: Iterable[dict[str, Any]] = (),
           hosts: Iterable[dict[str, Any]] = (), wireless: Iterable[dict[str, Any]] = (),
-          routes: Iterable[dict[str, Any]] = ()) -> list[dict[str, Any]]:
+          routes: Iterable[dict[str, Any]] = (),
+          radios: Iterable[dict[str, Any]] = ()) -> list[dict[str, Any]]:
     """
     Слить таблицы роутера в список клиентов.
 
@@ -203,7 +209,12 @@ def merge(leases: Iterable[dict[str, Any]] = (), arp: Iterable[dict[str, Any]] =
       подключён по воздуху. Интерфейс из ARP портом не считается: там
       будет имя моста, а «bridge» это не ответ на вопрос «куда воткнут»;
     * вид подключения беспроводной, если MAC нашёлся в таблице
-      регистрации, и проводной во всех остальных случаях.
+      регистрации, и проводной во всех остальных случаях;
+    * имя сети берётся у самого беспроводного интерфейса (`radios`),
+      а не из записи регистрации. В записи его нет: там `interface`,
+      уровень сигнала и скорости, а `ssid` живёт на интерфейсе. Пока
+      панель читала его из записи, колонка «сеть» была пустой всегда,
+      и заметить это по тестам было нельзя: заглушка поле присылала.
     """
     # Списки читаются дважды: сначала для поиска аплинка, потом по делу.
     # Генератор второго прохода не переживёт
@@ -211,6 +222,14 @@ def merge(leases: Iterable[dict[str, Any]] = (), arp: Iterable[dict[str, Any]] =
     hosts = list(hosts)
     routes = list(routes)
     uplink = uplink_ports(arp, hosts, routes)
+
+    # Имя сети по имени интерфейса: wlan1 → «Magazin». Сюда попадают оба
+    # пакета, старый wireless и новый wifi, у них поле называется одинаково
+    ssid_of = {
+        str(radio.get("name") or "").strip(): str(radio.get("ssid") or "").strip()
+        for radio in radios
+        if str(radio.get("name") or "").strip()
+    }
 
     found: dict[str, dict[str, Any]] = {}
 
@@ -287,7 +306,10 @@ def merge(leases: Iterable[dict[str, Any]] = (), arp: Iterable[dict[str, Any]] =
         port = str(entry.get("interface") or "").strip()
         if port:
             row["port"] = port
-        row["ssid"] = str(entry.get("ssid") or "").strip()
+        # `ssid` в самой записи регистрации бывает только у части версий,
+        # поэтому основной источник это интерфейс, а запись запасной
+        row["ssid"] = (ssid_of.get(port) or
+                       str(entry.get("ssid") or "").strip())
         row["signal"] = str(
             entry.get("signal-strength") or entry.get("signal") or ""
         ).strip()
@@ -347,12 +369,18 @@ def collect(mt: Any) -> list[dict[str, Any]]:
     air = safe("/interface/wireless/registration-table/print")
     air += safe("/interface/wifi/registration-table/print")
 
+    # Сами беспроводные интерфейсы: у них лежит имя сети, которого
+    # в таблице регистрации нет
+    radios = safe("/interface/wireless/print")
+    radios += safe("/interface/wifi/print")
+
     return merge(
         leases=safe("/ip/dhcp-server/lease/print"),
         arp=safe("/ip/arp/print"),
         hosts=safe("/interface/bridge/host/print"),
         wireless=air,
         routes=safe("/ip/route/print"),
+        radios=radios,
     )
 
 
