@@ -143,6 +143,11 @@ class FakeRouter:
             {".id": "*1", "name": "wlan1", "ssid": "Magazin", "band": "2ghz-b/g/n",
              "frequency": "2442", "disabled": "false", "running": "true"},
         ]
+        #: Живое состояние питания по портам
+        self.poe_monitor: list[dict[str, str]] = [
+            {"name": "ether2", "poe-out-status": "powered-on",
+             "poe-out-voltage": "24.1", "poe-out-current": "120"},
+        ]
         self.ip_addresses: list[dict[str, str]] = [
             {".id": "*1", "address": "10.0.0.1/24", "interface": "ether1"},
         ]
@@ -163,17 +168,26 @@ class FakeRouter:
              "rx-byte": "0", "tx-byte": "0"},
             {".id": "*4", "name": "bridge", "type": "bridge", "running": True,
              "disabled": False, "rx-byte": "4000", "tx-byte": "4000"},
+            # Ни тега, ни родителя тут намеренно нет: сверка с парком
+            # показала, что `/interface/print` их не отдаёт ни на одной
+            # коробке. Они лежат в своей таблице, ниже
             {".id": "*5", "name": "vlan-100", "type": "vlan", "running": True,
-             "disabled": False, "vlan-id": "100", "interface": "bridge",
-             "rx-byte": "100", "tx-byte": "100"},
+             "disabled": False, "rx-byte": "100", "tx-byte": "100"},
         ]
-        # В print скорости нет: там только настройка «что разрешено
-        # согласовать», а на части плат нет и её. Договорённая скорость
-        # живёт в monitor, как на настоящем hAP ac lite.
+        #: Своя таблица VLAN: отсюда панель и берёт тег с родителем
+        self.vlans: list[dict[str, Any]] = [
+            {".id": "*1", "name": "vlan-100", "vlan-id": "100",
+             "interface": "bridge", "disabled": "false", "running": "true"},
+        ]
+        # В print договорённой скорости нет: там настройка «что разрешено
+        # согласовать», и приходит она не везде. Сверка с парком: `speed`
+        # прислали три коробки из сорока семи, `full-duplex` ни одна.
+        # Договорённая скорость живёт в monitor, как на настоящем hAP ac lite,
+        # и панель берёт её только оттуда.
         self.ethernet: list[dict[str, Any]] = [
-            {".id": "*1", "name": "ether1", "speed": "1Gbps", "full-duplex": True},
-            {".id": "*2", "name": "ether2", "speed": "1Gbps", "full-duplex": True},
-            {".id": "*3", "name": "ether3", "speed": "1Gbps"},
+            {".id": "*1", "name": "ether1", "speed": "1Gbps"},
+            {".id": "*2", "name": "ether2"},
+            {".id": "*3", "name": "ether3"},
         ]
         self.ethernet_monitor: list[dict[str, Any]] = [
             {"name": "ether1", "status": "link-ok", "rate": "1Gbps"},
@@ -181,8 +195,10 @@ class FakeRouter:
             {"name": "ether3", "status": "no-link"},
         ]
         self.poe: list[dict[str, Any]] = [
+            # `poe-out-status` тут нет: в print лежат только настройки,
+            # живое состояние отдаёт monitor
             {".id": "*2", "name": "ether2", "poe-out": "auto-on",
-             "poe-out-status": "powered-on"},
+             "poe-priority": "10"},
         ]
         # В RouterOS 7.21 /ip/service отдаёт три разных вида записей сразу:
         # настроенные сервисы, динамические (их поднимает сам роутер)
@@ -727,6 +743,16 @@ class FakeRouter:
 
         if cmd == "/interface/wireless/registration-table/print":
             return list(self.wireless_registrations)
+
+        if cmd == "/interface/vlan/print":
+            return list(self.vlans)
+
+        if cmd == "/interface/ethernet/poe/monitor":
+            if not self.poe:
+                raise _Trap("no such command prefix")
+            wanted = [n for n in str(attrs.get("numbers", "")).split(",") if n]
+            return [row for row in self.poe_monitor
+                    if not wanted or row["name"] in wanted]
 
         if cmd == "/interface/wireless/print":
             if not self.wireless:
