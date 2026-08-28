@@ -132,7 +132,9 @@ def voltage_of(health: dict[str, str]) -> str:
 def merge_ports(interfaces: Iterable[dict[str, Any]],
                 ethernet: Iterable[dict[str, Any]] = (),
                 poe: Iterable[dict[str, Any]] = (),
-                monitor: Iterable[dict[str, Any]] = ()) -> list[dict[str, Any]]:
+                monitor: Iterable[dict[str, Any]] = (),
+                vlans: Iterable[dict[str, Any]] = (),
+                poe_live: Iterable[dict[str, Any]] = ()) -> list[dict[str, Any]]:
     """
     Свести список интерфейсов с их железными свойствами.
 
@@ -143,6 +145,16 @@ def merge_ports(interfaces: Iterable[dict[str, Any]],
     поле `speed` это **настройка** («какую скорость разрешено согласовать»),
     а на части плат его нет вовсе, и на hAP ac lite все порты выглядели
     погасшими при живом линке. Договорённая скорость есть только в monitor.
+
+    По той же причине отдельными таблицами приходят VLAN и питание:
+
+    * тег и родительский интерфейс лежат в `/interface/vlan`, а не в общем
+      списке интерфейсов. Сверка с парком показала, что `vlan-id` не приходит
+      в `/interface/print` **ни на одной из сорока семи коробок**, и подпись
+      VLAN была пустой всегда;
+    * `poe-out-status` это живое состояние, оно в `/interface/ethernet/poe/monitor`.
+      В `print` лежат только настройки, и отметка «питание подано» не
+      появлялась ни разу.
     """
     speed_by_name: dict[str, dict[str, Any]] = {}
     for row in ethernet:
@@ -158,6 +170,18 @@ def merge_ports(interfaces: Iterable[dict[str, Any]],
     for row in poe:
         poe_by_name[str(row.get("name", ""))] = row
 
+    poe_live_by_name: dict[str, dict[str, Any]] = {}
+    for row in poe_live:
+        name = str(row.get("name", "") or "")
+        if name:
+            poe_live_by_name[name] = row
+
+    vlan_by_name: dict[str, dict[str, Any]] = {}
+    for row in vlans:
+        name = str(row.get("name", "") or "")
+        if name:
+            vlan_by_name[name] = row
+
     result: list[dict[str, Any]] = []
     for row in interfaces:
         name = str(row.get("name", ""))
@@ -167,6 +191,7 @@ def merge_ports(interfaces: Iterable[dict[str, Any]],
         extra = speed_by_name.get(name, {})
         live = live_by_name.get(name, {})
         power = poe_by_name.get(name, {})
+        power_live = poe_live_by_name.get(name, {})
 
         running = is_yes(row.get("running"))
         disabled = is_yes(row.get("disabled"))
@@ -193,8 +218,9 @@ def merge_ports(interfaces: Iterable[dict[str, Any]],
             "comment": str(row.get("comment", "") or "")[:120],
             "mac": str(row.get("mac-address", "") or ""),
             "poe": str(power.get("poe-out", "") or ""),
-            "poe_status": str(power.get("poe-out-status", "") or ""),
-            "detail": _detail(row, kind),
+            "poe_status": str(power_live.get("poe-out-status", "")
+                              or power.get("poe-out-status", "") or ""),
+            "detail": _detail(row, kind, vlan_by_name.get(name, {})),
         })
 
     # Порядок как в Winbox: сначала физические, потом всё остальное
@@ -202,11 +228,19 @@ def merge_ports(interfaces: Iterable[dict[str, Any]],
     return result
 
 
-def _detail(row: dict[str, Any], kind: str) -> str:
-    """Короткое пояснение для нефизического интерфейса."""
+def _detail(row: dict[str, Any], kind: str,
+            vlan: dict[str, Any] | None = None) -> str:
+    """
+    Короткое пояснение для нефизического интерфейса.
+
+    Для VLAN сведения берутся из его собственной таблицы: в общем списке
+    интерфейсов ни тега, ни родителя нет. Запись из общего списка осталась
+    запасным источником на случай версий, где поля всё-таки приходят.
+    """
     if kind == "vlan":
-        tag = row.get("vlan-id") or row.get("vlan_id") or ""
-        parent = row.get("interface") or ""
+        source = vlan or row
+        tag = source.get("vlan-id") or source.get("vlan_id") or ""
+        parent = source.get("interface") or ""
         return " · ".join(str(p) for p in (f"VLAN {tag}" if tag else "", parent) if p)
     if kind == "bridge":
         return ""
@@ -374,6 +408,38 @@ def monitor_ports(mt: Any, ethernet: list[dict[str, Any]]) -> list[dict[str, Any
     return rows
 
 
+def monitor_poe(mt: Any, poe: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Спросить у портов с питанием, подано ли оно сейчас.
+
+    Отдельная команда по той же причине, что и со скоростью: в `print`
+    лежат настройки (`poe-out`, приоритет, перезапуск по пингу), а живое
+    состояние только в `monitor`. Сверка с парком показала, что
+    `poe-out-status` не приходит в `print` ни на одной коробке, и отметка
+    «питание подано» в карточке не появлялась ни разу.
+
+    Спрашиваем одним вызовом на все порты с питанием, а не по вызову
+    на порт: на полусотне точек разница заметна.
+    """
+    names = [str(row.get("name", "")) for row in poe if row.get("name")]
+    if not names:
+        return []
+    try:
+        rows = list(mt.cmd("/interface/ethernet/poe/monitor",
+                           **{"numbers": ",".join(names), "once": ""}))
+    except Exception:  # noqa: BLE001 — нет команды, значит нет состояния
+        # Как и у скоростей: оборванная связь это не «нет команды»,
+        # и продолжать обход нельзя, иначе ответы поедут со сдвигом
+        if not getattr(mt, "alive", True):
+            raise
+        return []
+
+    for index, row in enumerate(rows):
+        if not row.get("name") and index < len(names):
+            row["name"] = names[index]
+    return rows
+
+
 def collect(mt: Any) -> dict[str, Any]:
     """
     Прочитать паспорт устройства в уже открытой сессии.
@@ -406,14 +472,21 @@ def collect(mt: Any) -> dict[str, Any]:
 
     health = parse_health(safe("/system/health/print"))
     ethernet = safe("/interface/ethernet/print")
+    poe = safe("/interface/ethernet/poe/print")
     return {
         "scripts": parse_scripts(safe("/system/script/print"),
                                  safe("/system/scheduler/print")),
         "ports": merge_ports(
             safe("/interface/print"),
             ethernet,
-            safe("/interface/ethernet/poe/print"),
+            poe,
             monitor_ports(mt, ethernet),
+            # Тег и родитель VLAN лежат в своей таблице, в общем списке
+            # интерфейсов их нет ни на одной коробке парка
+            safe("/interface/vlan/print"),
+            # Живое состояние питания: подано или нет. В `print` только
+            # настройки, поэтому отметка не появлялась никогда
+            monitor_poe(mt, poe),
         ),
         "services": parse_services(safe("/ip/service/print")),
         "neighbors": parse_neighbors(safe("/ip/neighbor/print")),

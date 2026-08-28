@@ -9295,6 +9295,51 @@ def test_clients_are_collected_and_remembered(client, router):
     assert "bc:24:11:f0:70:db" not in page.text
 
 
+def test_vlan_tag_comes_from_its_own_table():
+    """
+    Тег VLAN и родитель берутся из `/interface/vlan`, а не из общего списка.
+
+    Сверка с парком: `vlan-id` и `interface` не приходят в `/interface/print`
+    ни на одной из сорока семи коробок. Панель читала их оттуда, и подпись
+    у VLAN-интерфейса была пустой всегда. Заглушка эти поля присылала,
+    поэтому тесты видели ровно то, чего в жизни не бывает.
+    """
+    from app.inventory import merge_ports
+
+    interfaces = [{"name": "vlan-100", "type": "vlan", "running": True}]
+    vlans = [{"name": "vlan-100", "vlan-id": "100", "interface": "bridge"}]
+
+    без_таблицы = merge_ports(interfaces)[0]
+    assert без_таблицы["detail"] == "", "тег взялся из воздуха"
+
+    с_таблицей = merge_ports(interfaces, vlans=vlans)[0]
+    assert "100" in с_таблицей["detail"]
+    assert "bridge" in с_таблицей["detail"]
+
+
+def test_poe_state_comes_from_monitor():
+    """
+    Подано ли питание, знает `monitor`, а не `print`.
+
+    В `/interface/ethernet/poe/print` лежат настройки: `poe-out`, приоритет,
+    перезапуск по пингу. Живое состояние `poe-out-status` приходит только
+    из `monitor`, и на всех сорока двух коробках с PoE его в `print` не было.
+    Отметка «питание подано» в карточке не появлялась ни разу.
+    """
+    from app.inventory import merge_ports
+
+    interfaces = [{"name": "ether2", "type": "ether", "running": True}]
+    poe = [{"name": "ether2", "poe-out": "auto-on", "poe-priority": "10"}]
+    live = [{"name": "ether2", "poe-out-status": "powered-on"}]
+
+    без_монитора = merge_ports(interfaces, poe=poe)[0]
+    assert без_монитора["poe"] == "auto-on"
+    assert без_монитора["poe_status"] == ""
+
+    с_монитором = merge_ports(interfaces, poe=poe, poe_live=live)[0]
+    assert с_монитором["poe_status"] == "powered-on"
+
+
 def test_wireless_ssid_comes_from_the_interface():
     """
     Имя сети берётся у интерфейса, а не из записи регистрации.

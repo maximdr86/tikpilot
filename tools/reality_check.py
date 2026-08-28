@@ -87,6 +87,7 @@ COMMANDS: list[tuple[str, dict[str, Any]]] = [
     ("/interface/print", {}),
     ("/interface/ethernet/print", {}),
     ("/interface/ethernet/poe/print", {}),
+    ("/interface/vlan/print", {}),
     ("/interface/wireless/print", {}),
     ("/interface/wireguard/print", {}),
     ("/interface/wireguard/peers/print", {}),
@@ -340,12 +341,29 @@ def run_collectors(mt: Any) -> None:
 
     try:
         passport = inventory.collect(mt)
+        ports = passport.get("ports", []) + passport.get("logical", [])
         say(f"паспорт: портов {len(passport.get('ports', []))},"
               f" сервисов {len(passport.get('services', []))},"
               f" соседей {len(passport.get('neighbors', []))},"
               f" скриптов {len(passport.get('scripts', []))},"
               f" датчики {passport.get('temperature') or '-'}"
               f"/{passport.get('voltage') or '-'}")
+
+        # Разобранные значения, а не только счётчики: по числу портов
+        # не видно, заполнилось ли то, ради чего лезли на роутер
+        powered = [p for p in ports if p.get("poe")]
+        for port in powered[:4]:
+            say(f"         PoE {port['name']}: настройка «{port['poe']}»,"
+                f" состояние «{port.get('poe_status') or 'ПУСТО'}»")
+        if not powered:
+            say("         PoE: портов с питанием нет")
+
+        vlans = [p for p in ports if p.get("kind") == "vlan"]
+        for port in vlans[:4]:
+            say(f"         VLAN {port['name']}:"
+                f" «{port.get('detail') or 'ПУСТО'}»")
+        if not vlans:
+            say("         VLAN: интерфейсов нет")
     except Exception as exc:                      # noqa: BLE001
         say(f"паспорт: РАЗВАЛИЛСЯ — {type(exc).__name__}: {exc}")
 
