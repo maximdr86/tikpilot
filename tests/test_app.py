@@ -10703,12 +10703,61 @@ def test_speedtest_measures_between_two_sites(client, router):
         assert target_fake.btest_server is False
 
         text = client.get(f"/jobs/{job['id']}").text
-        # Имя цели, а не её номер; оба направления и общие единицы,
-        # чтобы полсотни строк можно было сравнить глазами
+        # Имя цели, а не её номер, и общие для всех строк единицы:
+        # столбик из полусотни строк должен читаться без пересчёта в уме
         assert "speed-target" in text
-        assert "приём" in text and "передача" in text
         assert "Мбит/с" in text
         assert "бит/с," not in text.replace("Мбит/с,", "")
+
+        # В строке только то, что мерили. Просили приём, значит про
+        # передачу речи нет: RouterOS встречное направление не сообщает,
+        # и «передача -» читалось бы как поломка теста
+        assert "приём" in text
+        assert "передача" not in text, "в отчёт попало направление, которое не мерили"
+
+
+def test_speedtest_line_matches_the_direction(client, router):
+    """
+    Строка результата меняется вместе с направлением.
+
+    Нашлось глазами на живом парке: при направлении «приём» в отчёте
+    стояло «передача -», и это выглядело так, будто тест наполовину
+    не отработал. Тест отрабатывал, просто в строке печаталось поле,
+    которого при таком направлении быть не может.
+    """
+    from app import i18n
+
+    with FakeRouter(username="tikpilot", password="s3cret") as target_fake:
+        source = _add_device(client, router, "speed-dir-source")
+        target = _add_device(client, target_fake, "speed-dir-target")
+
+        def run(direction):
+            job = _run_and_wait(client, "speedtest", [source], {
+                "target_id": str(target), "duration": "5",
+                "direction": direction, "protocol": "tcp",
+            })
+            assert job["ok_count"] == 1, job
+            return client.get(f"/jobs/{job['id']}").text
+
+        transmit = run("transmit")
+        assert "передача" in transmit
+        assert "приём" not in transmit
+
+        both = run("both")
+        assert "приём" in both and "передача" in both
+
+    # Все три формы переводятся: результат задачи лежит в базе готовым
+    # текстом, и на английской панели он показывается через словарь
+    i18n.load_catalogs()
+    for line, expect in (
+        ("До X (10.0.0.1): приём 4,7 Мбит/с, за 6s", "rx 4,7 Mbit/s"),
+        ("До X (10.0.0.1): передача 38,0 Мбит/с, за 6s", "tx 38,0 Mbit/s"),
+        ("До X (10.0.0.1): приём 4,7, передача 38,0 Мбит/с, за 6s", "rx 4,7, tx 38,0"),
+        ("До X (10.0.0.1): приём 4,7 Мбит/с, за 6s, потеряно пакетов 3", "lost packets 3"),
+    ):
+        english = i18n.translate_text(line, "en")
+        assert expect in english, english
+        assert "приём" not in english and "передача" not in english, english
 
 
 def test_speedtest_closes_the_door_after_a_failure(client, router):
