@@ -196,9 +196,13 @@ def merge_ports(interfaces: Iterable[dict[str, Any]],
         running = is_yes(row.get("running"))
         disabled = is_yes(row.get("disabled"))
         if live:
-            # monitor знает правду о линке лучше, чем флаг running
+            # monitor знает правду о линке лучше, чем флаг running.
+            # Кроме `unknown`: по документации это «карта не умеет
+            # сообщать состояние линка», а не «линка нет». Считать её
+            # погасшей значит затереть флаг `running`, который в этом
+            # случае как раз единственный источник
             status = str(live.get("status", "") or "").lower()
-            if status:
+            if status and status != "unknown":
                 running = status in ("link-ok", "ok")
         # Скорость показывает только работающий порт: у погашенного
         # RouterOS оставляет прошлое значение, и плитка врёт
