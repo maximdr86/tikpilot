@@ -4104,6 +4104,163 @@ def test_report_groups_availability_by_operator(client, router):
     assert sum(1 for с in строки[1:] if с.endswith(";МТС")) == 2
 
 
+def test_brief_report_starts_with_a_verdict_in_words(client, router):
+    """
+    Отчёт для руководителя начинается с вывода, а не с цифр.
+
+    «99,2 процента» ничего не говорит человеку, который не знает, много
+    это или мало. Поэтому сначала фраза словами, а процент рядом мелким,
+    и ни одного адреса или названия протокола на всём листе.
+    """
+    from app.database import execute
+
+    группа = client.post("/api/groups", data={"name": "Краткая"}).json()["id"]
+    точка = _add_device(client, router, "краткая-точка")
+    execute("UPDATE devices SET group_id = ? WHERE id = ?", (группа, точка))
+
+    page = client.get(f"/monitoring/summary?hours=24&group_id={группа}")
+    assert page.status_code == 200
+    text = page.text
+
+    assert "Состояние сети" in text
+    assert "Всего точек" in text and "Весь период на связи" in text
+    # Технических подробностей в этом документе быть не должно
+    for лишнее in ("127.0.0.1", "CSV", "Журнал падений", "Адрес"):
+        assert лишнее not in text, лишнее
+    # Мониторинг видит только доступность и не знает, работает ли точка
+    for неточное in ("не работают сейчас", "Не работала"):
+        assert неточное not in text, неточное
+
+
+def test_brief_report_says_out_loud_when_something_is_down_right_now(client, router):
+    """
+    Лежащая сейчас точка сильнее хорошего среднего за период.
+
+    Месяц мог пройти прекрасно, но если сегодня не отвечают три площадки,
+    отчёт, начинающийся словами «сеть работает стабильно», обесценивает
+    себя целиком.
+    """
+    from app.database import execute
+
+    группа = client.post("/api/groups", data={"name": "Лежачая"}).json()["id"]
+    точка = _add_device(client, router, "упавшая-точка")
+    execute("UPDATE devices SET group_id = ?, status = 'offline' WHERE id = ?",
+            (группа, точка))
+
+    text = client.get(f"/monitoring/summary?hours=24&group_id={группа}").text
+
+    assert "Требует внимания сейчас" in text
+    assert "упавшая-точка" in text
+    assert "Часть точек недоступна" in text
+    assert "Связь была устойчивой" not in text
+
+
+def test_brief_report_keeps_today_apart_from_the_period(client, router):
+    """
+    Лежащая сейчас точка и точка, штормившая на прошлой неделе, считаются
+    порознь.
+
+    Решения по ним разные: первую надо чинить сегодня, вторую обсуждать
+    с провайдером. В одной цифре «с проблемами» они неразличимы, поэтому
+    три кучки не пересекаются и в сумме дают весь парк.
+    """
+    from app.database import execute, utcnow
+
+    группа = client.post("/api/groups", data={"name": "Раздельная"}).json()["id"]
+    молчит = _add_device(client, router, "сейчас-молчит")
+    оправилась = _add_device(client, router, "штормило-вчера")
+    ровная = _add_device(client, router, "без-единого-сбоя")
+    execute("UPDATE devices SET group_id = ? WHERE id IN (?, ?, ?)",
+            (группа, молчит, оправилась, ровная))
+    execute("UPDATE devices SET status = 'offline' WHERE id = ?", (молчит,))
+    execute(
+        "INSERT INTO status_events (device_id, device_name, device_host, status,"
+        " reason, downtime, ts) VALUES (?,?,?,?,?,?,?)",
+        (оправилась, "штормило-вчера", "127.0.0.1", "online", "", 1800, utcnow()),
+    )
+
+    text = client.get(f"/monitoring/summary?hours=24&group_id={группа}").text
+
+    def плитка(подпись: str) -> int:
+        """Число из плитки с такой подписью."""
+        хвост = text.split(подпись, 1)[1]
+        return int(re.search(r">(\d+)<", хвост).group(1))
+
+    всего = плитка("Всего точек")
+    недоступны = плитка("Сейчас недоступны")
+    ровные = плитка("Весь период на связи")
+    оправились = плитка("Перебои, сейчас на связи")
+
+    assert всего == 3
+    assert недоступны == 1, "молчащая точка не попала в текущий статус"
+    assert оправились == 1, "вчерашний перебой не отделён от сегодняшней аварии"
+    assert ровные == 1
+    # Кучки не пересекаются и в сумме дают весь парк
+    assert недоступны + ровные + оправились == всего
+
+
+def test_verdict_speaks_plainly_about_each_state():
+    """
+    Каждому состоянию сети своя фраза, и она не противоречит цифре.
+
+    Пороги те же, что красят таблицу в техническом отчёте: два документа
+    об одном парке не должны расходиться в оценке.
+    """
+    from app.routes.pages import _verdict
+
+    спокойно = _verdict(99.9, offline_now=0, troubled=0, total=40)
+    assert спокойно == {"state": "good", "kind": "flawless"}
+
+    ровно = _verdict(99.9, offline_now=0, troubled=2, total=40)
+    assert ровно == {"state": "good", "kind": "stable"}
+
+    заметно = _verdict(98.4, offline_now=0, troubled=6, total=40)
+    assert заметно["state"] == "fair"
+
+    плохо = _verdict(94.0, offline_now=0, troubled=20, total=40)
+    assert плохо["state"] == "bad"
+
+    # Лежащая точка перевешивает даже отличное среднее
+    сейчас = _verdict(99.99, offline_now=2, troubled=2, total=40)
+    assert сейчас == {"state": "bad", "kind": "offline_now"}
+
+
+def test_mass_outage_is_told_apart_from_a_coincidence():
+    """
+    Массовый сбой это когда точки лежали одновременно, а не когда их много.
+
+    Сорок отдельных падений за месяц и одна авария района выглядят в списке
+    одинаково, а означают разное. Отличает их пересечение по времени.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from app.routes.pages import _mass_outages
+
+    начало = datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc)
+
+    def простой(сдвиг_минут: int, длина_минут: int) -> dict:
+        старт = начало + timedelta(minutes=сдвиг_минут)
+        return {"start": старт, "end": старт + timedelta(minutes=длина_минут)}
+
+    # Четыре точки пропали в одну минуту: это одна причина, а не четыре
+    разом = _mass_outages([простой(0, 30) for _ in range(4)])
+    assert len(разом) == 1
+    assert разом[0]["devices"] == 4
+    assert разом[0]["seconds"] == 30 * 60
+
+    # Те же четыре падения, но по очереди и не пересекаясь: не массовый сбой
+    поодиночке = _mass_outages([простой(i * 60, 30) for i in range(4)])
+    assert поодиночке == []
+
+    # Две точки это совпадение, которое случается в любом парке
+    assert _mass_outages([простой(0, 30) for _ in range(2)]) == []
+
+    # Точка, поднявшаяся ровно в ту секунду, когда упала соседняя,
+    # эпизод не создаёт: иначе цепочка одиночных падений слипается
+    впритык = _mass_outages([простой(0, 30), простой(30, 30), простой(60, 30)])
+    assert впритык == []
+
+
 def test_operator_summary_never_shows_more_downtime_than_the_period():
     """
     Простой у оператора не бывает длиннее самого отчёта.
@@ -5024,8 +5181,13 @@ def test_report_shows_average_downtime_per_site(client, router):
 
     from app.database import execute
 
+    # Своя группа: база в тестах общая, и в отчёт по всему парку приедут
+    # точки соседних проверок, с которыми среднее не сойдётся
+    группа = client.post("/api/groups", data={"name": "Простойная"}).json()["id"]
     first = _add_device(client, router, "простой-1")
-    _add_device(client, router, "простой-2")
+    second = _add_device(client, router, "простой-2")
+    execute("UPDATE devices SET group_id = ? WHERE id IN (?, ?)",
+            (группа, first, second))
 
     moment = datetime.now(timezone.utc) - timedelta(hours=2)
     execute(
@@ -5034,10 +5196,15 @@ def test_report_shows_average_downtime_per_site(client, router):
         (first, "простой-1", "127.0.0.1", 7200,
          moment.strftime("%Y-%m-%d %H:%M:%S")))
 
-    page = client.get("/monitoring/report?hours=24").text
+    page = client.get(f"/monitoring/report?hours=24&group_id={группа}").text
     assert "Средний простой" in page
     assert "Суммарный простой" not in page
-    assert "на одну точку за период" in page
+    # Проверяется цифра, а не подпись под ней: два часа простоя на одной
+    # точке из двух это час в среднем. Раньше тест держался за пояснение
+    # «на одну точку за период», и убрать лишний текст из отчёта было
+    # нельзя, не сломав проверку смысла, к которому текст отношения не имел
+    плитка = page.split("Средний простой", 1)[1].split("</div>", 2)[1]
+    assert "1 ч" in плитка, плитка
 
 
 def test_report_takes_a_date_range_and_ignores_what_happened_after(client, router):

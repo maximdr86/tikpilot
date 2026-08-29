@@ -289,6 +289,39 @@ def _report_color(percent: float) -> str:
     return "var(--err)"
 
 
+def _verdict(average: float, offline_now: int, troubled: int,
+             total: int) -> dict[str, str]:
+    """
+    Одна фраза сверху отчёта для руководителя: как дела у сети.
+
+    Смысл в том, чтобы человек без технических знаний не считал проценты
+    сам. «99,2%» ему ничего не говорит: хорошо это или плохо, зависит от
+    того, чего он ждал. Поэтому вердикт словами, а процент рядом мелким.
+
+    Порог тот же, что красит таблицу в техническом отчёте: два документа
+    об одном парке не должны противоречить друг другу.
+
+    Точки, лежащие прямо сейчас, сильнее среднего за период. Месяц мог
+    пройти прекрасно, но если сегодня не отвечают три площадки, отчёт,
+    начинающийся словами «сеть работает стабильно», обесценивает себя
+    целиком.
+
+    Сами фразы живут в шаблоне, а не здесь. Расширение переводов оборачивает
+    кириллицу в шаблонах и не видит строк, собранных в Python: вердикт,
+    составленный тут, остался бы русским и в английской версии. Отсюда
+    возвращается только решение, а слова к нему подбирает документ.
+    """
+    if offline_now:
+        return {"state": "bad", "kind": "offline_now"}
+    if average >= REPORT_GOOD and not troubled:
+        return {"state": "good", "kind": "flawless"}
+    if average >= REPORT_GOOD:
+        return {"state": "good", "kind": "stable"}
+    if average >= REPORT_FAIR:
+        return {"state": "fair", "kind": "fair"}
+    return {"state": "bad", "kind": "bad"}
+
+
 #: Дальше месяца отчёт не строят, а окно на годы упрётся в журнал событий
 REPORT_MAX_DAYS = 366
 
@@ -359,6 +392,81 @@ def _report_floor(percents: list[float]) -> float:
         if low >= step + 0.05:
             return step
     return 0.0
+
+
+#: Со скольких одновременно упавших точек сбой считается массовым.
+#: Две точки это совпадение, которое случается в любом парке: где-то
+#: выключили свет, где-то перезагрузили роутер. Три и больше в один
+#: момент почти всегда общая причина: канал, электричество, район.
+MASS_OUTAGE_MIN = 3
+
+#: Сколько массовых сбоев показывать в отчёте для руководителя. Он читается
+#: за полминуты, и список из двадцати эпизодов в него не помещается.
+MASS_OUTAGE_LIMIT = 5
+
+
+def _mass_outages(intervals: list[dict[str, Any]],
+                  least: int = MASS_OUTAGE_MIN) -> list[dict[str, Any]]:
+    """
+    Эпизоды, когда несколько точек лежали одновременно.
+
+    Отчёт для руководителя отвечает на вопрос «что случилось», а список
+    из сорока падений на него не отвечает: сорок отдельных строк и одна
+    авария района выглядят одинаково. Одновременность как раз и отличает
+    общую причину от совпадения.
+
+    Считается разметкой по времени: собираем моменты начала и конца всех
+    простоев, идём по ним по порядку и следим, сколько точек лежит прямо
+    сейчас. Эпизод начинается там, где счётчик дорос до порога, и кончается
+    там, где упал ниже. Это дешевле, чем сравнивать каждый простой с каждым,
+    и не зависит от того, сколько их пришло.
+
+    Причину панель не знает и не выдумывает: она видит, что двенадцать
+    точек пропали в одну минуту, и говорит ровно это.
+    """
+    if not intervals:
+        return []
+
+    points: list[tuple[datetime, int]] = []
+    for row in intervals:
+        points.append((row["start"], 1))
+        points.append((row["end"], -1))
+    # Конец раньше начала при равном времени: точка, поднявшаяся ровно
+    # в ту секунду, когда упала соседняя, не должна создавать эпизод
+    points.sort(key=lambda p: (p[0], p[1]))
+
+    episodes: list[dict[str, Any]] = []
+    down = 0
+    peak = 0
+    started: datetime | None = None
+    for moment, delta in points:
+        down += delta
+        if started is None and down >= least:
+            started = moment
+            peak = down
+        elif started is not None:
+            peak = max(peak, down)
+            if down < least:
+                episodes.append({
+                    "start": started,
+                    "end": moment,
+                    "seconds": int((moment - started).total_seconds()),
+                    "devices": peak,
+                })
+                started = None
+
+    if started is not None:
+        last = max(row["end"] for row in intervals)
+        episodes.append({
+            "start": started,
+            "end": last,
+            "seconds": int((last - started).total_seconds()),
+            "devices": peak,
+        })
+
+    # Сначала самые крупные, при равном числе точек более долгие
+    episodes.sort(key=lambda e: (-e["devices"], -e["seconds"]))
+    return episodes
 
 
 def _by_operator(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -703,6 +811,144 @@ async def availability_report_page(request: Request, hours: int = 720,
             f"WHERE d.enabled = 1{permissions.scope_sql(user)[0]} "
             "ORDER BY d.name COLLATE NOCASE",
             tuple(permissions.scope_sql(user)[1])),
+    )
+
+
+@router.get("/monitoring/summary")
+async def availability_summary_page(request: Request, hours: int = 720,
+                                    group_id: int = 0,
+                                    devices: list[str] = Query(default=[]),
+                                    since: str = "", until: str = "",
+                                    user=Depends(current_user)):
+    """
+    Отчёт о состоянии сети для руководителя.
+
+    Тот же период и тот же охват, что у технического отчёта, но другой
+    читатель и потому другой документ. Технический отвечает на вопрос
+    «что именно происходило», и в нём полсотни строк, адреса и журнал
+    падений. Здесь вопрос один: всё ли в порядке, а если нет, то насколько
+    и с чем. На него надо ответить за полминуты, не листая.
+
+    Отсюда три правила, которым подчинено всё остальное. Сначала вывод
+    словами, потом цифры: «99,2 процента» ничего не говорит человеку,
+    который не знает, много это или мало. Ни одного адреса, порта и
+    названия протокола: читатель не будет ничего чинить, ему нужен масштаб.
+    Ничего, чего нет в техническом отчёте: это тот же расчёт, поданный
+    иначе, и два документа об одном парке обязаны сходиться.
+    """
+    from .. import charts, monitor
+
+    hours, edge, period_note = _report_window(hours, since, until)
+    scope, subject, chosen = _report_scope(user, group_id, devices)
+
+    rows = monitor.availability(hours, scope, edge)
+    intervals = monitor.outage_intervals(hours, scope, edge)
+    buckets = monitor.availability_buckets(hours, scope, edge)
+
+    now = edge or datetime.now(timezone.utc)
+
+    def local(moment: datetime) -> str:
+        return moment.astimezone().strftime("%d.%m.%Y %H:%M")
+
+    seen = [r for r in rows if r["covered"]]
+    average = round(sum(r["uptime_percent"] for r in seen) / len(seen), 2) if seen else 100.0
+
+    # Три непересекающихся кучки, в сумме дающие весь парк. Так и задуман
+    # вопрос руководителя: «сколько лежит прямо сейчас» это одно, «сколько
+    # штормило за месяц, но сейчас в порядке» совсем другое, и складывать
+    # их в одну цифру «с проблемами» значит смешать сегодняшнюю аварию
+    # с историей. Точка, недоступная сейчас, считается только здесь, даже
+    # если перебои у неё были и раньше: чинить её всё равно надо сегодня.
+    offline = [r for r in rows if r["status"] == "offline"]
+    rest = [r for r in rows if r["status"] != "offline"]
+    troubled = [r for r in rest if r["outages"] or r["down_seconds"]]
+    flawless = [r for r in rest if not (r["outages"] or r["down_seconds"])]
+
+    # Худшие точки, но не больше пяти: длинный список превращает документ
+    # обратно в выгрузку мониторинга, от которой мы и уходим. Берутся из
+    # всего парка, а не из «сейчас на связи»: точка, которая молчит прямо
+    # сейчас, чаще всего и есть самая проблемная
+    было_плохо = [r for r in rows if r["outages"] or r["down_seconds"]]
+    worst = sorted(было_плохо,
+                   key=lambda r: (r["uptime_percent"], -r["down_seconds"]))[:5]
+
+    # Оператор попадает в отчёт, только если у него что-то случилось.
+    # Ровный список всех провайдеров ничего не решает и место занимает
+    carriers = [o for o in _by_operator(rows)
+                if o["operator"] and (o["outages"] or o["down_seconds"])][:5]
+
+    mass = _mass_outages(intervals)
+    episodes = mass[:MASS_OUTAGE_LIMIT]
+
+    log_audit(user["username"], "Открыт отчёт о состоянии сети",
+              f"{hours} ч · {subject}", f"точек: {len(rows)}", client_ip(request))
+
+    return render(
+        "report_brief.html",
+        request,
+        user,
+        title=settings.report_title,
+        hours=hours,
+        verdict=_verdict(average, len(offline), len(troubled), len(rows)),
+        # Запятая как разделитель дробной части: в русском документе точка
+        # выглядит опечаткой, а число читает человек, а не Excel
+        average=str(average).replace(".", ","),
+        average_color=_report_color(average),
+        total=len(rows),
+        healthy=len(flawless),
+        troubled=len(troubled),
+        # Сколько точек вообще имело перебои, включая недоступные сейчас.
+        # Нужно ровно для одного: сказать «пять из семнадцати» и промолчать,
+        # когда проблемных точек как раз пять
+        troubled_total=len(было_плохо),
+        offline_now=len(offline),
+        offline_names=[r["name"] for r in offline],
+        worst=[{
+            "name": r["name"],
+            "group_name": r["group_name"] or "",
+            "operator": r["operator"],
+            "percent": r["uptime_percent"],
+            "color": _report_color(r["uptime_percent"]),
+            "down_seconds": r["down_seconds"],
+            "outages": r["outages"],
+            "offline": r["status"] == "offline",
+        } for r in worst],
+        carriers=carriers,
+        episodes=[{
+            "when": local(e["start"]),
+            "seconds": e["seconds"],
+            "devices": e["devices"],
+        } for e in episodes],
+        # Крупнейший сбой вынесен отдельно и стоит в первом блоке: это
+        # и есть ответ на вопрос «что случилось за период». В списке ниже
+        # он остаётся, чтобы не пришлось гадать, тот же это эпизод или нет
+        biggest=({"when": local(mass[0]["start"]),
+                  "seconds": mass[0]["seconds"],
+                  "devices": mass[0]["devices"]} if mass else None),
+        episodes_total=len(mass),
+        outage_count=sum(r["outages"] for r in rows),
+        # Шкала от нуля, в отличие от технического отчёта. Там обрезанная
+        # нужна, чтобы инженер разглядел разницу в доли процента. Здесь
+        # она бы обманула: человек, который не читает подпись под графиком,
+        # увидит столбик в половину высоты и решит, что половина сети лежала
+        chart=charts.bar_chart(
+            [(b["label"], b["percent"]) for b in buckets],
+            unit="%", y_min=0.0, y_max=100.0, color_of=_chart_color,
+            width=880, height=170),
+        chart_step=_chart_step_note(hours),
+        period_note=period_note,
+        today=datetime.now().astimezone().strftime("%Y-%m-%d"),
+        since_param=since,
+        until_param=until,
+        since_text=local(now - timedelta(hours=hours)),
+        until_text=local(now),
+        made_at=local(now),
+        author=user["username"],
+        subject=subject,
+        group_id=group_id,
+        chosen=chosen,
+        devices_param=",".join(str(i) for i in chosen),
+        all_groups=query("SELECT id, name FROM groups ORDER BY name COLLATE NOCASE"),
     )
 
 

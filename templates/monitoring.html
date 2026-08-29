@@ -25,6 +25,8 @@
         <a class="btn {% if hours == 720 %}primary{% endif %}" href="/monitoring?hours=720">Месяц</a>
         <a class="btn" href="/monitoring/report?hours={{ hours }}" target="_blank"
            title="Готовый к печати документ: сводка, график, таблица по точкам и журнал падений">Отчёт</a>
+        <a class="btn" href="/monitoring/summary?hours={{ hours }}" target="_blank"
+           title="Короткий документ без технических подробностей: состояние сети, масштаб проблем и что требует внимания">Кратко для руководителя</a>
         <button class="btn" onclick="openActionModal({all:true}, '{{ _("ВСЕ устройства") }}', 'check')">Проверить все</button>
     </div>
 </div>

@@ -19,6 +19,7 @@
 
 <div class="toolbar no-print">
     <button class="go" onclick="window.print()">Печать или PDF</button>
+    <a href="/monitoring/summary?hours={{ hours }}&group_id={{ group_id }}&devices={{ devices_param }}&since={{ since_param }}&until={{ until_param }}">Кратко для руководителя</a>
     <a href="/monitoring/report.csv?hours={{ hours }}&group_id={{ group_id }}&devices={{ devices_param }}&since={{ since_param }}&until={{ until_param }}">Выгрузить в CSV</a>
     <a href="/monitoring?hours={{ hours }}">Назад в панель</a>
 </div>
@@ -106,7 +107,8 @@
         <div class="tile">
             <div class="cap">Средний простой</div>
             <div class="num">{{ down_average | duration }}</div>
-            <div class="note">на одну точку за период</div>
+            {# Подпись «на одну точку» убрана: слово «средний» в заголовке
+               уже это и значит. Про период сказано в шапке документа #}
         </div>
         <div class="tile">
             <div class="cap">Падений</div>
@@ -116,7 +118,6 @@
         <div class="tile" {% if offline_now %}style="border-top-color:var(--err)"{% endif %}>
             <div class="cap">Не в сети сейчас</div>
             <div class="num" {% if offline_now %}style="color:var(--err)"{% endif %}>{{ offline_now }}</div>
-            <div class="note">на момент составления</div>
         </div>
     </div>
 
@@ -216,11 +217,9 @@
             {% endfor %}
             </tbody>
         </table>
-        <p class="small muted">
-            Всё, кроме числа точек, посчитано на одну точку оператора.
-            Сумма росла бы вместе с числом площадок, и по ней выходило бы,
-            что оператор тем хуже, чем больше их у него.
-        </p>
+        {# Пояснение убрано: колонки называются «Простой на точку»
+           и «Падений на точку», а зачем так посчитано, инженеру
+           объяснять не нужно #}
     </section>
     {% endif %}
 
