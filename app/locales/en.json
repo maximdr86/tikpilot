@@ -1,7 +1,8 @@
 {
-  "<span class=\"extra\">пять из %(p0)s</span>": "<span class=\"extra\">five of %(p0)s</span>",
+  "<span class=\"small muted\">под наблюдением не весь период</span>": "<span class=\"small muted\">not watched for the whole period</span>",
+  "Простой по точкам<span class=\"extra\">от большего к меньшему</span>": "Downtime by site<span class=\"extra\">longest first</span>",
+  "Лежали дольше часа": "Down over an hour",
   "Массовые сбои": "Widespread outages",
-  "Наиболее проблемные точки": "Most troubled sites",
   "Полный столбик значит, что в этот отрезок были доступны все точки.": "A full bar means every site was reachable during that stretch.",
   "Была недоступна": "Was unreachable",
   "Были заметные перебои связи": "There were noticeable link outages",
@@ -14,7 +15,6 @@
   "Одновременная потеря связи у нескольких точек может указывать на общую причину и требует проверки.": "Several sites losing the link at once may point to a shared cause and is worth checking.",
   "Перебои затронули %(p0)s точек из %(p1)s. Связь была доступна %(p2)s процентов времени, и это уже мешает работе площадок.": "Outages affected %(p0)s sites out of %(p1)s. The link was up %(p2)s percent of the time, which is already getting in the way of the sites.",
   "Перебои затронули %(p0)s точек из %(p1)s. Связь была доступна %(p2)s процентов времени: это несколько часов недоступности за период.": "Outages affected %(p0)s sites out of %(p1)s. The link was up %(p2)s percent of the time: that is several hours unreachable over the period.",
-  "Перебои, сейчас на связи": "Recovered, up now",
   "Связь была неустойчивой": "The link was unreliable",
   "Связь была устойчивой": "The link was steady",
   "Сейчас недоступны": "Unreachable now",
