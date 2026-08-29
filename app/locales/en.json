@@ -1,4 +1,10 @@
 {
+  "Простой на точку": "Downtime per site",
+  "Падений на точку": "Outages per site",
+  "Всё, кроме числа точек, посчитано на одну точку оператора. Сумма росла бы вместе с числом площадок, и по ней выходило бы, что оператор тем хуже, чем больше их у него.": "Everything except the site count is per site. A total would grow with the number of sites, making a carrier look worse the more of them it serves.",
+  "<span class=\"muted\">оператор не определён</span>": "<span class=\"muted\">carrier not identified</span>",
+  "<span class=\"small muted\">в среднем учтено %(p0)s</span>": "<span class=\"small muted\">%(p0)s counted in the average</span>",
+  "По операторам<span class=\"extra\">худший первым</span>": "By carrier<span class=\"extra\">worst first</span>",
   " (бинарный)": " (binary)",
   " шт.)": ")",
   "\" text-anchor=\"middle\" font-size=\"12\" fill=\"var(--muted)\">данных пока нет</text></svg>": "\" text-anchor=\"middle\" font-size=\"12\" fill=\"var(--muted)\">no data yet</text></svg>",

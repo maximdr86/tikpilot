@@ -82,6 +82,15 @@ SITES_EN = (
 GROUPS = ("Север", "Юг", "Центр", "Запад", "Восток", "Резерв")
 GROUPS_EN = ("North", "South", "Centre", "West", "East", "Reserve")
 
+#: Операторы связи. Названия нарочно безликие, а не выдуманные похожими
+#: на настоящие: в отчёте по операторам видно, кто из провайдеров хуже,
+#: и снимок такой таблицы с реальными именами это публичная претензия
+#: к названной компании. Буква сохраняет смысл картинки, не называя никого
+CARRIERS = ("Провайдер А", "Провайдер Б", "Провайдер В",
+            "Провайдер Г", "Провайдер Д", "Провайдер Е")
+CARRIERS_EN = ("Carrier A", "Carrier B", "Carrier C",
+               "Carrier D", "Carrier E", "Carrier F")
+
 #: Имена администраторов. Роли, а не люди: в журнале действий важно,
 #: что действие сделал человек, а не какой именно.
 PEOPLE = ("admin", "operator", "monitor", "engineer", "support")
@@ -317,6 +326,7 @@ def build(lang: str = "ru") -> dict[str, str]:
     english = lang == "en"
     sites = SITES_EN if english else SITES
     groups = GROUPS_EN if english else GROUPS
+    carriers = CARRIERS_EN if english else CARRIERS
     note = "a note about the group" if english else "заметка о группе"
     device_note = "internal note" if english else "служебная заметка"
     guest = "Wi-Fi guest" if english else "Wi-Fi гостевой"
@@ -344,6 +354,14 @@ def build(lang: str = "ru") -> dict[str, str]:
         # Имена бэкапов собраны из имени точки: `VAH_Bufet_obshch14_...rsc`
         # выдаёт площадку не хуже самой колонки с именем
         _add(table, safe_filename(str(row["name"])), safe_filename(site))
+
+    # Оператор подменяется по имени, а не по точке: у десяти площадок
+    # он один и тот же, и в отчёте они должны собраться в одну строку,
+    # иначе сводка на снимке рассыпется на десять провайдеров
+    for i, row in enumerate(_rows(
+            "SELECT DISTINCT operator FROM devices"
+            " WHERE operator <> '' ORDER BY operator")):
+        _add(table, row["operator"], _pick(carriers, i))
 
     for i, row in enumerate(_rows("SELECT username FROM users ORDER BY id")):
         _add(table, row["username"], _pick(PEOPLE, i))

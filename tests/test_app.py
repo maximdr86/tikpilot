@@ -4067,6 +4067,124 @@ def test_report_can_be_narrowed_to_a_group_or_to_chosen_devices(client, router):
     assert f"group{group_id}" in csv_answer.headers["content-disposition"]
 
 
+def test_report_groups_availability_by_operator(client, router):
+    """
+    Отчёт отвечает на вопрос «какой провайдер хуже», а не только «какая точка».
+
+    Из полусотни строк это глазами не считается: у одного оператора десять
+    точек, у другого три, и сумма простоя у первого больше просто потому,
+    что их больше. Поэтому доступность в сводке средняя по точкам оператора,
+    а простой и падения суммой.
+    """
+    from app.database import execute
+
+    # Своя группа, потому что база в тестах общая и точки в ней копятся:
+    # без охвата в отчёт приедут чужие, и сводка будет считаться по ним
+    группа = client.post("/api/groups", data={"name": "Операторская"}).json()["id"]
+    первый = _add_device(client, router, "мтс-точка-1")
+    второй = _add_device(client, router, "мтс-точка-2")
+    третий = _add_device(client, router, "билайн-точка")
+    execute("UPDATE devices SET group_id = ?, operator = 'МТС'"
+            " WHERE id IN (?, ?)", (группа, первый, второй))
+    execute("UPDATE devices SET group_id = ?, operator = 'Билайн'"
+            " WHERE id = ?", (группа, третий))
+
+    page = client.get(f"/monitoring/report?hours=24&group_id={группа}").text
+
+    assert "По операторам" in page
+    сводка = page.split("По операторам")[1].split("</section>")[0]
+    # Две точки одного оператора собираются в одну строку, а не в две
+    assert сводка.count("МТС") == сводка.count("Билайн") == 1
+
+    # В выгрузке оператор тоже есть, и колонка дописана в конец: чужие
+    # сводные таблицы собраны по прежнему порядку колонок
+    csv_answer = client.get(f"/monitoring/report.csv?hours=24&group_id={группа}")
+    строки = csv_answer.content.decode("utf-8-sig").splitlines()
+    assert строки[0].endswith(";Оператор")
+    assert sum(1 for с in строки[1:] if с.endswith(";МТС")) == 2
+
+
+def test_operator_summary_never_shows_more_downtime_than_the_period():
+    """
+    Простой у оператора не бывает длиннее самого отчёта.
+
+    Сумма по четырнадцати точкам за сутки давала «1 дн 20 ч», и первая
+    мысль у человека была не «это сумма», а «панель сломалась». Цифра
+    была верная, а читалась как ошибка, и сравнить по ней операторов
+    всё равно нельзя: она растёт вместе с числом площадок.
+    """
+    from app.routes.pages import _by_operator
+
+    сутки = 24 * 3600
+
+    def точка(процент: float, простой: int, падений: int) -> dict:
+        return {"operator": "МТС", "uptime_percent": процент, "covered": 100,
+                "down_seconds": простой, "outages": падений, "status": "online"}
+
+    # Четырнадцать точек, у каждой по три часа простоя за сутки
+    сводка = _by_operator([точка(87.5, 3 * 3600, 1) for _ in range(14)])[0]
+
+    assert сводка["devices"] == 14
+    assert сводка["down_seconds"] == 3 * 3600, "простой снова сложился по парку"
+    assert сводка["down_seconds"] <= сутки
+    assert сводка["outages"] == 1.0
+
+    # Оператор с двумя точками, падающими вдвое чаще, обязан выглядеть хуже
+    редкий = _by_operator([точка(87.5, 3 * 3600, 1) for _ in range(14)])[0]
+    частый = _by_operator([точка(87.5, 3 * 3600, 3) for _ in range(2)])[0]
+    assert частый["outages"] > редкий["outages"]
+
+
+def test_report_without_operators_has_no_summary(client, router):
+    """
+    На парке с одним провайдером сводка не появляется.
+
+    Она повторяла бы шапку отчёта слово в слово: те же точки, та же
+    средняя доступность, тот же простой. Раздел, который ничего не
+    добавляет, человек читает один раз и потом пролистывает вместе
+    с соседними.
+    """
+    from app.database import execute
+
+    группа = client.post("/api/groups", data={"name": "Одинокая"}).json()["id"]
+    точка = _add_device(client, router, "единственный-провайдер")
+    execute("UPDATE devices SET group_id = ?, operator = 'МТС' WHERE id = ?",
+            (группа, точка))
+
+    page = client.get(f"/monitoring/report?hours=24&group_id={группа}").text
+    assert "По операторам" not in page
+
+
+def test_showcase_hides_who_the_provider_is(client, router):
+    """
+    В режиме витрины имя оператора подменяется, как имя точки.
+
+    Сводка показывает, кто из провайдеров хуже. Снимок такой таблицы
+    с настоящими именами это публичная претензия к названной компании,
+    а режим витрины ровно для снимков и сделан. Точки одного оператора
+    при этом обязаны остаться одной строкой, иначе сводка рассыпется.
+    """
+    from app import demo
+    from app.database import execute
+
+    группа = client.post("/api/groups", data={"name": "Витринная"}).json()["id"]
+    первый = _add_device(client, router, "витрина-мтс-1")
+    второй = _add_device(client, router, "витрина-мтс-2")
+    execute("UPDATE devices SET group_id = ?, operator = 'Мегафон'"
+            " WHERE id IN (?, ?)", (группа, первый, второй))
+    demo.forget()
+
+    try:
+        client.cookies.set(demo.COOKIE, "1")
+        page = client.get(f"/monitoring/report?hours=24&group_id={группа}").text
+    finally:
+        client.cookies.delete(demo.COOKIE)
+        demo.forget()
+
+    assert "Мегафон" not in page
+    assert "Провайдер" in page
+
+
 def test_operator_is_read_from_the_modem(client, router):
     """
     Оператор берётся у модема, и имя определяется по коду сети.
@@ -7350,7 +7468,7 @@ def test_availability_report_is_a_csv_excel_understands(client, router):
     assert text.startswith("﻿"), "нет метки BOM, Excel испортит кириллицу"
     header, *lines = text.lstrip("﻿").splitlines()
     assert header.split(";")[0] == "Точка"
-    assert header.count(";") == 9
+    assert header.count(";") == 10
 
     row = next(line for line in lines if line.startswith("report-device"))
     cells = row.split(";")

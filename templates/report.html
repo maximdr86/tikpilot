@@ -171,6 +171,59 @@
     </section>
     {% endif %}
 
+    <!-- --------------------------------------------------- по операторам -->
+    {# Блок появляется, только когда операторов больше одного: на парке
+       с единственным провайдером он повторял бы шапку отчёта слово
+       в слово. Точки без известного оператора за отдельного не считаются #}
+    {% if operators | selectattr('operator') | list | length > 1 %}
+    <section>
+        <h2>По операторам<span class="extra">худший первым</span></h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Оператор</th>
+                <th class="num">Точек</th>
+                <th class="num">Доступность</th>
+                <th></th>
+                <th class="num">Простой на точку</th>
+                <th class="num">Падений на точку</th>
+                <th class="num">Не отвечают</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for o in operators %}
+                <tr>
+                    <td>
+                        {% if o.operator %}{{ o.operator }}
+                        {% else %}<span class="muted">оператор не определён</span>{% endif %}
+                        {% if o.watched < o.devices %}
+                        <span class="small muted">в среднем учтено {{ o.watched }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="num">{{ o.devices }}</td>
+                    <td class="num" style="color:{{ o.color }}">
+                        {% if o.watched %}{{ o.uptime_percent }}%{% else %}<span class="muted">нет данных</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if o.watched %}
+                        <span class="bar"><i style="width:{{ o.uptime_percent }}%;background:{{ o.color }}"></i></span>
+                        {% endif %}
+                    </td>
+                    <td class="num">{% if o.down_seconds %}{{ o.down_seconds | duration }}{% else %}0{% endif %}</td>
+                    <td class="num">{{ o.outages }}</td>
+                    <td class="num">{{ o.offline_now or '' }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <p class="small muted">
+            Всё, кроме числа точек, посчитано на одну точку оператора.
+            Сумма росла бы вместе с числом площадок, и по ней выходило бы,
+            что оператор тем хуже, чем больше их у него.
+        </p>
+    </section>
+    {% endif %}
+
     <!-- ------------------------------------------------------- все точки -->
     <section>
         <h2>Все точки<span class="extra">по возрастанию доступности</span></h2>
@@ -179,6 +232,7 @@
             <tr>
                 <th>Точка</th>
                 <th>Группа</th>
+                <th>Оператор</th>
                 <th>Адрес</th>
                 <th>Сейчас</th>
                 <th class="num">Доступность</th>
@@ -200,6 +254,7 @@
                         {% endif %}
                     </td>
                     <td class="small muted">{{ r.group_name or '' }}</td>
+                    <td class="small">{{ r.operator or '' }}</td>
                     <td class="mono muted">{{ r.host }}</td>
                     <td class="small">
                         {% if r.status == 'online' %}в сети
@@ -218,7 +273,7 @@
                     <td class="num">{{ r.outages }}</td>
                 </tr>
             {% else %}
-                <tr><td colspan="8" class="empty">Устройств в отчёте нет</td></tr>
+                <tr><td colspan="9" class="empty">Устройств в отчёте нет</td></tr>
             {% endfor %}
             </tbody>
         </table>
