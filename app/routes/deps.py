@@ -16,6 +16,7 @@ from markupsafe import Markup, escape
 from .. import i18n
 from ..config import BASE_DIR
 from ..database import query_one
+from ..inventory import poe_state
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -258,6 +259,7 @@ templates.env.filters["log_time"] = log_time
 templates.env.filters["size"] = human_size
 templates.env.filters["since"] = since
 templates.env.filters["duration"] = duration
+templates.env.filters["poe_state"] = poe_state
 
 
 # ------------------------------------------------------------------- язык
