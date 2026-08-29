@@ -55,6 +55,17 @@
         .now p { margin: 0 0 6px; }
         .now .names { margin: 0; font-weight: 600; line-height: 1.6; }
 
+        /* Точка без простоя приглушена. Убрать её из таблицы нельзя:
+           отсутствие строки читается как «про неё забыли», а не как
+           «у неё всё хорошо» */
+        tr.calm td { color: var(--muted); }
+
+        /* Список всех точек длиннее страницы, и запрет разрыва из общих
+           стилей печати его бы просто обрезал */
+        @media print {
+            section.long { page-break-inside: auto; }
+        }
+
         /* Крупнейший сбой в таблице: подложкой, а не цветом текста.
            Цветной текст в таблице читается как «плохо», а тут нужно
            «смотреть сюда» */
@@ -186,9 +197,13 @@
             <div class="cap">Весь период на связи</div>
             <div class="num" style="color:var(--ok)">{{ healthy }}</div>
         </div>
-        <div class="tile" {% if troubled %}style="border-top-color:var(--warn)"{% endif %}>
-            <div class="cap">Перебои, сейчас на связи</div>
-            <div class="num" {% if troubled %}style="color:var(--warn)"{% endif %}>{{ troubled }}</div>
+        {# Здесь именно продолжительность, а не «сколько точек теряли связь».
+           То число было разностью трёх соседних и складывало несравнимое:
+           моргание на две минуты и авария на шесть часов давали одинаковый
+           вклад. Час это граница между «прошло само» и «кто-то поехал» #}
+        <div class="tile" {% if long_down %}style="border-top-color:var(--warn)"{% endif %}>
+            <div class="cap">Лежали дольше часа</div>
+            <div class="num" {% if long_down %}style="color:var(--warn)"{% endif %}>{{ long_down }}</div>
         </div>
     </div>
 
@@ -237,13 +252,12 @@
         </p>
     </section>
 
-    <!-- --------------------------------------------------------- худшие точки -->
-    {% if worst %}
-    <section>
-        {# «Не больше пяти» стояло всегда, в том числе когда проблемных
-           точек было три. Обещание урезанного списка там, где список
-           полный, заставляет читателя искать продолжение #}
-        <h2>Наиболее проблемные точки{% if troubled_total > worst | length %}<span class="extra">пять из {{ troubled_total }}</span>{% endif %}</h2>
+    <!-- ------------------------------------------------------- простой по точкам -->
+    {% if sites %}
+    {# Раздел длинный и на печати рвётся между страницами, поэтому ему
+       разрешено переноситься, а шапка таблицы повторяется на каждом листе #}
+    <section class="long">
+        <h2>Простой по точкам<span class="extra">от большего к меньшему</span></h2>
         <table class="plain">
             <thead>
             <tr>
@@ -254,16 +268,19 @@
             </tr>
             </thead>
             <tbody>
-            {% for w in worst %}
-                <tr>
+            {% for s in sites %}
+                {# Строки без простоя приглушены: их читают не подряд,
+                   а глазами останавливаются там, где кончился цвет #}
+                <tr {% if not s.down_seconds %}class="calm"{% endif %}>
                     <td>
-                        {{ w.name }}
-                        {% if w.group_name %}<span class="small muted">{{ w.group_name | t }}</span>{% endif %}
-                        {% if w.offline %}<span class="small" style="color:var(--err)">не отвечает сейчас</span>{% endif %}
+                        {{ s.name }}
+                        {% if s.group_name %}<span class="small muted">{{ s.group_name | t }}</span>{% endif %}
+                        {% if s.offline %}<span class="small" style="color:var(--err)">не отвечает сейчас</span>{% endif %}
+                        {% if not s.watched %}<span class="small muted">под наблюдением не весь период</span>{% endif %}
                     </td>
-                    <td class="small">{{ w.operator or '' }}</td>
-                    <td class="num">{{ w.down_seconds | duration }}</td>
-                    <td class="num">{{ w.outages }}</td>
+                    <td class="small">{{ s.operator or '' }}</td>
+                    <td class="num">{% if s.down_seconds %}{{ s.down_seconds | duration }}{% else %}0{% endif %}</td>
+                    <td class="num">{{ s.outages or '' }}</td>
                 </tr>
             {% endfor %}
             </tbody>
