@@ -78,7 +78,8 @@
         <div class="tile">
             <div class="cap">Простой</div>
             <div class="num">{{ row.down_seconds | duration }}</div>
-            <div class="note">всего за период</div>
+            {# «Всего за период» убрано: период стоит в шапке, а плитка
+               по одной точке иначе и не считается #}
         </div>
         <div class="tile">
             <div class="cap">Падений</div>

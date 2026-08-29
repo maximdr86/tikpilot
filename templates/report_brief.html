@@ -1,0 +1,308 @@
+<!doctype html>
+{#
+   Отчёт о состоянии сети: документ для руководителя, не для инженера.
+
+   Отличается от технического отчёта не оформлением, а порядком мыслей.
+   Технический идёт от данных к выводу: вот полсотни точек, вот их
+   проценты, разбирайтесь. Этот идёт от вывода к данным: сначала фраза
+   «сеть работала стабильно», потом четыре числа, и только потом,
+   для тех, кто дочитал, подробности.
+
+   Поэтому здесь нет адресов, портов, названий протоколов и слова
+   «доступность» в заголовках. Читатель не будет ничего чинить: ему
+   нужно знать масштаб и то, требует ли что-то решения прямо сейчас.
+#}
+<html lang="{{ lang }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Состояние сети · Tikpilot</title>
+    {% include "partials/report_style.html" %}
+    <style>
+        /* Вердикт: первое и самое крупное на листе. Полоса слева цветом
+           состояния, потому что цвет читается раньше текста */
+        .verdict {
+            border: 1px solid var(--border); border-left: 6px solid var(--accent);
+            background: var(--soft); border-radius: 3px;
+            padding: 18px 22px; margin-bottom: 22px;
+        }
+        .verdict h2 {
+            font-size: 22px; font-weight: 600; margin: 0 0 6px;
+            padding: 0; border: 0;
+        }
+        .verdict p { margin: 0; font-size: 15px; color: var(--ink); }
+        .verdict.good { border-left-color: var(--ok); }
+        .verdict.good h2 { color: var(--ok); }
+        .verdict.fair { border-left-color: var(--warn); }
+        .verdict.fair h2 { color: var(--warn); }
+        .verdict.bad  { border-left-color: var(--err); }
+        .verdict.bad h2 { color: var(--err); }
+
+        /* Главное событие периода: внутри вердикта, но отбито линией.
+           Это второй по важности факт на листе после самого вердикта */
+        .verdict .event {
+            margin-top: 10px; padding-top: 10px;
+            border-top: 1px solid var(--border); font-size: 14px;
+        }
+
+        /* Строка «что делать сейчас» отделена от истории периода: это
+           единственное место документа, которое требует действия сегодня */
+        .now {
+            border: 1px solid var(--err); border-radius: 3px;
+            padding: 14px 18px; margin-bottom: 22px;
+        }
+        .now h2 { color: var(--err); border: 0; padding: 0; margin: 0 0 6px; }
+        .now p { margin: 0 0 6px; }
+        .now .names { margin: 0; font-weight: 600; line-height: 1.6; }
+
+        /* Крупнейший сбой в таблице: подложкой, а не цветом текста.
+           Цветной текст в таблице читается как «плохо», а тут нужно
+           «смотреть сюда» */
+        tr.top td { background: var(--soft); font-weight: 600; }
+
+        /* Числа крупнее, чем в техническом отчёте, и их четыре, а не пять:
+           пятое человек уже не удерживает в голове */
+        .tiles .tile .num { font-size: 32px; }
+        .plain { font-size: 15px; }
+        .plain td { padding: 7px 8px; }
+    </style>
+</head>
+<body>
+
+<div class="toolbar no-print">
+    <button class="go" onclick="window.print()">Печать или PDF</button>
+    <a href="/monitoring/report?hours={{ hours }}&group_id={{ group_id }}&devices={{ devices_param }}&since={{ since_param }}&until={{ until_param }}">Технический отчёт</a>
+    <a href="/monitoring?hours={{ hours }}">Назад в панель</a>
+</div>
+
+<form class="picker no-print" method="get" action="/monitoring/summary">
+    <div class="line">
+        <label>Период
+            <select name="hours">
+                {% for value, caption in [(24, 'сутки'), (168, 'неделя'), (720, 'месяц')] %}
+                    <option value="{{ value }}" {% if hours == value %}selected{% endif %}>{{ caption | t }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Группа
+            <select name="group_id">
+                <option value="0">весь парк</option>
+                {% for g in all_groups %}
+                    <option value="{{ g.id }}" {% if group_id == g.id %}selected{% endif %}>{{ g.name | t }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button class="go" type="submit">Показать</button>
+    </div>
+    <div class="line">
+        <label>Или интервал: с
+            <input type="date" name="since" value="{{ since_param }}" max="{{ today }}">
+        </label>
+        <label>по
+            <input type="date" name="until" value="{{ until_param }}" max="{{ today }}">
+        </label>
+    </div>
+</form>
+
+<div class="sheet">
+
+    <div class="head">
+        {% if title %}<div class="org">{{ title }}</div>{% endif %}
+        <h1>Состояние сети</h1>
+        <div class="period">
+            {{ subject | t }} · {{ since_text }} до {{ until_text }}
+        </div>
+        <div class="made">Составлен {{ made_at }} · Tikpilot {{ app_version }}</div>
+    </div>
+
+    <!-- ------------------------------------------------------------ вердикт -->
+    {# Фразы здесь, а не в Python: расширение переводов видит только
+       кириллицу в шаблонах, и вердикт, собранный в коде, остался бы
+       русским в английской версии #}
+    <div class="verdict {{ verdict.state }}">
+        {% if verdict.kind == 'offline_now' %}
+            <h2>Часть точек недоступна</h2>
+            <p>Не отвечают {{ offline_now }} из {{ total }}. За период связь была
+               доступна в среднем {{ average }} процентов времени.</p>
+        {% elif verdict.kind == 'flawless' %}
+            <h2>Связь была устойчивой</h2>
+            <p>Все {{ total }} точек оставались доступны весь период.</p>
+        {% elif verdict.kind == 'stable' %}
+            <h2>Связь была устойчивой</h2>
+            <p>Кратковременные перебои были на {{ troubled }} точках из {{ total }}
+               и на работе не сказались. Связь была доступна {{ average }}
+               процентов времени.</p>
+        {% elif verdict.kind == 'fair' %}
+            <h2>Были заметные перебои связи</h2>
+            <p>Перебои затронули {{ troubled }} точек из {{ total }}. Связь была
+               доступна {{ average }} процентов времени: это несколько часов
+               недоступности за период.</p>
+        {% else %}
+            <h2>Связь была неустойчивой</h2>
+            <p>Перебои затронули {{ troubled }} точек из {{ total }}. Связь была
+               доступна {{ average }} процентов времени, и это уже мешает работе
+               площадок.</p>
+        {% endif %}
+
+        {# Главное событие периода прямо здесь, а не через страницу: без него
+           первый блок отвечает «насколько плохо», но не отвечает «что было» #}
+        {% if biggest %}
+        <p class="event">
+            Крупнейший сбой за период: {{ biggest.when }}, одновременно
+            недоступны {{ biggest.devices }} точек, {{ biggest.seconds | duration }}.
+        </p>
+        {% endif %}
+    </div>
+
+    <!-- ------------------------------------------- что требует внимания сейчас -->
+    {% if offline_names %}
+    <div class="now">
+        <h2>Требует внимания сейчас</h2>
+        <p>Не отвечают на момент составления отчёта, {{ offline_now }} из {{ total }}:</p>
+        {# Списком в строку, а не столбиком: тринадцать имён столбиком
+           занимают полстраницы и отодвигают всё остальное за перегиб #}
+        <p class="names">{{ offline_names | join(' · ') }}</p>
+    </div>
+    {% endif %}
+
+    <!-- ------------------------------------------------------------- масштаб -->
+    {# Слева то, что происходит сейчас, справа то, что было за период.
+       Смешивать нельзя: сегодняшняя авария и история месяца требуют
+       разных решений, а в одной цифре «с проблемами» они неразличимы #}
+    <div class="tiles">
+        {# Подписей под числами здесь нет намеренно: каждая повторяла бы
+           заголовок плитки своими словами («Сейчас недоступны» и следом
+           «на момент составления»), а четыре числа читаются за секунду
+           только пока их четыре, а не двенадцать строк #}
+        <div class="tile">
+            <div class="cap">Всего точек</div>
+            <div class="num">{{ total }}</div>
+        </div>
+        <div class="tile" {% if offline_now %}style="border-top-color:var(--err)"{% endif %}>
+            <div class="cap">Сейчас недоступны</div>
+            <div class="num" {% if offline_now %}style="color:var(--err)"{% endif %}>{{ offline_now }}</div>
+        </div>
+        <div class="tile" style="border-top-color:var(--ok)">
+            <div class="cap">Весь период на связи</div>
+            <div class="num" style="color:var(--ok)">{{ healthy }}</div>
+        </div>
+        <div class="tile" {% if troubled %}style="border-top-color:var(--warn)"{% endif %}>
+            <div class="cap">Перебои, сейчас на связи</div>
+            <div class="num" {% if troubled %}style="color:var(--warn)"{% endif %}>{{ troubled }}</div>
+        </div>
+    </div>
+
+    <!-- ------------------------------------------------------ массовые сбои -->
+    {% if episodes %}
+    <section>
+        <h2>Массовые сбои</h2>
+        <table class="plain">
+            <thead>
+            <tr>
+                <th>Когда</th>
+                <th class="num">Точек сразу</th>
+                <th class="num">Длительность</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for e in episodes %}
+                {# Крупнейший выделен: в списке из пяти строк с похожими
+                   числами глаз иначе не находит главное событие #}
+                <tr {% if loop.first %}class="top"{% endif %}>
+                    <td>{{ e.when }}</td>
+                    <td class="num"><strong>{{ e.devices }}</strong></td>
+                    <td class="num">{{ e.seconds | duration }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <p class="small muted">
+            {% if episodes_total > episodes | length %}
+            Показаны самые крупные, всего таких случаев {{ episodes_total }}.
+            {% endif %}
+            Одновременная потеря связи у нескольких точек может указывать
+            на общую причину и требует проверки.
+        </p>
+    </section>
+    {% endif %}
+
+    <!-- ------------------------------------------------------------- динамика -->
+    <section>
+        <h2>Как это выглядело по дням<span class="extra">{{ chart_step | t }}</span></h2>
+        {{ chart | safe }}
+        {# Одна фраза вместо двух. Вторая объясняла, что такое полный
+           столбик, то есть пересказывала первую другими словами #}
+        <p class="small muted">
+            Полный столбик значит, что в этот отрезок были доступны все точки.
+        </p>
+    </section>
+
+    <!-- --------------------------------------------------------- худшие точки -->
+    {% if worst %}
+    <section>
+        {# «Не больше пяти» стояло всегда, в том числе когда проблемных
+           точек было три. Обещание урезанного списка там, где список
+           полный, заставляет читателя искать продолжение #}
+        <h2>Наиболее проблемные точки{% if troubled_total > worst | length %}<span class="extra">пять из {{ troubled_total }}</span>{% endif %}</h2>
+        <table class="plain">
+            <thead>
+            <tr>
+                <th>Точка</th>
+                <th>Оператор</th>
+                <th class="num">Была недоступна</th>
+                <th class="num">Раз теряла связь</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for w in worst %}
+                <tr>
+                    <td>
+                        {{ w.name }}
+                        {% if w.group_name %}<span class="small muted">{{ w.group_name | t }}</span>{% endif %}
+                        {% if w.offline %}<span class="small" style="color:var(--err)">не отвечает сейчас</span>{% endif %}
+                    </td>
+                    <td class="small">{{ w.operator or '' }}</td>
+                    <td class="num">{{ w.down_seconds | duration }}</td>
+                    <td class="num">{{ w.outages }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    {% endif %}
+
+    <!-- ------------------------------------------------------------ операторы -->
+    {% if carriers %}
+    <section>
+        <h2>Операторы связи<span class="extra">только те, у кого были перебои</span></h2>
+        <table class="plain">
+            <thead>
+            <tr>
+                <th>Оператор</th>
+                <th class="num">Точек</th>
+                <th class="num">Простой на точку</th>
+                <th class="num">Падений на точку</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for c in carriers %}
+                <tr>
+                    <td>{{ c.operator }}</td>
+                    <td class="num">{{ c.devices }}</td>
+                    <td class="num">{{ c.down_seconds | duration }}</td>
+                    <td class="num">{{ c.outages }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    {% endif %}
+
+    <div class="foot">
+        <span>Отчёт составлен Tikpilot автоматически, по опросу устройств.</span>
+        <span>{{ made_at }}</span>
+    </div>
+
+</div>
+</body>
+</html>
