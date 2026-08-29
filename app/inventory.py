@@ -228,6 +228,44 @@ def merge_ports(interfaces: Iterable[dict[str, Any]],
     return result
 
 
+## Состояния PoE, как их называет сама RouterOS. Список из документации
+## MikroTik («PoE-Out»), а не из головы. Разделитель у MikroTik гуляет:
+## `short-circuit` через дефис, а `power_reset` и `controller_error`
+## через подчёркивание, поэтому сравниваем по приведённому виду.
+POE_FAULTS = (
+    "short-circuit",      # замыкание в кабеле или устройство не держит PoE
+    "overload",           # превышен предел порта, питание снято
+    "voltage-too-low",    # напряжения не хватает, устройство не поднимется
+    "voltage-too-high",   # на порт подали больше, чем устройство ждёт
+    "current-too-low",    # устройство берёт меньше 10 мА, скорее всего умерло
+    "voltage-on-poe-in",  # на порт пришло чужое питание либо сгорела обвязка
+    "controller-error",   # контроллер питания не отвечает
+)
+POE_BUSY = ("power-reset", "controller-init", "controller-upgrade")
+
+
+def poe_state(status: str) -> str:
+    """
+    Свести `poe-out-status` к тому, что решает человек, открывший карточку.
+
+    Возвращает `on`, `fault`, `busy`, `idle` или пусто. Раньше карточка
+    красила отметку только у `powered-on`, а всё остальное выглядело
+    одинаково: порт с замыканием было не отличить от порта, в который
+    просто ничего не воткнуто. Для магазина это разница между «камеры нет
+    в проекте» и «камера умерла, и никто не знает».
+    """
+    text = str(status or "").strip().lower().replace("_", "-")
+    if not text:
+        return ""
+    if text.startswith("powered"):
+        return "on"
+    if text in POE_FAULTS:
+        return "fault"
+    if text in POE_BUSY:
+        return "busy"
+    return "idle"
+
+
 def _detail(row: dict[str, Any], kind: str,
             vlan: dict[str, Any] | None = None) -> str:
     """

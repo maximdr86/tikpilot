@@ -381,12 +381,16 @@
         </div>
         <div class="ports">
             {% for p in passport.ports %}
+                {% set poe = p.poe_status | poe_state %}
                 <div class="port">
                     <div class="port-box sp-{{ p.speed_class or 'down' }}
-                                {% if p.disabled %}port-off{% endif %}"
-                         title="{{ p.name }}{% if p.speed %} · {{ p.speed }} Мбит{% endif %}{% if p.poe_status %} · PoE: {{ p.poe_status }}{% endif %}{% if p.comment %} · {{ p.comment }}{% endif %}">
-                        {% if p.poe_status and p.poe_status.startswith('powered') %}
+                                {% if p.disabled %}port-off{% endif %}
+                                {% if poe == 'fault' %}port-poe-bad{% endif %}"
+                         title="{{ p.name }}{% if p.speed %} · {{ p.speed }} Мбит{% endif %}{% if p.poe_status %} · PoE: {{ p.poe_status }}{% if poe == 'fault' %} (неисправность){% elif poe == 'busy' %} (перезапуск){% endif %}{% endif %}{% if p.comment %} · {{ p.comment }}{% endif %}">
+                        {% if poe == 'on' %}
                             <span class="port-poe">PoE</span>
+                        {% elif poe == 'fault' %}
+                            <span class="port-poe">PoE!</span>
                         {% endif %}
                     </div>
                     <div class="port-name mono">{{ p.name }}</div>
@@ -401,6 +405,9 @@
             <span><i class="sp-25g"></i>2.5G</span>
             <span><i class="sp-10g"></i>10G и выше</span>
             <span><i class="sp-up"></i>линк есть, скорость не сказали</span>
+            {% if passport.ports | selectattr('poe_status') | list %}
+            <span><i class="port-poe-bad"></i>PoE неисправен</span>
+            {% endif %}
         </div>
         {% endif %}
 

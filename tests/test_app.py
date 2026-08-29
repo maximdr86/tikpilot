@@ -9350,6 +9350,58 @@ def test_poe_state_comes_from_monitor():
     assert с_монитором["poe_status"] == "powered-on"
 
 
+def test_broken_poe_port_is_not_shown_as_an_empty_one():
+    """
+    Замыкание на порту отличается от порта, в который ничего не воткнуто.
+
+    Карточка красила отметку только у `powered-on`, а `short-circuit`,
+    `overload` и «на порту чужое напряжение» выглядели ровно как пустой
+    порт. Для точки это разница между «камеры тут нет» и «камера умерла».
+    Список состояний взят из документации MikroTik, а не придуман: там же
+    видно, что разделитель у них гуляет, `short-circuit` через дефис,
+    а `power_reset` через подчёркивание.
+    """
+    from app.inventory import poe_state
+
+    assert poe_state("powered-on") == "on"
+
+    for поломка in ("short-circuit", "overload", "voltage-too-high",
+                    "voltage-too-low", "current-too-low", "controller_error",
+                    "voltage_on_poe-in"):
+        assert poe_state(поломка) == "fault", поломка
+
+    # Ищет нагрузку и просто выключен это обычная жизнь, не повод краснеть
+    assert poe_state("waiting-for-load") == "idle"
+    assert poe_state("off") == "idle"
+    # Перезапуск питания проходит сам, пугать им человека незачем
+    assert poe_state("power_reset") == "busy"
+    assert poe_state("controller_upgrade") == "busy"
+    # Незнакомое состояние из будущей версии не должно кричать «авария»
+    assert poe_state("что-то-новое") == "idle"
+    assert poe_state("") == ""
+
+
+def test_device_card_marks_a_broken_poe_port(client, router):
+    """
+    Порт с замыканием видно на карточке, а не только в подсказке.
+
+    Подсказка появляется, если навести мышь. На замыкание никто не наводит:
+    порт выглядит пустым, и наводить не на что.
+    """
+    device_id = _add_device(client, router, "Ларёк с камерой")
+
+    было = router.poe_monitor
+    router.poe_monitor = [{"name": "ether2", "poe-out-status": "short-circuit"}]
+    try:
+        client.post(f"/api/devices/{device_id}/inventory")
+        page = client.get(f"/devices/{device_id}").text
+    finally:
+        router.poe_monitor = было
+
+    assert "port-poe-bad" in page
+    assert "PoE!" in page
+
+
 def test_wireless_ssid_comes_from_the_interface():
     """
     Имя сети берётся у интерфейса, а не из записи регистрации.
