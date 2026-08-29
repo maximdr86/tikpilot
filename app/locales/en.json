@@ -1,4 +1,6 @@
 {
+  "<span class=\"extra\">случаев за период: %(p0)s</span>": "<span class=\"extra\">%(p0)s over the period</span>",
+  "Показаны самые крупные %(p0)s из %(p1)s.": "Showing the %(p0)s largest of %(p1)s.",
   "<span class=\"small muted\">под наблюдением не весь период</span>": "<span class=\"small muted\">not watched for the whole period</span>",
   "Простой по точкам<span class=\"extra\">от большего к меньшему</span>": "Downtime by site<span class=\"extra\">longest first</span>",
   "Лежали дольше часа": "Down over an hour",
@@ -30,7 +32,6 @@
   "Кратко для руководителя</a>": "Executive summary</a>",
   "Одновременная пропажа нескольких точек обычно означает общую причину: канал связи, электричество или работы в районе.": "Several sites going dark together usually points to one shared cause: the link, the power supply or works in the area.",
   "Операторы связи<span class=\"extra\">только те, у кого были перебои</span>": "Carriers<span class=\"extra\">only those with outages</span>",
-  "Показаны самые крупные, всего таких случаев %(p0)s.": "The largest are shown, %(p0)s in total.",
   "Раз теряла связь": "Times it lost the link",
   "Составлен %(p0)s · Tikpilot %(p1)s": "Compiled %(p0)s · Tikpilot %(p1)s",
   "Состояние сети": "Network status",

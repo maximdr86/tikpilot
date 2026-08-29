@@ -4195,6 +4195,20 @@ def test_brief_report_keeps_today_apart_from_the_period(client, router):
     assert плитка("Лежали дольше часа") == 1
 
 
+def test_brief_report_shows_all_the_mass_outages_it_counted():
+    """
+    Список массовых сбоев не урезается до пятёрки.
+
+    «Показаны самые крупные, всего таких случаев 15» отправляло читателя
+    за остальными десятью, а взять их негде: массовые сбои считаются
+    только в этом отчёте. Потолок остался, но как страховка от месяца
+    с бедой, а не как редактура.
+    """
+    from app.routes.pages import MASS_OUTAGE_LIMIT
+
+    assert MASS_OUTAGE_LIMIT >= 15, "месяц с пятнадцатью сбоями обязан влезть"
+
+
 def test_brief_report_lists_every_site_not_just_the_worst(client, router):
     """
     Простой показан у каждой точки, включая те, у кого его не было.
