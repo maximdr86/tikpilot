@@ -724,7 +724,7 @@ def availability(hours: int = 24, scope: Scope = NO_SCOPE,
 
     devices = query(
         "SELECT d.id, d.name, d.host, d.status, d.status_changed_at, d.created_at, "
-        "g.name AS group_name, g.color AS group_color "
+        "d.operator, g.name AS group_name, g.color AS group_color "
         "FROM devices d LEFT JOIN groups g ON g.id = d.group_id "
         f"WHERE d.enabled = 1{scope[0]} ORDER BY d.name COLLATE NOCASE",
         tuple(scope[1]),
@@ -799,6 +799,7 @@ def availability(hours: int = 24, scope: Scope = NO_SCOPE,
             "status": device["status"],
             "group_name": device["group_name"],
             "group_color": device["group_color"],
+            "operator": device["operator"] or "",
             "uptime_percent": percent,
             "down_seconds": down_seconds,
             "outages": outages,

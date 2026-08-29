@@ -361,6 +361,53 @@ def _report_floor(percents: list[float]) -> float:
     return 0.0
 
 
+def _by_operator(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Итоги отчёта в разрезе оператора связи.
+
+    Вопрос «какая точка хуже всех» таблица отвечает и без этого, а вопрос
+    «какой провайдер хуже всех» из полусотни строк глазами не решается.
+
+    Всё, кроме числа точек, приведено к одной точке. Сумма здесь не просто
+    хуже, она врёт дважды. Растёт вместе с числом точек: у оператора
+    с четырнадцатью площадками простой больше, чем у оператора с двумя,
+    даже когда у первого всё лучше. И выглядит невозможной: в отчёте
+    за сутки сумма по четырнадцати точкам показывала «1 дн 20 ч», и первая
+    мысль у человека была не «это сумма», а «панель сломалась». То же
+    решение и по той же причине уже принято в шапке отчёта.
+
+    Точки, за которыми ещё не наблюдали, в среднее не идут: у них честно
+    нет процента, и они утянули бы оператора вниз без всякой его вины.
+    Точки без известного оператора собираются в отдельную строку: их
+    не выкинуть молча, иначе итог не сойдётся с таблицей.
+    """
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(str(row.get("operator") or ""), []).append(row)
+
+    result: list[dict[str, Any]] = []
+    for name, items in groups.items():
+        seen = [r for r in items if r["covered"]]
+        percent = (round(sum(r["uptime_percent"] for r in seen) / len(seen), 2)
+                   if seen else 100.0)
+        result.append({
+            "operator": name,
+            "devices": len(items),
+            "watched": len(seen),
+            "uptime_percent": percent,
+            "color": _report_color(percent),
+            "down_seconds": round(sum(r["down_seconds"] for r in items) / len(items)),
+            "outages": round(sum(r["outages"] for r in items) / len(items), 1),
+            "offline_now": sum(1 for r in items if r["status"] == "offline"),
+        })
+
+    # Худший оператор первым: отчёт открывают, чтобы найти виноватого,
+    # а не чтобы прочитать список по алфавиту. Безымянные всегда внизу
+    result.sort(key=lambda r: (not r["operator"], r["uptime_percent"],
+                               -r["outages"], r["operator"].lower()))
+    return result
+
+
 def _report_scope(user, group_id: int, devices):
     """
     Область отчёта: право видеть плюс выбор человека.
@@ -629,6 +676,7 @@ async def availability_report_page(request: Request, hours: int = 720,
         offline_now=sum(1 for r in rows if r["status"] == "offline"),
         perfect=sum(1 for r in seen if r["uptime_percent"] >= 100 and not r["outages"]),
         worst=[r for r in seen if r["uptime_percent"] < 100 or r["outages"]][:7],
+        operators=_by_operator(rows),
         chart=charts.bar_chart(
             [(b["label"], b["percent"]) for b in buckets],
             unit="%", y_min=floor, y_max=100.0, color_of=_chart_color,
@@ -693,8 +741,9 @@ async def availability_report(request: Request, hours: int = 720,
         "Точка", "Группа", "Адрес", "Состояние сейчас",
         "Доступность, %", "Простой, часов", "Простой, минут", "Падений",
         # Колонки про наблюдение приписаны в конец, чтобы не сломать
-        # чужие сводные таблицы, собранные по прежним выгрузкам
-        "Наблюдение с", "Покрыто периода, %",
+        # чужие сводные таблицы, собранные по прежним выгрузкам.
+        # Оператор по той же причине здесь, а не рядом с группой
+        "Наблюдение с", "Покрыто периода, %", "Оператор",
     ])
     for row in rows:
         minutes = round(row["down_seconds"] / 60)
@@ -715,6 +764,7 @@ async def availability_report(request: Request, hours: int = 720,
             row["outages"],
             watched.astimezone().strftime("%d.%m.%Y %H:%M") if watched else "",
             row["covered"],
+            row.get("operator") or "",
         ])
 
     log_audit(user["username"], "Выгружен отчёт по доступности",
