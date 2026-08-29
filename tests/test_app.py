@@ -9350,6 +9350,29 @@ def test_poe_state_comes_from_monitor():
     assert с_монитором["poe_status"] == "powered-on"
 
 
+def test_port_that_cannot_report_its_link_is_not_called_dead():
+    """
+    `unknown` это «карта не умеет сказать», а не «линка нет».
+
+    Документация RouterOS перечисляет ровно три значения: `link-ok`,
+    `no-link` и `unknown`, и про последнее сказано прямо, что карта
+    не сообщает состояние соединения. Панель считала его погасшим
+    и затирала им флаг `running` из общего списка интерфейсов, хотя
+    именно в этом случае он единственный источник правды.
+    """
+    from app.inventory import merge_ports
+
+    живой = [{"name": "sfp1", "type": "ether", "running": True}]
+
+    молчит = merge_ports(живой, monitor=[{"name": "sfp1", "status": "unknown"}])[0]
+    assert молчит["running"] == 1, "порт погасили по «не знаю»"
+    assert молчит["speed_class"] == "up"
+
+    # А прямой ответ «линка нет» по-прежнему сильнее флага
+    погас = merge_ports(живой, monitor=[{"name": "sfp1", "status": "no-link"}])[0]
+    assert погас["running"] == 0
+
+
 def test_broken_poe_port_is_not_shown_as_an_empty_one():
     """
     Замыкание на порту отличается от порта, в который ничего не воткнуто.
