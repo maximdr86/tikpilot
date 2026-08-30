@@ -223,6 +223,42 @@ def fleet(scope: tuple[str, list[Any]] = ("", [])) -> list[dict[str, Any]]:
     return result
 
 
+def passport_age(scope: tuple[str, list[Any]] = ("", [])) -> dict[str, Any]:
+    """
+    Когда собраны паспорта, из которых сложена сводка по парку.
+
+    Раздел «Что стоит на точках» это снимок последнего обхода, а не живой
+    опрос. Пока об этом не сказано, скрипт, снятый с точки руками через
+    Winbox, продолжает висеть в списке, и выглядит это как ошибка панели.
+    Своё удаление она правит сразу, чужое видит только на следующем обходе.
+
+    Возвращает самую свежую и самую старую даты сбора плюс сколько точек
+    не опрашивались вовсе: у последних сведений нет никаких, и молчать
+    об этом хуже, чем показать ноль.
+    """
+    row = query_one(
+        "SELECT MIN(inventory_at) AS oldest, MAX(inventory_at) AS newest, "
+        "COUNT(*) AS known FROM devices "
+        f"WHERE enabled = 1 AND inventory_at <> ''{scope[0]}",
+        tuple(scope[1]),
+    )
+    total = query_one(
+        f"SELECT COUNT(*) AS c FROM devices WHERE enabled = 1{scope[0]}",
+        tuple(scope[1]),
+    )
+    # query_one отдаёт sqlite3.Row, а у него нет `.get`: обращаться
+    # к колонкам можно только по имени, и отсутствие строки надо
+    # проверять отдельно
+    known = int(row["known"] or 0) if row else 0
+    всего = int(total["c"] or 0) if total else 0
+    return {
+        "oldest": (row["oldest"] if row else "") or "",
+        "newest": (row["newest"] if row else "") or "",
+        "known": known,
+        "never": max(0, всего - known),
+    }
+
+
 def missing(marker: Any, scope: tuple[str, list[Any]] = ("", [])) -> list[dict[str, Any]]:
     """
     Точки, на которых этого скрипта нет.

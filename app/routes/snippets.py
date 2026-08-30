@@ -35,6 +35,11 @@ async def scripts_page(request: Request, user=Depends(current_user)):
         active="scripts",
         snippets=snippets.listing(scope),
         fleet=snippets.fleet(scope),
+        # Раздел собран из паспортов, то есть из последнего обхода, а не
+        # из живого опроса. Пока это не сказано вслух, удалённый руками
+        # скрипт висит в списке и выглядит так, будто панель врёт. Своё
+        # удаление она правит сразу, а чужое увидит только на обходе
+        passports=snippets.passport_age(scope),
         groups=query("SELECT id, name FROM groups ORDER BY name COLLATE NOCASE"),
         all_devices=query(
             "SELECT d.id, d.name, g.name AS group_name FROM devices d "

@@ -1,4 +1,8 @@
 {
+  "· без паспорта точек: %(p0)s": "· sites with no passport: %(p0)s",
+  "Что стоит на точках <span class=\"h2-extra muted\">": "What is on the sites <span class=\"h2-extra muted\">",
+  "паспорта ещё не собирались": "passports have not been collected yet",
+  "по паспортам, собранным с %(p0)s до %(p1)s": "from passports collected between %(p0)s and %(p1)s",
   "<span class=\"extra\">случаев за период: %(p0)s</span>": "<span class=\"extra\">%(p0)s over the period</span>",
   "Показаны самые крупные %(p0)s из %(p1)s.": "Showing the %(p0)s largest of %(p1)s.",
   "<span class=\"small muted\">под наблюдением не весь период</span>": "<span class=\"small muted\">not watched for the whole period</span>",
@@ -1573,7 +1577,6 @@
   "Что снимать": "What to back up",
   "Что снимать с устройств": "What to take from devices",
   "Что создаёт": "What it creates",
-  "Что стоит на точках <span class=\"h2-extra muted\">по данным паспорта устройств</span>": "What sits on the sites <span class=\"h2-extra muted\">from the device inventory</span>",
   "Что удалять": "What to remove",
   "Шлюз": "Gateway",
   "Эти адреса не ответили ни разу. Обычно причина одна из двух: провайдер блокирует ICMP (частый случай для шлюзов) либо у площадки нет маршрута до этой цели. Проверки приостановлены, раз в час выполняется повторная попытка. Убрать совсем: снять цель из <span class=\"mono\">LATENCY_TARGETS</span> или из карточки устройства; записи исчезнут сразу после перезапуска.": "These addresses never replied. The reason is usually one of two: the ISP blocks ICMP (common for gateways), or the site has no route to that target. Polling is paused and retried once an hour. To remove them entirely, drop the target from <span class=\"mono\">LATENCY_TARGETS</span> or from the device page; the rows disappear right after a restart.",
