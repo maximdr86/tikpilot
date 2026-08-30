@@ -124,8 +124,21 @@
 
 <!-- ------------------------------------------------------- что есть на точках -->
 <div class="panel" data-fold="fleet-scripts">
+    {# Дата сбора обязательна. Раздел это снимок последнего обхода, и без
+       даты снятый руками скрипт выглядит не как устаревшая запись,
+       а как ошибка панели: человек удалил, а список показывает прежнее #}
     <h2>Что стоит на точках
-        <span class="h2-extra muted">по данным паспорта устройств</span>
+        <span class="h2-extra muted">
+            {% if passports.newest %}
+                по паспортам, собранным с {{ passports.oldest | dt_short }}
+                до {{ passports.newest | dt_short }}
+            {% else %}
+                паспорта ещё не собирались
+            {% endif %}
+            {% if passports.never %}
+                · без паспорта точек: {{ passports.never }}
+            {% endif %}
+        </span>
     </h2>
     {% if fleet %}
     {# Фильтр ищет и по имени скрипта, и по именам точек: вопрос обычно
@@ -346,8 +359,13 @@
     ];
     const SNIPPET_DATA = {
         {% for s in snippets %}
+        {# `devices` здесь обязателен, хотя имена точек и так выведены строкой
+           ниже ссылки. Без него окно «Где стоит» открывалось пустым: список
+           брался из этого словаря, а `missing` рядом лежал, и оттого «Где ещё
+           нет» работало, а соседняя ссылка молчала #}
         {{ s.id }}: {name: {{ s.name | tojson }}, note: {{ s.note | tojson }},
                      body: {{ s.body | tojson }}, marker: {{ s.marker | tojson }},
+                     devices: {{ s.devices | tojson }},
                      missing: {{ s.missing | tojson }}},
         {% endfor %}
     };

@@ -3629,6 +3629,36 @@ def test_library_shows_where_a_snippet_is_deployed(client, router):
     assert "Сторож LTE" in page.text and "с-watchdog" in page.text
 
 
+def test_where_deployed_window_gets_the_list_it_shows(client, router):
+    """
+    Окно «Где стоит» получает точки, а не пустоту.
+
+    Список точек лежит в словаре, который страница отдаёт в браузер.
+    Рядом с ним лежал `missing`, а самих точек не было, и оттого соседняя
+    ссылка «Где ещё нет» работала, а эта открывала пустое окно со счётчиком
+    ноль. Со стороны выглядело так, будто панель потеряла раскатку.
+    """
+    import json
+
+    from app import snippets
+    from app.database import execute, utcnow
+
+    точка = _add_device(client, router, "окно-где-стоит")
+    execute("INSERT INTO device_scripts (device_id, kind, name, updated_at)"
+            " VALUES (?, 'script', ?, ?)", (точка, "oknowatch", utcnow()))
+    snippets.save("Сторож окна", "/system script\nadd name=oknowatch",
+                  username="admin")
+
+    page = client.get("/scripts").text
+    словарь = page.split("const SNIPPET_DATA", 1)[1].split("};", 1)[0]
+
+    assert "devices:" in словарь, "точки не уехали в браузер"
+    # tojson экранирует кириллицу в \uXXXX, поэтому имя ищется в том же виде
+    assert json.dumps("окно-где-стоит")[1:-1] in словарь
+    for кусок in словарь.split("devices:")[1:]:
+        assert not кусок.lstrip().startswith("[]"), "список точек пуст"
+
+
 def test_fleet_view_shows_scripts_nobody_added_from_the_panel(client, router):
     """
     В сводке видно и то, чего в библиотеке нет.
@@ -3683,6 +3713,35 @@ def test_deploy_dialog_offers_the_sites_without_the_script(client, router):
     assert "Где ещё нет" in page
     # Кнопка ставит скрипт, а не запускает его: расписание отработает само
     assert "Раскатать" in page and "runSnippet" not in page
+
+
+def test_scripts_page_says_how_old_its_picture_is(client, router):
+    """
+    Сводка по парку датирована, потому что это снимок, а не живой опрос.
+
+    Скрипт, снятый с точки руками через Winbox, висит в списке до
+    следующего обхода. Без даты сбора это выглядит не как устаревшая
+    запись, а как ошибка панели: человек удалил, а она показывает прежнее.
+    Своё удаление панель правит сразу, чужое видит только на обходе.
+    """
+    from app import snippets
+    from app.database import execute, utcnow
+
+    точка = _add_device(client, router, "паспорт-датирован")
+    execute("UPDATE devices SET inventory_at = ? WHERE id = ?", (utcnow(), точка))
+
+    возраст = snippets.passport_age()
+    assert возраст["newest"], "дата сбора не посчитана"
+    assert возраст["known"] >= 1
+
+    page = client.get("/scripts").text
+    assert "по паспортам, собранным" in page
+
+    # Точки, которые не опрашивались ни разу, считаются отдельно: у них
+    # сведений нет вовсе, и показывать по ним ноль честнее, чем молчать
+    без_паспорта = _add_device(client, router, "без-паспорта")
+    execute("UPDATE devices SET inventory_at = '' WHERE id = ?", (без_паспорта,))
+    assert snippets.passport_age()["never"] >= 1
 
 
 def test_removing_a_script_clears_it_from_device_and_passport(client, router):
