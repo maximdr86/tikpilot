@@ -252,11 +252,6 @@ sudo journalctl -u tikpilot -f
 sudo TIKPILOT_LANG=ru bash install-ubuntu.sh
 ```
 
-> **Обновляетесь с ROSmanager?** Проект назывался так раньше, имя совпало
-> с уже существующим. Для рабочего сервера есть `sudo bash migrate-from-rosmanager.sh`,
-> он перенесёт установку без потери данных. Локальной копии ничего не нужно:
-> старая база `rosmanager.db` подхватится и переименуется при первом запуске.
-
 ### Windows или просто попробовать
 
 ```bash
