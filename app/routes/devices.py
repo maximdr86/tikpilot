@@ -583,6 +583,10 @@ def _device_form_values(form: dict[str, Any]) -> dict[str, Any]:
         # Оператор, вписанный руками. Пустое поле не трогает найденное
         # автоматически: человек не обязан заполнять его на каждой правке
         "operator": (form.get("operator") or "").strip(),
+        # Чем входить по SSH. Любое значение, кроме «key», считается
+        # паролем: так опечатка в форме оставляет точку рабочей,
+        # а не отключает ей вход молча
+        "ssh_auth": "key" if (form.get("ssh_auth") or "") == "key" else "password",
         "enabled": form_bool(form.get("enabled") or "1"),
     }
 
@@ -598,8 +602,9 @@ async def create_device(request: Request, user=Depends(require("devices.edit")))
     now = utcnow()
     device_id = execute(
         "INSERT INTO devices (name, host, api_port, ftp_port, ssh_port, use_ssl, username, "
-        "password_enc, group_id, comment, latency_targets, enabled, created_at, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "password_enc, ssh_key_enc, ssh_auth, group_id, comment, latency_targets, enabled, "
+        "created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             values["name"],
             values["host"],
@@ -609,6 +614,8 @@ async def create_device(request: Request, user=Depends(require("devices.edit")))
             values["use_ssl"],
             values["username"],
             encrypt(form.get("password") or ""),
+            encrypt(form.get("ssh_key") or "") if (form.get("ssh_key") or "").strip() else "",
+            values["ssh_auth"],
             values["group_id"],
             values["comment"],
             values["latency_targets"],
@@ -635,7 +642,8 @@ async def update_device(request: Request, device_id: int,
     password = form.get("password") or ""
     sql = (
         "UPDATE devices SET name=?, host=?, api_port=?, ftp_port=?, ssh_port=?, use_ssl=?, "
-        "username=?, group_id=?, comment=?, latency_targets=?, enabled=?, updated_at=?"
+        "username=?, ssh_auth=?, group_id=?, comment=?, latency_targets=?, enabled=?, "
+        "updated_at=?"
     )
 
     # Оператор считается вписанным руками только если его действительно
@@ -661,6 +669,7 @@ async def update_device(request: Request, device_id: int,
         values["ssh_port"],
         values["use_ssl"],
         values["username"],
+        values["ssh_auth"],
         values["group_id"],
         values["comment"],
         values["latency_targets"],
@@ -671,6 +680,13 @@ async def update_device(request: Request, device_id: int,
     if password:
         sql += ", password_enc=?"
         params.append(encrypt(password))
+    # Пустое поле ключа оставляет прежний, как и пустое поле пароля:
+    # карточку правят ради имени или группы, и заставлять человека
+    # каждый раз заново вставлять ключ значит гонять его по буферу обмена
+    ssh_key = (form.get("ssh_key") or "").strip()
+    if ssh_key:
+        sql += ", ssh_key_enc=?"
+        params.append(encrypt(ssh_key))
     sql += " WHERE id=?"
     params.append(device_id)
 
@@ -713,6 +729,10 @@ async def get_device(device_id: int, user=Depends(require("devices.edit"))):
         return JSONResponse({"error": "Устройство не найдено"}, status_code=404)
     data = dict(row)
     data.pop("password_enc", None)
+    # Ключ наружу не отдаём никогда, даже зашифрованным. Форме хватает
+    # знать, что он заведён: поле ввода в карточке пустое, и пустым
+    # оставленное поле означает «оставить прежний»
+    data["has_ssh_key"] = bool(data.pop("ssh_key_enc", "") or "")
     return data
 
 

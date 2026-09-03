@@ -28,12 +28,26 @@ if not defined PY (
 )
 
 REM --- 2. Virtual environment ------------------------------------------------
-if not exist ".venv\Scripts\uvicorn.exe" (
+REM Existence is not enough. A .venv copied from another computer still has
+REM the old interpreter path baked into every .exe in Scripts, and the
+REM launcher dies with "Unable to create process using ...". So ask the
+REM environment whether it actually works, and rebuild it when it does not.
+set "VENV_OK="
+if exist ".venv\Scripts\python.exe" (
+    ".venv\Scripts\python.exe" -c "import uvicorn, fastapi" >nul 2>nul && set "VENV_OK=1"
+)
+
+if not defined VENV_OK (
     echo.
-    echo  First run: creating the environment and installing dependencies.
+    if exist ".venv" (
+        echo  The environment in .venv does not work on this computer, rebuilding.
+        echo  This is normal when the folder was copied from another machine.
+    ) else (
+        echo  First run: creating the environment and installing dependencies.
+    )
     echo  This takes a minute or two and needs internet access.
     echo.
-    %PY% -m venv .venv
+    %PY% -m venv --clear .venv
     if errorlevel 1 goto error
     ".venv\Scripts\python.exe" -m pip install --upgrade pip --quiet --disable-pip-version-check
     ".venv\Scripts\python.exe" -m pip install -r requirements.txt --disable-pip-version-check
@@ -58,7 +72,9 @@ echo.
 REM Open the browser after a short delay without blocking the server start
 start "" /b powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 4; Start-Process 'http://127.0.0.1:%PORT%'" >nul 2>nul
 
-".venv\Scripts\uvicorn.exe" app.main:app --host 0.0.0.0 --port %PORT%
+REM python -m, not uvicorn.exe: the .exe carries a hardcoded path to the
+REM interpreter it was installed with, and that path is wrong after a copy.
+".venv\Scripts\python.exe" -m uvicorn app.main:app --host 0.0.0.0 --port %PORT%
 
 echo.
 echo  Server stopped.
