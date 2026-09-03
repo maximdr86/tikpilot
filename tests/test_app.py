@@ -5631,6 +5631,38 @@ def test_private_key_never_leaves_the_panel(client, router):
     assert "BEGIN OPENSSH" not in csv_text
 
 
+def test_dashboard_checks_use_indexes_instead_of_full_scans(client):
+    """
+    Проверки дашборда отбирают по времени через индекс, а не перебором.
+
+    Дашборд грузился секунду-две, и виноваты были две проверки. У замеров
+    задержки в индексе между точкой и временем стоит цель пинга, поэтому
+    диапазон по времени через него не берётся, и SQLite перебирал все
+    замеры точки за две недели. У журнала индексы построены по `id`,
+    а отбор идёт по `ts`, и брать через них нечего вовсе.
+
+    На парке из 49 точек это 148 и 155 мс против 3 и 18 после индексов.
+    Тест смотрит на план запроса, а не на секунды: время зависит от машины
+    и от того, что успело попасть в кэш, и такой тест мигал бы в CI.
+    """
+    from app.database import query
+
+    потери = ("SELECT d.id, AVG(s.loss) AS loss FROM latency_samples s"
+              " JOIN devices d ON d.id = s.device_id"
+              " WHERE s.ts >= datetime('now', '-2 hours') AND d.enabled = 1"
+              " GROUP BY d.id")
+    журнал = ("SELECT d.id, MAX(s.ts) AS last_line FROM syslog s"
+              " JOIN devices d ON d.id = s.device_id"
+              " WHERE s.ts >= datetime('now', '-7 days') AND d.enabled = 1"
+              " GROUP BY d.id")
+
+    for sql, индекс in ((потери, "idx_latency_device_ts"),
+                        (журнал, "idx_syslog_device_ts")):
+        план = " ".join(str(row["detail"]) for row in query("EXPLAIN QUERY PLAN " + sql))
+        assert индекс in план, f"отбор идёт мимо индекса:\n{план}"
+        assert "SCAN s" not in план, f"таблица перебирается целиком:\n{план}"
+
+
 def test_launchers_survive_a_copied_virtualenv():
     """
     Запуск не зависит от того, где окружение собирали.
