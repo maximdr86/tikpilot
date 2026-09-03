@@ -442,7 +442,22 @@ function newDevice() {
     $('#device-form [name=ftp_port]').value = 21;
     $('#device-form [name=ssh_port]').value = 22;
     $('#device-form [name=enabled]').checked = true;
+    $('#device-form [name=ssh_auth]').value = 'password';
+    toggleSshKey();
     openModal('device-modal');
+}
+
+/**
+ * Показать поле ключа только тогда, когда выбран вход по ключу.
+ *
+ * Поле с приватным ключом не должно висеть на виду у того, кто им
+ * не пользуется: оно длинное и выглядит обязательным.
+ */
+function toggleSshKey() {
+    const mode = $('#device-form [name=ssh_auth]');
+    const field = $('#d-ssh-key-field');
+    if (!mode || !field) { return; }
+    field.style.display = mode.value === 'key' ? '' : 'none';
 }
 
 /** Открыть окно редактирования существующего устройства. */
@@ -462,6 +477,14 @@ async function editDevice(id) {
         form.querySelector('[name=use_ssl]').checked = !!data.use_ssl;
         form.querySelector('[name=enabled]').checked = !!data.enabled;
         $('#device-password').placeholder = T('оставьте пустым, чтобы не менять');
+        // Сам ключ панель наружу не отдаёт, приезжает только признак,
+        // что он заведён. Пустое поле означает «оставить прежний»
+        form.querySelector('[name=ssh_auth]').value = data.ssh_auth || 'password';
+        const hint = $('#d-ssh-key-hint');
+        if (hint && data.has_ssh_key) {
+            hint.textContent = T('Ключ уже сохранён. Оставьте поле пустым, чтобы не менять его.');
+        }
+        toggleSshKey();
         openModal('device-modal');
     } catch (err) {
         toast(err.message, 'error');

@@ -26,11 +26,22 @@ if [ -z "$UI_LANG" ]; then
 fi
 t() { if [ "$UI_LANG" = "ru" ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
 
-if [ ! -d "$VENV" ]; then
-    echo "==> $(t "Creating virtualenv $VENV" "Создаю виртуальное окружение $VENV")"
-    "$PYTHON" -m venv "$VENV"
-    "$VENV/bin/pip" install --upgrade pip
-    "$VENV/bin/pip" install -r requirements.txt
+# Наличия папки мало. Окружение, приехавшее вместе с проектом с другой
+# машины, хранит абсолютный путь к прежнему интерпретатору в каждом
+# скрипте bin, и запуск падает с невнятной ошибкой. Поэтому спрашиваем
+# у окружения, работает ли оно, и пересобираем, когда нет.
+if [ -x "$VENV/bin/python" ] && "$VENV/bin/python" -c "import uvicorn, fastapi" >/dev/null 2>&1; then
+    :
+else
+    if [ -d "$VENV" ]; then
+        echo "==> $(t "Environment in $VENV does not work here, rebuilding" \
+                     "Окружение в $VENV здесь не работает, пересобираю")"
+    else
+        echo "==> $(t "Creating virtualenv $VENV" "Создаю виртуальное окружение $VENV")"
+    fi
+    "$PYTHON" -m venv --clear "$VENV"
+    "$VENV/bin/python" -m pip install --upgrade pip
+    "$VENV/bin/python" -m pip install -r requirements.txt
 fi
 
 # Pick up the settings from .env if it exists
@@ -47,4 +58,7 @@ if [ "${1:-}" = "--reload" ]; then
 fi
 
 echo "==> $(t "Tikpilot is starting at" "Tikpilot запускается на") http://$HOST:$PORT"
-exec "$VENV/bin/uvicorn" app.main:app --host "$HOST" --port "$PORT" "${EXTRA[@]}"
+# python -m, а не bin/uvicorn: у скрипта в bin в первой строке записан
+# абсолютный путь к интерпретатору, с которым его ставили, и после
+# переноса папки он указывает в никуда
+exec "$VENV/bin/python" -m uvicorn app.main:app --host "$HOST" --port "$PORT" "${EXTRA[@]}"

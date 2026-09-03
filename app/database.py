@@ -340,6 +340,14 @@ CREATE TABLE IF NOT EXISTS devices (
     use_ssl       INTEGER NOT NULL DEFAULT 0,
     username      TEXT NOT NULL,
     password_enc  TEXT NOT NULL DEFAULT '',
+    -- Приватный ключ для входа по SSH, зашифрован тем же ключом, что
+    -- и пароли. Пароль при этом никуда не девается: по ключу ходит
+    -- только SSH, а API на 8728 умеет исключительно логин с паролем.
+    ssh_key_enc   TEXT NOT NULL DEFAULT '',
+    -- Чем входить по SSH: password или key. Отдельным полем, а не по
+    -- наличию ключа: иначе заведённый и забытый ключ молча меняет способ
+    -- входа, и человек ищет причину в сети
+    ssh_auth      TEXT NOT NULL DEFAULT 'password',
     group_id      INTEGER REFERENCES groups(id) ON DELETE SET NULL,
     comment       TEXT NOT NULL DEFAULT '',
     enabled       INTEGER NOT NULL DEFAULT 1,
@@ -724,6 +732,9 @@ MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         # Место на диске роутера: свободное и всего, байты
         ("free_space", "INTEGER NOT NULL DEFAULT 0"),
         ("total_space", "INTEGER NOT NULL DEFAULT 0"),
+        # Вход по SSH ключом: сам ключ и выбранный способ входа
+        ("ssh_key_enc", "TEXT NOT NULL DEFAULT ''"),
+        ("ssh_auth", "TEXT NOT NULL DEFAULT 'password'"),
         ("latest_version", "TEXT NOT NULL DEFAULT ''"),
         ("update_status", "TEXT NOT NULL DEFAULT ''"),
         ("update_channel", "TEXT NOT NULL DEFAULT ''"),

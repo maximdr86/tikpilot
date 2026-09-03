@@ -134,6 +134,52 @@ def forget_fingerprint(device_id: int) -> int:
     return execute_changes("DELETE FROM ssh_hosts WHERE device_id = ?", (device_id,))
 
 
+def _private_key(stored: str) -> Any:
+    """
+    Разобрать сохранённый приватный ключ.
+
+    Тип ключа не спрашиваем у человека: paramiko умеет несколько форматов,
+    а отличить их можно попыткой разбора. Человек, который принёс ключ,
+    обычно не помнит, ed25519 он или rsa, и спрашивать об этом значит
+    заставлять его гадать.
+
+    Ключ с паролем отвергается сразу и с объяснением: панель ходит на точки
+    без участия человека, и вводить пароль к ключу будет некому. Иначе
+    отказ выглядел бы как «ключ не подошёл», и его искали бы на роутере.
+    """
+    import io
+
+    import paramiko
+
+    text = decrypt(stored) if stored else ""
+    if not text.strip():
+        raise TerminalError(
+            "Для этой точки выбран вход по ключу, но ключ не задан. "
+            "Загрузите его в карточке устройства или вернитесь к паролю."
+        )
+
+    # DSA сюда не входит: в paramiko 4 его класса больше нет, а RouterOS
+    # и без того считает такие ключи устаревшими
+    последняя: Exception | None = None
+    for тип in (paramiko.Ed25519Key, paramiko.ECDSAKey, paramiko.RSAKey):
+        try:
+            return тип.from_private_key(io.StringIO(text))
+        except paramiko.PasswordRequiredException as exc:
+            raise TerminalError(
+                "Ключ защищён паролем. Панель ходит на точки сама, вводить "
+                "пароль к ключу будет некому: снимите его "
+                "(ssh-keygen -p -N \"\" -f ключ) и загрузите заново."
+            ) from exc
+        except Exception as exc:  # noqa: BLE001 — не этот формат, пробуем дальше
+            последняя = exc
+
+    raise TerminalError(
+        "Не удалось разобрать ключ. Нужна приватная часть целиком, вместе "
+        "со строками BEGIN и END. Поддерживаются ed25519, ecdsa и rsa. "
+        f"Разбор сообщил: {последняя}"
+    )
+
+
 def connect(device: dict[str, Any]) -> Any:
     """
     Подключиться к устройству по SSH и вернуть готовый клиент paramiko.
@@ -169,6 +215,14 @@ def connect(device: dict[str, Any]) -> Any:
     client.set_missing_host_key_policy(_Policy())
     wait = _timeout()
 
+    # Способ входа берётся из карточки, а не из наличия ключа: ключ могли
+    # завести и передумать, и тогда молчаливая смена способа входа
+    # заставляет искать причину в сети, а она в настройке
+    by_key = str(device.get("ssh_auth") or "password") == "key"
+    key: Any = None
+    if by_key:
+        key = _private_key(str(device.get("ssh_key_enc") or ""))
+
     # Одна повторная попытка. Сорванное рукопожатие это почти всегда
     # случайность канала, и со второго раза оно проходит; гонять человека
     # обратно в список за галочками ради этого незачем.
@@ -179,7 +233,11 @@ def connect(device: dict[str, Any]) -> Any:
                 hostname=host,
                 port=port,
                 username=str(device["username"]),
-                password=decrypt(device["password_enc"]),
+                # Пароль не передаётся вовсе, когда выбран ключ: иначе
+                # paramiko при отказе ключа тихо пробует пароль, и точка,
+                # где ключ на самом деле не работает, выглядит рабочей
+                password=None if by_key else decrypt(device["password_enc"]),
+                pkey=key,
                 timeout=wait,
                 auth_timeout=wait,
                 banner_timeout=wait,
@@ -191,6 +249,13 @@ def connect(device: dict[str, Any]) -> Any:
         except TerminalError:
             raise
         except paramiko.AuthenticationException as exc:
+            if by_key:
+                raise TerminalError(
+                    "Устройство не приняло ключ. Публичная часть должна быть "
+                    "у пользователя RouterOS: «/user ssh-keys print» покажет, "
+                    "что там лежит. И политика «ssh» тоже нужна: панели "
+                    "хватает «api», а терминалу нет."
+                ) from exc
             raise TerminalError(
                 "Устройство не приняло логин или пароль. Для входа по SSH "
                 "у пользователя RouterOS должна быть политика «ssh»: панели "

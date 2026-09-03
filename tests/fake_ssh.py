@@ -40,8 +40,12 @@ def host_key() -> Any:
 class _Server(paramiko.ServerInterface):
     """Минимальный сервер: пароль, сессия, псевдотерминал."""
 
-    def __init__(self, username: str, password: str) -> None:
+    def __init__(self, username: str, password: str,
+                 authorized: Any = None) -> None:
         self.username, self.password = username, password
+        #: Публичная часть ключа, которую сервер согласен принять. Пусто —
+        #: значит вход по ключу не настроен, как на роутере без импорта
+        self.authorized = authorized
         self.shell = threading.Event()
         self.exec_requested = threading.Event()
         self.executed: list[str] = []
@@ -52,8 +56,22 @@ class _Server(paramiko.ServerInterface):
             return paramiko.AUTH_SUCCESSFUL
         return paramiko.AUTH_FAILED
 
+    def check_auth_publickey(self, username: str, key: Any) -> int:
+        """
+        Принять ключ, если он тот самый.
+
+        Сравниваются байты публичной части, а не отпечаток: отпечаток
+        считается по-разному в разных версиях, и тест начал бы падать
+        от смены библиотеки, а не от ошибки в панели.
+        """
+        if self.authorized is None or username != self.username:
+            return paramiko.AUTH_FAILED
+        if key.asbytes() == self.authorized.asbytes():
+            return paramiko.AUTH_SUCCESSFUL
+        return paramiko.AUTH_FAILED
+
     def get_allowed_auths(self, username: str) -> str:
-        return "password"
+        return "publickey,password" if self.authorized is not None else "password"
 
     def check_channel_request(self, kind: str, chanid: int) -> int:
         if kind == "session":
@@ -99,9 +117,12 @@ class FakeSSH:
     PROMPT = "[admin@MikroTik] > "
 
     def __init__(self, username: str = "tikpilot", password: str = "s3cret",
-                 key: Any = None) -> None:
+                 key: Any = None, authorized: Any = None) -> None:
         self.username, self.password = username, password
         self.key = key or host_key()
+        #: Публичная часть ключа, которую сервер примет. Аналог того, что
+        #: на роутере лежит в `/user ssh-keys`
+        self.authorized = authorized
         self.received: list[str] = []
         #: Команды, пришедшие без псевдотерминала (массовые действия)
         self.commands: list[str] = []
@@ -141,7 +162,7 @@ class FakeSSH:
         """
         transport = paramiko.Transport(conn)
         transport.add_server_key(self.key)
-        server = _Server(self.username, self.password)
+        server = _Server(self.username, self.password, self.authorized)
         self.server = server
         try:
             transport.start_server(server=server)

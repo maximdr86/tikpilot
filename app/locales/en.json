@@ -1,4 +1,11 @@
 {
+  "Вход по SSH": "SSH login",
+  "Касается терминала и команд по SSH. Всё остальное ходит по API с паролем": "Applies to the terminal and SSH commands. Everything else uses the API with a password",
+  "Приватный ключ": "Private key",
+  "Целиком, вместе со строками BEGIN и END. Без пароля на ключе: панель ходит на точки сама, вводить его будет некому. Публичную часть заранее положите на роутер.": "The whole thing, BEGIN and END lines included. No passphrase on the key: the panel reaches sites on its own and there is nobody to type it. Install the public part on the router beforehand.",
+  "ключом": "by key",
+  "паролем": "by password",
+  "Ключ уже сохранён. Оставьте поле пустым, чтобы не менять его.": "A key is already stored. Leave the field empty to keep it.",
   "· без паспорта точек: %(p0)s": "· sites with no passport: %(p0)s",
   "Что стоит на точках <span class=\"h2-extra muted\">": "What is on the sites <span class=\"h2-extra muted\">",
   "паспорта ещё не собирались": "passports have not been collected yet",

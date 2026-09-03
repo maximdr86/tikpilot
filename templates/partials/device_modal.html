@@ -56,6 +56,29 @@
                     </div>
                 </div>
 
+                {# Ключ относится только к SSH. Пароль остаётся обязательным
+                   в любом случае: API на 8728 входит по логину и паролю,
+                   и почти вся работа панели идёт через него #}
+                <div class="field">
+                    <label for="d-ssh-auth">Вход по SSH</label>
+                    <select id="d-ssh-auth" name="ssh_auth" onchange="toggleSshKey()">
+                        <option value="password">паролем</option>
+                        <option value="key">ключом</option>
+                    </select>
+                    <div class="hint">Касается терминала и команд по SSH. Всё остальное ходит по API с паролем</div>
+                </div>
+
+                <div class="field" id="d-ssh-key-field" style="display:none">
+                    <label for="d-ssh-key">Приватный ключ</label>
+                    <textarea id="d-ssh-key" name="ssh_key" rows="4"
+                              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+                    <div class="hint" id="d-ssh-key-hint">
+                        Целиком, вместе со строками BEGIN и END. Без пароля на ключе:
+                        панель ходит на точки сама, вводить его будет некому.
+                        Публичную часть заранее положите на роутер.
+                    </div>
+                </div>
+
                 <div class="field">
                     <label for="d-group">Группа</label>
                     <select id="d-group" name="group_id">

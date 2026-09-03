@@ -5533,6 +5533,132 @@ def _ssh_device(client, router, name: str, ssh):
     return device_id, dict(query_one("SELECT * FROM devices WHERE id = ?", (device_id,)))
 
 
+def test_ssh_login_by_key_instead_of_password(client, router):
+    """
+    Точка может входить по ключу, и пароль при этом не пробуется.
+
+    Issue #2: у части людей на роутерах вход по паролю выключен вовсе,
+    и терминал с командами по SSH у них не работали. Пароль не передаётся
+    намеренно: paramiko при отказе ключа тихо пробует его, и точка,
+    где ключ на самом деле не принят, выглядела бы рабочей.
+    """
+    import io
+
+    import paramiko
+
+    from tests.fake_ssh import FakeSSH
+
+    from app.crypto import encrypt
+    from app.database import execute, query_one
+    from app.terminal import connect
+
+    ключ = paramiko.RSAKey.generate(2048)
+    буфер = io.StringIO()
+    ключ.write_private_key(буфер)
+
+    # Сервер принимает только этот ключ, пароль заведомо не тот
+    ssh = FakeSSH(password="не-этот-пароль", authorized=ключ)
+    try:
+        device_id, _ = _ssh_device(client, router, "точка-с-ключом", ssh)
+        execute("UPDATE devices SET ssh_auth = 'key', ssh_key_enc = ? WHERE id = ?",
+                (encrypt(буфер.getvalue()), device_id))
+        device = dict(query_one("SELECT * FROM devices WHERE id = ?", (device_id,)))
+
+        client_ssh = connect(device)
+        try:
+            assert client_ssh.get_transport().is_authenticated()
+        finally:
+            client_ssh.close()
+    finally:
+        ssh.stop()
+
+
+def test_bad_ssh_key_says_what_is_wrong(client, router):
+    """
+    Негодный ключ объясняется человеку, а не выглядит отказом роутера.
+
+    Три разных случая: способ входа выбран, а ключа нет; ключ защищён
+    паролем, который вводить некому; ключ вообще не разбирается. Каждый
+    из них человек иначе искал бы на роутере.
+    """
+    import io
+
+    import paramiko
+    import pytest
+
+    from app.crypto import encrypt
+    from app.terminal import TerminalError, _private_key
+
+    with pytest.raises(TerminalError, match="ключ не задан"):
+        _private_key("")
+
+    with pytest.raises(TerminalError, match="не удалось разобрать|разобрать ключ"):
+        _private_key(encrypt("это не ключ, а просто текст"))
+
+    защищённый = io.StringIO()
+    paramiko.RSAKey.generate(2048).write_private_key(защищённый, password="секрет")
+    with pytest.raises(TerminalError, match="защищён паролем"):
+        _private_key(encrypt(защищённый.getvalue()))
+
+
+def test_private_key_never_leaves_the_panel(client, router):
+    """
+    Карточка устройства не отдаёт ключ наружу даже зашифрованным.
+
+    Форме достаточно знать, что ключ заведён: поле ввода пустое, и пустым
+    оставленное поле означает «оставить прежний». Отдавать сам ключ
+    в браузер незачем ни разу.
+    """
+    from app.crypto import encrypt
+    from app.database import execute
+
+    device_id = _add_device(client, router, "ключ-не-утекает")
+    execute("UPDATE devices SET ssh_auth = 'key', ssh_key_enc = ? WHERE id = ?",
+            (encrypt("-----BEGIN OPENSSH PRIVATE KEY-----\nсекрет\n"), device_id))
+
+    ответ = client.get(f"/api/devices/{device_id}")
+    assert ответ.status_code == 200
+    data = ответ.json()
+
+    assert "ssh_key_enc" not in data
+    assert "password_enc" not in data
+    assert data["has_ssh_key"] is True
+    assert data["ssh_auth"] == "key"
+    assert "BEGIN OPENSSH" not in ответ.text
+
+    # И в выгрузку парка ключ тоже не попадает
+    csv_text = client.get("/api/devices/export/csv").content.decode("utf-8-sig")
+    assert "BEGIN OPENSSH" not in csv_text
+
+
+def test_launchers_survive_a_copied_virtualenv():
+    """
+    Запуск не зависит от того, где окружение собирали.
+
+    Папку с панелью носят между машинами, и `.venv` едет вместе с ней.
+    Внутри у каждого скрипта в `Scripts` и `bin` записан абсолютный путь
+    к прежнему интерпретатору, поэтому `uvicorn.exe` падает с «Unable to
+    create process», а `bin/uvicorn` с «bad interpreter». Через `python -m`
+    этого пути нет вовсе.
+
+    Проверка наличия папки тоже не годится: сломанное окружение существует
+    и проходит её, а потом падает уже при запуске.
+    """
+    from pathlib import Path
+
+    for имя in ("run.bat", "run.sh"):
+        текст = Path(имя).read_text(encoding="ascii" if имя.endswith(".bat") else "utf-8")
+        assert "-m uvicorn" in текст, f"{имя} зовёт uvicorn мимо интерпретатора"
+        assert "import uvicorn" in текст, f"{имя} не проверяет, что окружение живо"
+        assert "venv --clear" in текст, f"{имя} не пересоберёт сломанное окружение"
+
+    # Своё же требование из шапки: только ASCII и переводы строк CRLF,
+    # иначе cmd.exe разбирает остаток файла неправильно
+    сырой = Path("run.bat").read_bytes()
+    assert all(b < 128 for b in сырой), "в run.bat появились не-ASCII символы"
+    assert сырой.count(b"\n") == сырой.count(b"\r\n"), "в run.bat есть строки без CR"
+
+
 def test_untested_mark_reaches_the_form(client):
     """
     Пометка «не проверено на живом парке» доезжает до формы действия.
