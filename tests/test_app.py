@@ -5652,11 +5652,16 @@ def test_launchers_survive_a_copied_virtualenv():
         assert "import uvicorn" in текст, f"{имя} не проверяет, что окружение живо"
         assert "venv --clear" in текст, f"{имя} не пересоберёт сломанное окружение"
 
-    # Своё же требование из шапки: только ASCII и переводы строк CRLF,
-    # иначе cmd.exe разбирает остаток файла неправильно
+    # Своё же требование из шапки run.bat: только ASCII
     сырой = Path("run.bat").read_bytes()
     assert all(b < 128 for b in сырой), "в run.bat появились не-ASCII символы"
-    assert сырой.count(b"\n") == сырой.count(b"\r\n"), "в run.bat есть строки без CR"
+
+    # А CRLF проверяется не в файле, а в правиле git. Репозиторий хранит
+    # переводы строк нормализованными, и на Linux рабочая копия честно
+    # приезжает с LF: тест на байты был зелёный на Windows и красный в CI.
+    # Гарантию даёт `eol=crlf`, она действует при выгрузке на любой системе
+    правила = Path(".gitattributes").read_text(encoding="utf-8")
+    assert "*.bat text eol=crlf" in правила, "нет правила git про CRLF для .bat"
 
 
 def test_untested_mark_reaches_the_form(client):
