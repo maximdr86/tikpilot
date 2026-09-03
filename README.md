@@ -247,11 +247,6 @@ depending on the server locale. Force one with `TIKPILOT_LANG=en` or
 sudo TIKPILOT_LANG=ru bash install-ubuntu.sh
 ```
 
-> **Upgrading from ROSmanager?** The project used to be called that, and the
-> name collided with an existing one. Run `sudo bash migrate-from-rosmanager.sh`
-> to move a running install over without losing data. A local copy needs nothing:
-> the old `rosmanager.db` is picked up and renamed on the first start.
-
 ### Windows, or just to try it out
 
 ```bash
