@@ -72,6 +72,33 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 #: на рабочую точку, и одна опечатка не должна ничего изменить.
 READ_ONLY = re.compile(r"^/[a-z0-9/-]+/(print|monitor)$|^/export$")
 
+#: Поля, которых у живого роутера может не быть по совершенно законной
+#: причине. Сравнение идёт по набору ключей, а RouterOS не присылает поле,
+#: если оно пустое или если состояние ещё не наступило. Без этого списка
+#: отчёт объявлял выдумкой заглушки нормальные вещи, а ложные тревоги
+#: быстро отучают читать отчёт целиком.
+CONDITIONAL: dict[str, dict[str, str]] = {
+    "/system/package/update/print": {
+        "latest-version": "появляется после check-for-updates",
+        "status": "появляется после check-for-updates",
+    },
+    "/ip/arp/print": {
+        "comment": "только у записей, которым его вписали",
+    },
+    "/interface/bridge/host/print": {
+        "vid": "только на мосту с фильтрацией VLAN",
+    },
+    "/ip/neighbor/print": {
+        "mac-address": "не все соседи его сообщают",
+    },
+    "/interface/ethernet/print": {
+        # Заглушка держит это поле нарочно: его шлют три коробки
+        # из сорока семи, и ветка с ним должна оставаться проверенной.
+        # Скорость панель всё равно берёт из monitor, а не отсюда
+        "speed": "шлют не все платы, панель берёт скорость из monitor",
+    },
+}
+
 #: Команды, которые панель действительно задаёт. Список собран по вызовам
 #: в `app/`, а не по тому, что умеет RouterOS: сверять то, чем мы не
 #: пользуемся, значит разглядывать шум. Если добавится новый вызов,
@@ -190,6 +217,12 @@ def check_one(device: dict[str, Any], password: str, fake: Any,
             only_real = sorted(real_keys - fake_keys)
             only_fake = sorted(fake_keys - real_keys)
 
+            # Условные поля выносим отдельно и тревогой не считаем:
+            # их отсутствие означает состояние коробки, а не ошибку
+            условные = CONDITIONAL.get(cmd, {})
+            ожидаемо = [f for f in only_fake if f in условные]
+            only_fake = [f for f in only_fake if f not in условные]
+
             mark = "  "
             if real_err:
                 mark = "!!" if not fake_err else "--"
@@ -206,6 +239,9 @@ def check_one(device: dict[str, Any], password: str, fake: Any,
                     say("     а заглушка отвечает: ветка кода тут не проверяется")
                 continue
             say(f"     строк: роутер {len(real_rows)}, заглушка {len(fake_rows)}")
+            for поле in ожидаемо:
+                say(f"     нет у роутера, и это нормально: {поле}"
+                    f" ({условные[поле]})")
             if only_fake:
                 result["invented"].add(cmd)
                 say(f"     ТОЛЬКО У ЗАГЛУШКИ: {', '.join(only_fake)}")
