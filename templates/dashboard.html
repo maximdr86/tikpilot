@@ -134,8 +134,9 @@
    почему в парке стало на одну меньше. Строка появляется, только когда
    такие точки есть #}
 {% if stats.disabled %}
-<div class="small muted" style="margin-top:-8px;margin-bottom:14px">
-    Не в работе: <a href="/devices">{{ stats.disabled }}</a>.
+<div class="small muted" style="margin:10px 0 18px">
+    Не в работе:
+    <a href="/devices?status=disabled">{{ stats.disabled }}</a>.
     Эти точки панель не опрашивает, и в счётчики выше они не входят.
 </div>
 {% endif %}
