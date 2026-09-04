@@ -5674,6 +5674,12 @@ def test_site_taken_out_of_service_stops_spoiling_the_numbers(client, router):
         "снятая точка попала в общий счёт"
     assert плитка(page, "В сети") == плитка(до, "В сети"), "задеты работающие точки"
     assert "Не в работе" in page, "выключенные нигде не упомянуты"
+    # Ссылка ведёт к самим точкам, а не в общий список: иначе цифра
+    # есть, а на вопрос «какая именно» отвечать нечем
+    assert "/devices?status=disabled" in page
+    список = client.get("/devices?status=disabled").text
+    assert "точка-снята" in список
+    assert "точка-работает" not in список
 
     # И сама карточка объясняет, что происходит, а не выглядит упавшей
     карточка = client.get(f"/devices/{сняли}").text

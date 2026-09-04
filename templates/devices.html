@@ -49,6 +49,7 @@
             <option value="offline" {% if f_status == 'offline' %}selected{% endif %}>Оффлайн</option>
             <option value="unknown" {% if f_status == 'unknown' %}selected{% endif %}>Не проверялось</option>
             <option value="update"  {% if f_status == 'update'  %}selected{% endif %}>Есть обновление</option>
+            <option value="disabled" {% if f_status == 'disabled' %}selected{% endif %}>Не в работе</option>
         </select>
     </div>
     <div class="field">

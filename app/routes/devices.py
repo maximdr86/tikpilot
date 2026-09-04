@@ -66,7 +66,11 @@ def _fetch_devices(q: str = "", group_id: str = "", status: str = "",
     elif group_id:
         sql.append("AND d.group_id = ?")
         params.append(group_id)
-    if status and status != "update":
+    if status == "disabled":
+        # Отдельно от статусов связи: выключенная точка сохраняет тот
+        # статус, что застал последний опрос, и по нему её не найти
+        sql.append("AND d.enabled = 0")
+    elif status and status != "update":
         sql.append("AND d.status = ?")
         params.append(status)
 
