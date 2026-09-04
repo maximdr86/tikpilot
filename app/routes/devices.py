@@ -565,8 +565,19 @@ def rollback_decide(request: Request, device_id: int, what: str,
 
 
 # ---------------------------------------------------------------------- CRUD
-def _device_form_values(form: dict[str, Any]) -> dict[str, Any]:
-    """Нормализовать данные формы устройства."""
+def _device_form_values(form: dict[str, Any], new: bool = False) -> dict[str, Any]:
+    """
+    Нормализовать данные формы устройства.
+
+    `new` меняет смысл отсутствующей галочки «Точка в работе». Снятую
+    галочку браузер не отправляет вовсе, и отличить её от «поля не было»
+    можно только по тому, что это за форма. У новой точки отсутствие поля
+    значит «активна», у существующей — «галочку сняли».
+
+    Раньше подстановка единицы стояла на обеих формах, и выключить точку
+    через карточку было нельзя: галочка снималась, а сохранялась обратно
+    включённой. Это и выглядело как «в панели нет такой возможности».
+    """
     return {
         "name": (form.get("name") or "").strip(),
         "host": (form.get("host") or "").strip(),
@@ -587,7 +598,7 @@ def _device_form_values(form: dict[str, Any]) -> dict[str, Any]:
         # паролем: так опечатка в форме оставляет точку рабочей,
         # а не отключает ей вход молча
         "ssh_auth": "key" if (form.get("ssh_auth") or "") == "key" else "password",
-        "enabled": form_bool(form.get("enabled") or "1"),
+        "enabled": form_bool(form.get("enabled") or ("1" if new else "0")),
     }
 
 
@@ -595,7 +606,7 @@ def _device_form_values(form: dict[str, Any]) -> dict[str, Any]:
 async def create_device(request: Request, user=Depends(require("devices.edit"))):
     """Создать устройство (JSON-ответ, форма отправляется через fetch)."""
     form = dict(await request.form())
-    values = _device_form_values(form)
+    values = _device_form_values(form, new=True)
     if not values["name"] or not values["host"] or not values["username"]:
         return JSONResponse({"error": "Заполните имя, адрес и логин"}, status_code=400)
 
@@ -651,8 +662,9 @@ async def update_device(request: Request, device_id: int,
     # было видно, и без этой проверки любое сохранение карточки молча
     # превращало найденное в ручное: дальше опрос его уже не обновлял,
     # и в списке навсегда оставался оператор с первой проверки.
-    current = query_one("SELECT operator FROM devices WHERE id = ?", (device_id,))
+    current = query_one("SELECT operator, enabled FROM devices WHERE id = ?", (device_id,))
     was = str((current["operator"] if current else "") or "")
+
     typed = values["operator"]
     operator_params: list[Any] = []
     if typed and typed != was:
@@ -677,6 +689,18 @@ async def update_device(request: Request, device_id: int,
         utcnow(),
     ]
     params += operator_params
+
+    # Дата выключения ставится в момент перехода, а не при каждом
+    # сохранении: иначе правка комментария у давно выключенной точки
+    # сдвигала бы дату, и «выключена с марта» превращалось бы в «сегодня»
+    было_включено = bool(current["enabled"]) if current else True
+    стало_включено = bool(values["enabled"])
+    if было_включено and not стало_включено:
+        sql += ", disabled_at=?"
+        params.append(utcnow())
+    elif стало_включено and not было_включено:
+        sql += ", disabled_at=''"
+
     if password:
         sql += ", password_enc=?"
         params.append(encrypt(password))

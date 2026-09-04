@@ -1,4 +1,10 @@
 {
+  "<strong>Точка не в работе.</strong> Панель её не опрашивает, и в карту, мониторинг и отчёты она не входит.": "<strong>This site is out of service.</strong> The panel does not poll it, and it is left out of the map, monitoring and reports.",
+  "Вернуть в работу: «Изменить», галочка «Точка в работе».": "To bring it back: Edit, then the “Site in service” box.",
+  "Выключена %(p0)s.": "Taken out of service on %(p0)s.",
+  "Не в работе: <a href=\"/devices\">%(p0)s</a>. Эти точки панель не опрашивает, и в счётчики выше они не входят.": "Out of service: <a href=\"/devices\">%(p0)s</a>. The panel does not poll these, and they are not in the counts above.",
+  "Снятая галочка убирает точку из карты, мониторинга, отчётов и массовых операций. Опрашивать её панель перестанет. Карточка, паспорт, история падений и бэкапы остаются. Так помечают точки, где оборудование снято или ещё не поставлено, чтобы они не портили статистику парка.": "Unchecking removes the site from the map, monitoring, reports and bulk actions, and the panel stops polling it. The card, the passport, the outage history and the backups all stay. This is how you mark sites where the equipment is removed or not installed yet, so they do not spoil the fleet numbers.",
+  "Точка в работе": "Site in service",
   "Вход по SSH": "SSH login",
   "Касается терминала и команд по SSH. Всё остальное ходит по API с паролем": "Applies to the terminal and SSH commands. Everything else uses the API with a password",
   "Приватный ключ": "Private key",
@@ -1537,7 +1543,6 @@
   "Устройства удалены": "Devices deleted",
   "Устройства</a>": "Devices</a>",
   "Устройство": "Device",
-  "Устройство активно (участвует в массовых операциях)": "Device is enabled (takes part in bulk operations)",
   "Устройство добавлено": "Device added",
   "Устройство не найдено": "Device not found",
   "Устройство недоступно": "Device unreachable",
