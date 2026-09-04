@@ -351,6 +351,10 @@ CREATE TABLE IF NOT EXISTS devices (
     group_id      INTEGER REFERENCES groups(id) ON DELETE SET NULL,
     comment       TEXT NOT NULL DEFAULT '',
     enabled       INTEGER NOT NULL DEFAULT 1,
+    -- Когда точку выключили. Без даты выключенная точка через полгода
+    -- превращается в загадку: почему в парке стало на одну меньше
+    -- и собираются ли её возвращать
+    disabled_at   TEXT NOT NULL DEFAULT '',
     -- Кэш последнего опроса
     status        TEXT NOT NULL DEFAULT 'unknown',   -- online | offline | unknown
     ros_version   TEXT NOT NULL DEFAULT '',
@@ -742,6 +746,7 @@ MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         # Место на диске роутера: свободное и всего, байты
         ("free_space", "INTEGER NOT NULL DEFAULT 0"),
         ("total_space", "INTEGER NOT NULL DEFAULT 0"),
+        ("disabled_at", "TEXT NOT NULL DEFAULT ''"),
         # Вход по SSH ключом: сам ключ и выбранный способ входа
         ("ssh_key_enc", "TEXT NOT NULL DEFAULT ''"),
         ("ssh_auth", "TEXT NOT NULL DEFAULT 'password'"),

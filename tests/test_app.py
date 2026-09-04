@@ -5631,6 +5631,78 @@ def test_private_key_never_leaves_the_panel(client, router):
     assert "BEGIN OPENSSH" not in csv_text
 
 
+def test_site_taken_out_of_service_stops_spoiling_the_numbers(client, router):
+    """
+    Выключенная точка не считается недоступной.
+
+    На точке сняли оборудование на неопределённый срок. Из карты и отчётов
+    она пропадала сразу, а на дашборде оставалась в «не отвечают»: счётчики
+    считали по всем устройствам подряд, а статус у выключенной остаётся
+    тот, что застал последний опрос. Получалось, что парк вечно с аварией.
+    """
+    from app.database import execute, query_one
+
+    группа = client.post("/api/groups", data={"name": "Снятая"}).json()["id"]
+    работает = _add_device(client, router, "точка-работает")
+    сняли = _add_device(client, router, "точка-снята")
+    execute("UPDATE devices SET group_id = ? WHERE id IN (?, ?)",
+            (группа, работает, сняли))
+    execute("UPDATE devices SET status = 'online' WHERE id = ?", (работает,))
+    # Точка числилась недоступной, и в этот момент с неё сняли оборудование
+    execute("UPDATE devices SET status = 'offline' WHERE id = ?", (сняли,))
+
+    def плитка(страница: str, подпись: str) -> int:
+        """Число из плитки дашборда. Считается весь парк, не только наш."""
+        хвост = страница.split(подпись, 1)[1]
+        return int(re.search(r">(\d+)<", хвост).group(1))
+
+    # База в тестах общая, поэтому смотрим не абсолютные числа, а разницу
+    до = client.get("/").text
+    было = query_one("SELECT * FROM devices WHERE id = ?", (сняли,))
+
+    # Выключаем через форму: галочка «Точка в работе» снята, значит поля
+    # `enabled` в отправке нет вовсе
+    client.post(f"/api/devices/{сняли}/update", data={
+        "name": "точка-снята", "host": было["host"], "username": было["username"],
+        "comment": "оборудование снято до весны",
+    })
+    page = client.get("/").text
+
+    assert плитка(page, "Не отвечают") == плитка(до, "Не отвечают") - 1, \
+        "снятая точка всё ещё считается аварией"
+    assert плитка(page, "Всего устройств") == плитка(до, "Всего устройств") - 1, \
+        "снятая точка попала в общий счёт"
+    assert плитка(page, "В сети") == плитка(до, "В сети"), "задеты работающие точки"
+    assert "Не в работе" in page, "выключенные нигде не упомянуты"
+
+    # И сама карточка объясняет, что происходит, а не выглядит упавшей
+    карточка = client.get(f"/devices/{сняли}").text
+    assert "Точка не в работе" in карточка
+
+    стало = query_one("SELECT disabled_at, enabled FROM devices WHERE id = ?", (сняли,))
+    assert стало["enabled"] == 0
+    assert стало["disabled_at"], "дата выключения не проставлена"
+
+    # Повторная правка карточки дату не сдвигает: иначе «выключена
+    # с сентября» превращалось бы в «выключена сегодня» после любого
+    # исправления комментария
+    client.post(f"/api/devices/{сняли}/update", data={
+        "name": "точка-снята", "host": было["host"], "username": было["username"],
+        "comment": "оборудование снято до весны, ключи у Петрова",
+    })
+    позже = query_one("SELECT disabled_at FROM devices WHERE id = ?", (сняли,))
+    assert позже["disabled_at"] == стало["disabled_at"], "дата уехала при правке"
+
+    # Возврат в работу дату снимает
+    client.post(f"/api/devices/{сняли}/update", data={
+        "name": "точка-снята", "host": было["host"], "username": было["username"],
+        "enabled": "1",
+    })
+    вернули = query_one("SELECT disabled_at, enabled FROM devices WHERE id = ?", (сняли,))
+    assert вернули["enabled"] == 1
+    assert not вернули["disabled_at"], "дата выключения осталась у работающей точки"
+
+
 def test_dashboard_checks_use_indexes_instead_of_full_scans(client):
     """
     Проверки дашборда отбирают по времени через индекс, а не перебором.

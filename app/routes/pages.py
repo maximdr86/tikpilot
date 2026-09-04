@@ -93,12 +93,16 @@ async def manifest():
 async def dashboard(request: Request, user=Depends(current_user)):
     """Главная страница: сводка по парку и последние задачи."""
     scope = permissions.scope_sql(user)
+    # Выключенные точки считаются отдельно и не попадают ни в «в сети»,
+    # ни в «не отвечают». Статус у них остаётся тот, что застал последний
+    # опрос, поэтому точка со снятым оборудованием месяцами висела
+    # в «не отвечают», хотя из карты и отчётов уже пропала
     stats = query_one(
         """
-        SELECT COUNT(*)                                             AS total,
-               SUM(CASE WHEN status='online'  THEN 1 ELSE 0 END)    AS online,
-               SUM(CASE WHEN status='offline' THEN 1 ELSE 0 END)    AS offline,
-               SUM(CASE WHEN status='unknown' THEN 1 ELSE 0 END)    AS unknown,
+        SELECT SUM(CASE WHEN enabled=1 THEN 1 ELSE 0 END)           AS total,
+               SUM(CASE WHEN enabled=1 AND status='online'  THEN 1 ELSE 0 END) AS online,
+               SUM(CASE WHEN enabled=1 AND status='offline' THEN 1 ELSE 0 END) AS offline,
+               SUM(CASE WHEN enabled=1 AND status='unknown' THEN 1 ELSE 0 END) AS unknown,
                SUM(CASE WHEN enabled=0        THEN 1 ELSE 0 END)    AS disabled
         FROM devices d WHERE 1=1{scope}
         """.format(scope=scope[0]),
