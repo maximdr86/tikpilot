@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import sqlite3
 import tarfile
@@ -45,6 +46,8 @@ from typing import Any
 
 from . import __version__
 from .config import BASE_DIR, settings
+
+log = logging.getLogger("tikpilot.panelbackup")
 
 #: Куда складываются архивы панели.
 ARCHIVE_DIR_NAME = "panel"
@@ -99,11 +102,57 @@ README = """Архив панели Tikpilot {version}
   4. Запустите:            sudo systemctl start tikpilot
 """
 
+#: То же пояснение для случая, когда скрипта разворачивания в установке
+#: не оказалось. Отдельный текст, а не оговорка мелким шрифтом: человек
+#: читает этот файл после гибели сервера, и обещание команды, которой
+#: в архиве нет, стоит ему часа поисков в худший для этого момент.
+README_NO_RESTORE = """Архив панели Tikpilot {version}
+Создан: {created}
+
+ЧТО ВНУТРИ
+
+  manifest.json         версия, дата, сколько чего внутри
+  data/tikpilot.db      база: устройства, группы, пользователи, история
+  data/fernet.key       ключ шифрования паролей устройств
+  data/backups/         снятые копии роутеров, если они включались в архив
+  env                   файл настроек (.env)
+  app/ templates/ ...   код панели этой же версии
+
+  Скрипта restore.sh здесь НЕТ, и это нормально: панель ставят
+  копированием файлов, и в рабочем каталоге лежит только нужное для
+  работы, без установщика. Разворачивать придётся руками, порядок ниже.
+
+ЭТО ОПАСНЫЙ ФАЙЛ
+
+  База и ключ лежат рядом, поэтому из архива достаются пароли всех
+  роутеров в открытом виде. Считайте его равным связке ключей от всех
+  площадок: не оставляйте на флешке, не отправляйте почтой и не кладите
+  в облако без своего шифрования.
+
+КАК РАЗВЕРНУТЬ РУКАМИ
+
+  0. Возьмите панель версии {version} со страницы выпусков проекта
+     и поставьте обычным способом (install-ubuntu.sh оттуда же).
+     Код этой же версии лежит и здесь, в папках app/, templates/,
+     static/: если до сети не добраться, хватит и его.
+  1. Остановите службу:            sudo systemctl stop tikpilot
+  2. Скопируйте на место:
+       data/tikpilot.db  ->  /opt/tikpilot/data/tikpilot.db
+       data/fernet.key   ->  /opt/tikpilot/data/fernet.key
+       data/backups/     ->  /opt/tikpilot/data/backups/
+       env               ->  /opt/tikpilot/.env
+  3. Проверьте владельца:  sudo chown -R tikpilot:tikpilot /opt/tikpilot
+  4. Запустите:            sudo systemctl start tikpilot
+
+  Вход тем же логином и паролем, что и раньше: они лежат в базе.
+  Без fernet.key база бесполезна: пароли устройств не расшифруются.
+"""
+
 #: Что кладём из папки проекта. Список, а не «всё подряд»: в архив не должны
 #: попасть ни рабочие данные, ни виртуальное окружение, ни devices.csv
 #: с настоящими адресами и учётными записями.
 CODE_ITEMS = (
-    "app", "templates", "static", "tests", "docs",
+    "app", "templates", "static", "tests", "tools", "docs",
     "requirements.txt", "requirements-dev.txt", "pytest.ini",
     "install-ubuntu.sh", "run.sh", "run.bat", "check.sh", "check-data.sh",
     "restore-data.sh", "migrate-from-rosmanager.sh",
@@ -111,6 +160,12 @@ CODE_ITEMS = (
     "README.md", "README.ru.md", "CHANGELOG.md", "CONTRIBUTING.md",
     "SECURITY.md", "LICENSE", ".env.example",
 )
+
+#: Список написан для установки из репозитория, а панель чаще ставят
+#: копированием: в рабочем каталоге лежит только то, что нужно для работы,
+#: без установщика, Dockerfile и документации. Поэтому отсутствие любого
+#: пункта здесь это норма, а не пробел, и молчаливый пропуск правилен.
+#: Неправильно было другое: обещать в пояснении то, чего не положили.
 
 #: Мусор, который в архиве не нужен и только раздувает его.
 SKIP_PARTS = ("__pycache__", ".pytest_cache", ".venv", ".git")
@@ -191,13 +246,27 @@ def build(include_device_backups: bool = True, include_code: bool = True) -> Pat
     root = "tikpilot-panel-%s" % stamp
     path = archive_dir() / name
 
+    # Есть ли чем разворачивать. Проверяем до сборки, потому что от ответа
+    # зависит текст пояснения внутри архива: обещать `sudo bash restore.sh`
+    # там, где его нет, значит соврать человеку ровно в тот момент, когда
+    # у него погиб сервер и проверить обещание уже нечем.
+    restore_src = BASE_DIR / "restore-panel.sh"
+    with_restore = bool(include_code and restore_src.exists())
+    if include_code and not with_restore:
+        # Не ошибка: при установке копированием в рабочем каталоге
+        # установщика и нет. Строка в журнале нужна только чтобы
+        # человек, читающий пояснение внутри архива, не удивлялся
+        log.info("В архив не войдёт restore.sh: %s нет в установке. "
+                 "Пояснение внутри архива описывает разворачивание руками.",
+                 restore_src)
+
     with tempfile.TemporaryDirectory() as tmp:
         db_copy = Path(tmp) / "tikpilot.db"
         snapshot_database(db_copy)
 
         notes = Path(tmp) / "ПРОЧТИ-МЕНЯ.txt"
         notes.write_text(
-            README.format(
+            (README if with_restore else README_NO_RESTORE).format(
                 version=__version__,
                 created=created.strftime("%Y-%m-%d %H:%M:%S UTC"),
             ),
@@ -215,6 +284,10 @@ def build(include_device_backups: bool = True, include_code: bool = True) -> Pat
                     "version": __version__,
                     "created": created.strftime("%Y-%m-%d %H:%M:%S UTC"),
                     "with_code": include_code,
+                    # Отдельным полем, а не выводом из `with_code`: скрипта
+                    # может не быть и при включённом коде, если установку
+                    # обновляли копированием и корневые файлы не перенесли
+                    "with_restore": with_restore,
                     "with_device_backups": include_device_backups,
                     "db_sha256": hashlib.sha256(db_copy.read_bytes()).hexdigest(),
                     **_counts(db_copy, len(device_backups)),
@@ -256,9 +329,8 @@ def build(include_device_backups: bool = True, include_code: bool = True) -> Pat
                 # Скрипт разворачивания кладём под коротким именем: в
                 # пояснении внутри архива написано «sudo bash restore.sh»,
                 # и это должно совпадать с тем, что человек видит рядом
-                restore = BASE_DIR / "restore-panel.sh"
-                if restore.exists():
-                    archive.add(restore, arcname=f"{root}/restore.sh")
+                if with_restore:
+                    archive.add(restore_src, arcname=f"{root}/restore.sh")
 
     os.chmod(path, 0o600)
     return path
