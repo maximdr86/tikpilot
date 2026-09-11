@@ -5631,6 +5631,140 @@ def test_private_key_never_leaves_the_panel(client, router):
     assert "BEGIN OPENSSH" not in csv_text
 
 
+def test_panel_archive_does_not_promise_a_restore_script_it_lacks(monkeypatch, tmp_path):
+    """
+    Пояснение внутри архива говорит правду о том, что в архив попало.
+
+    Скрипт разворачивания кладётся из `restore-panel.sh`, а панель ставится
+    копированием файлов, и корневые скрипты переносят не всегда. Раньше
+    отсутствие обрабатывалось молча: архив собирался без `restore.sh`,
+    а пояснение внутри всё равно предлагало «sudo bash restore.sh».
+    Читают этот файл после гибели сервера, и цена такой неправды там выше
+    обычного.
+    """
+    import json
+    import tarfile
+
+    from app import panelbackup
+
+    # Подменяем каталог проекта на пустой: скрипта в нём заведомо нет
+    monkeypatch.setattr(panelbackup, "BASE_DIR", tmp_path)
+    path = panelbackup.build(include_device_backups=False, include_code=True)
+
+    try:
+        with tarfile.open(path) as archive:
+            имена = archive.getnames()
+            корень = имена[0].split("/")[0]
+            manifest = json.loads(
+                archive.extractfile(f"{корень}/manifest.json").read().decode())
+            пояснение = archive.extractfile(
+                f"{корень}/ПРОЧТИ-МЕНЯ.txt").read().decode("utf-8")
+    finally:
+        path.unlink(missing_ok=True)
+
+    assert not any(n.endswith("/restore.sh") for n in имена)
+    assert manifest["with_restore"] is False, "манифест не отражает состав"
+    assert "restore.sh здесь НЕТ" in пояснение
+    assert "КАК РАЗВЕРНУТЬ РУКАМИ" in пояснение
+    assert "sudo bash restore.sh" not in пояснение, "обещание осталось"
+
+
+def test_panel_update_check_compares_versions_by_numbers():
+    """
+    Версии сравниваются числами, а предвыпуски пропускаются.
+
+    Строковое сравнение здесь врёт дважды: «1.9.0» оказывается больше
+    «1.10.0», а тег вроде `v1.75.0-rc1` объявляется новее самого выпуска.
+    Человек, поставивший панель на рабочий сервер, не должен узнавать
+    из плашки о черновике, который завтра перепишут.
+    """
+    from app.selfupdate import is_prerelease, parse_version
+
+    assert parse_version("v1.75.0") == parse_version("1.75.0") == (1, 75, 0)
+    assert parse_version("1.10.0") > parse_version("1.9.0"), "сравнение строками"
+    assert parse_version("мусор") == ()
+
+    assert is_prerelease("v1.75.0-rc1")
+    assert is_prerelease("1.75.0b2")
+    assert not is_prerelease("v1.75.0")
+
+
+def test_panel_update_check_is_off_and_silent_by_default(client, router):
+    """
+    Пока проверка не включена, панель наружу не ходит.
+
+    Это не мелочь настройки, а обещание: панель ставят на свой сервер,
+    и она должна работать в сети без выхода в интернет. Тот же принцип,
+    что у запроса к реестру адресов.
+    """
+    from app import selfupdate
+    from app.config import settings
+
+    было = settings.update_check
+    settings.update_check = False
+    selfupdate.forget()
+    try:
+        state = selfupdate.check()
+        assert state == {"enabled": False, "latest": "", "newer": False, "error": ""}
+        # И на дашборде о ней ни слова
+        assert "новая версия панели" not in client.get("/").text.lower()
+    finally:
+        settings.update_check = было
+        selfupdate.forget()
+
+
+def test_panel_update_check_tells_nothing_about_itself(monkeypatch):
+    """
+    В запрос не подставляется ничего о самой установке.
+
+    Разница между «схожу посмотрю» и «доложу о себе» здесь принципиальная:
+    ни версии, ни адреса панели, ни размера парка в запросе быть не должно,
+    а `User-Agent` одинаковый у всех, чтобы по нему нельзя было отличить
+    одну установку от другой.
+    """
+    import json
+    import urllib.request
+
+    from app import selfupdate
+    from app.config import settings
+
+    ушло: dict[str, object] = {}
+
+    class _Ответ:
+        def read(self):
+            return json.dumps({"tag_name": "v99.0.0"}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    def подмена(request, timeout=None):  # noqa: ANN001
+        ушло["url"] = request.full_url
+        ушло["headers"] = dict(request.headers)
+        ушло["body"] = request.data
+        return _Ответ()
+
+    monkeypatch.setattr(urllib.request, "urlopen", подмена)
+    было = settings.update_check
+    settings.update_check = True
+    selfupdate.forget()
+    try:
+        state = selfupdate.check(force=True)
+        assert state["newer"] is True and state["latest"] == "v99.0.0"
+    finally:
+        settings.update_check = было
+        selfupdate.forget()
+
+    assert ушло["body"] is None, "в запросе есть тело"
+    assert "?" not in str(ушло["url"]), "в адрес подставлены параметры"
+    склеено = " ".join(str(v) for v in dict(ушло["headers"]).values()).lower()
+    from app import __version__
+    assert __version__ not in склеено, "версия уехала в заголовках"
+    assert "tikpilot" == dict(ушло["headers"]).get("User-agent", "").lower()
+
+
 def test_site_taken_out_of_service_stops_spoiling_the_numbers(client, router):
     """
     Выключенная точка не считается недоступной.

@@ -44,6 +44,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from . import __version__
 from .database import query
 
 log = logging.getLogger("tikpilot.attention")
@@ -435,6 +436,36 @@ def _check_router_space(scope: tuple[str, list[Any]]) -> Item | None:
     )
 
 
+def _check_panel_update(scope: tuple[str, list[Any]]) -> Item | None:
+    """
+    Вышла ли новая версия самой панели.
+
+    Здесь же, где и остальное про саму панель: вопрос «что мне сделать»
+    один, и ответы на него не должны лежать на разных страницах.
+
+    Уровень намеренно спокойный. Новая версия это не авария, и красным
+    её показывать значит приучить не смотреть на красное.
+
+    Ссылка ведёт на страницу выпусков, а не на кнопку «обновить»: панель
+    ставится копированием файлов и обновить себя не может.
+    """
+    from . import selfupdate
+
+    state = selfupdate.check()
+    if not state["enabled"] or not state["newer"]:
+        return None
+    return Item(
+        key="panel_update",
+        level="info",
+        group="resources",
+        title="Вышла новая версия панели",
+        detail=f"установлена {__version__}, доступна {state['latest']}",
+        count=1,
+        href=state["page"],
+        link_text="что изменилось",
+    )
+
+
 def _check_panel_disk(scope: tuple[str, list[Any]]) -> Item | None:
     """
     Место на диске самой панели.
@@ -530,6 +561,7 @@ CHECKS: tuple[Callable[[tuple[str, list[Any]]], Item | None], ...] = (
     _check_cpu,
     _check_memory,
     _check_router_space,
+    _check_panel_update,
     _check_risky_services,
     _check_jobs,
     _check_updates,

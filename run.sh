@@ -61,4 +61,9 @@ echo "==> $(t "Tikpilot is starting at" "Tikpilot запускается на") 
 # python -m, а не bin/uvicorn: у скрипта в bin в первой строке записан
 # абсолютный путь к интерпретатору, с которым его ставили, и после
 # переноса папки он указывает в никуда
-exec "$VENV/bin/python" -m uvicorn app.main:app --host "$HOST" --port "$PORT" "${EXTRA[@]}"
+# Раскрытие через `${EXTRA[@]+...}`, а не просто `"${EXTRA[@]}"`: в bash 3.2,
+# который до сих пор стоит в macOS, пустой массив под `set -u` считается
+# неинициализированным, и запуск падает с «EXTRA[@]: unbound variable».
+# В bash 4.4 и новее этого нет, поэтому на Linux мы ошибку не видели.
+exec "$VENV/bin/python" -m uvicorn app.main:app --host "$HOST" --port "$PORT" \
+     ${EXTRA[@]+"${EXTRA[@]}"}
