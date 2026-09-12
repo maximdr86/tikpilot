@@ -341,10 +341,16 @@ def test_csv_import(client):
     assert query_one("SELECT id FROM groups WHERE name = 'ИмпортТест'") is not None
 
 
-def test_backup_downloaded_over_ftp(client, router):
+def test_backup_downloaded_over_ftp(client, router, monkeypatch):
     """Полный цикл действия «Снять бэкап»: создание файлов, FTP-скачивание, запись в БД."""
     payload_backup = b"\x88\xac\x00\x00FAKE-BINARY-BACKUP" * 16
     payload_export = "# feb/30/2026 test export\n/ip address\nadd address=10.0.0.1/24\n".encode()
+
+    # Транспорт задан явно: при `auto` панель сначала постучится по SSH,
+    # а на машине, где на 22 порту кто-то слушает, поведение теста зависело
+    # бы от чужой настройки
+    from app.config import settings as app_settings
+    monkeypatch.setattr(app_settings, "backup_transport", "ftp")
 
     with FakeFtp({}, username="tikpilot", password="s3cret") as ftp:
         # Заглушка FTP отдаёт ровно те файлы, которые «создало» устройство
@@ -395,6 +401,136 @@ def test_backup_downloaded_over_ftp(client, router):
 
     # За собой убрали: временных файлов на устройстве не осталось
     assert router.files == []
+
+
+def test_backup_downloaded_over_sftp(client, router, monkeypatch):
+    """
+    Бэкап забирается по SSH, когда FTP на точке выключен.
+
+    Просьба из issue #3: FTP это отдельная служба с паролем в открытом виде,
+    а SSH на точке включён и так. Проверяется настоящим сервером SFTP,
+    а не моком: половина ошибок здесь в подсистеме и в правах на файл.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from app.config import settings as app_settings
+    from app.crypto import encrypt
+    from app.database import execute
+    from tests.fake_ssh import FakeSSH
+
+    payload_backup = b"\x88\xac\x00\x00FAKE-BINARY-BACKUP" * 8
+    payload_export = "# test export\n/ip address\nadd address=10.0.0.2/24\n".encode()
+
+    monkeypatch.setattr(app_settings, "backup_transport", "sftp")
+    ssh = FakeSSH(root=tempfile.mkdtemp(prefix="sftp-backup-"))
+    original = router._handle
+
+    def handle(cmd, attrs):  # noqa: ANN001
+        result = original(cmd, attrs)
+        # Заглушка роутера «создала» файлы, значит они должны появиться
+        # и в хранилище, из которого их отдаёт SFTP
+        if cmd == "/system/backup/save":
+            ssh.put(attrs["name"] + ".backup", payload_backup)
+        elif cmd == "/export":
+            ssh.put(attrs["file"] + ".rsc", payload_export)
+        return result
+
+    router._handle = handle  # type: ignore[method-assign]
+    try:
+        device_id = execute(
+            "INSERT INTO devices (name, host, api_port, ssh_port, username, "
+            "password_enc, enabled, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,1,datetime('now'),datetime('now'))",
+            ("sftp-backup-rtr", "127.0.0.1", router.port, ssh.port,
+             "tikpilot", encrypt("s3cret")),
+        )
+
+        job_id = client.post("/api/jobs", json={
+            "action": "backup", "device_ids": [device_id],
+            "params": {"do_binary": "1", "do_export": "1", "cleanup": "1"},
+        }).json()["job_id"]
+
+        for _ in range(120):
+            if client.get(f"/api/jobs/{job_id}").json()["status"] == "done":
+                break
+            time.sleep(0.25)
+    finally:
+        router._handle = original  # type: ignore[method-assign]
+        ssh.stop()
+
+    item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job_id,))
+    assert item["status"] == "ok", item["result"]
+
+    rows = query("SELECT * FROM backups WHERE device_id = ? ORDER BY kind", (device_id,))
+    assert {r["kind"] for r in rows} == {"binary", "export"}
+    sizes = {r["kind"]: r["size"] for r in rows}
+    assert sizes["binary"] == len(payload_backup)
+    assert sizes["export"] == len(payload_export)
+
+    # Содержимое доехало целым, а не обрезанным на первом блоке
+    binary = next(r for r in rows if r["kind"] == "binary")
+    assert Path(app_settings.backup_dir, binary["filename"]).read_bytes() == payload_backup
+
+
+def test_backup_falls_back_to_ftp_when_ssh_is_closed(client, router, monkeypatch):
+    """
+    При `auto` недоступный SSH не ломает бэкап: панель уходит на FTP.
+
+    Это условие совместимости. На парке, где SSH закрыт или у пользователя
+    нет политики «ssh», обновление панели не должно отнимать работающие
+    бэкапы.
+    """
+    import socket
+
+    from app.config import settings as app_settings
+    from app.crypto import encrypt
+    from app.database import execute
+
+    payload = b"FALLBACK" * 10
+    monkeypatch.setattr(app_settings, "backup_transport", "auto")
+
+    # Порт, который точно никто не слушает: заняли и сразу отпустили
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    dead_port = probe.getsockname()[1]
+    probe.close()
+
+    with FakeFtp({}, username="tikpilot", password="s3cret") as ftp:
+        original = router._handle
+
+        def handle(cmd, attrs):  # noqa: ANN001
+            result = original(cmd, attrs)
+            if cmd == "/system/backup/save":
+                ftp.files[attrs["name"] + ".backup"] = payload
+            return result
+
+        router._handle = handle  # type: ignore[method-assign]
+        try:
+            device_id = execute(
+                "INSERT INTO devices (name, host, api_port, ftp_port, ssh_port, "
+                "username, password_enc, enabled, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,1,datetime('now'),datetime('now'))",
+                ("fallback-rtr", "127.0.0.1", router.port, ftp.port, dead_port,
+                 "tikpilot", encrypt("s3cret")),
+            )
+
+            job_id = client.post("/api/jobs", json={
+                "action": "backup", "device_ids": [device_id],
+                "params": {"do_binary": "1", "do_export": "0", "cleanup": "1"},
+            }).json()["job_id"]
+
+            for _ in range(120):
+                if client.get(f"/api/jobs/{job_id}").json()["status"] == "done":
+                    break
+                time.sleep(0.25)
+        finally:
+            router._handle = original  # type: ignore[method-assign]
+
+    item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job_id,))
+    assert item["status"] == "ok", item["result"]
+    row = query_one("SELECT size FROM backups WHERE device_id = ?", (device_id,))
+    assert row["size"] == len(payload), "файл не забрали по FTP"
 
 
 # ------------------------------------------------------ обновление RouterOS
@@ -5906,6 +6042,49 @@ def test_launchers_survive_a_copied_virtualenv():
     # Гарантию даёт `eol=crlf`, она действует при выгрузке на любой системе
     правила = Path(".gitattributes").read_text(encoding="utf-8")
     assert "*.bat text eol=crlf" in правила, "нет правила git про CRLF для .bat"
+
+
+def test_update_script_protects_data_and_rolls_back():
+    """
+    Скрипт обновления не трогает данные и умеет вернуть прежний код.
+
+    Он заменяет каталоги целиком, поэтому цена ошибки здесь выше, чем
+    в остальном проекте: одна лишняя строка в списке переносимого уносит
+    базу и `data/fernet.key`, а без ключа пароли всех точек не расшифровать.
+    Тест закрепляет три свойства, каждое из которых руками не проверишь
+    в каждом выпуске.
+    """
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    текст = Path("tools/update.sh").read_text(encoding="utf-8")
+
+    # 1. Данные и настройки исключены из переноса
+    assert ".env|data|" in текст, "в скрипте нет исключения для .env и data"
+
+    # 2. Есть откат и проверка, что панель поднялась. Обновление без них
+    #    оставляет сломанную установку, а человек узнаёт об этом от людей
+    #    на точках, а не от скрипта
+    assert "healthz" in текст, "скрипт не проверяет, поднялась ли панель"
+    assert "restore" in текст, "в скрипте нет отката"
+
+    # 3. Скрипт перезапускается из копии: он обновляет и сам себя, а bash
+    #    читает файл по мере выполнения, и подмена на ходу рвёт разбор
+    assert "TIKPILOT_UPDATE_COPY" in текст, "скрипт не перезапускается из копии"
+
+    # 4. Берёт и выпуск, и ветку. Без ветки код между выпусками пришлось бы
+    #    переносить руками, а это ровно то, от чего скрипт избавляет
+    assert "refs/tags/" in текст and "refs/heads/" in текст, \
+        "скрипт умеет не оба источника: выпуск и ветку"
+
+    # Синтаксис проверяем настоящим bash, если он есть: на Windows его может
+    # не быть, а в CI он есть всегда
+    bash = shutil.which("bash")
+    if bash:
+        готово = subprocess.run([bash, "-n", "tools/update.sh"],
+                                capture_output=True, text=True)
+        assert готово.returncode == 0, готово.stderr
 
 
 def test_untested_mark_reaches_the_form(client):

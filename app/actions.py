@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from dataclasses import dataclass, field
@@ -37,6 +38,8 @@ from typing import Any, Callable
 from .config import settings
 from .database import execute, utcnow
 from .mikrotik import DeviceError, MikroTik, flatten_rows, is_newer, safe_filename
+
+log = logging.getLogger("tikpilot.actions")
 
 
 # --------------------------------------------------------------------- модели
@@ -1058,11 +1061,59 @@ def act_backup(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]) -> 
     return _run_backup(mt, device, params)
 
 
+def _fetch_file(mt: MikroTik, device: dict[str, Any], remote: str, local: Path,
+                chosen: dict[str, str]) -> int:
+    """
+    Забрать файл с устройства. Возвращает его размер.
+
+    Путей два: SFTP внутри SSH и встроенный FTP-сервер RouterOS. Порядок
+    задаёт `BACKUP_TRANSPORT`, по умолчанию сначала SFTP: SSH на точке обычно
+    включён и так, а FTP это лишняя служба с паролем в открытом виде.
+
+    `chosen` помнит удавшийся способ на время одного вызова. Без этого
+    на точке без SSH мы платили бы неудачной попыткой за каждый файл,
+    а их два, и точек полсотни.
+    """
+    from .terminal import TerminalError, download_file
+
+    order = {"sftp": ["sftp"], "ftp": ["ftp"]}.get(settings.backup_transport, ["sftp", "ftp"])
+    if chosen.get("transport"):
+        order = [chosen["transport"]]
+
+    problems: list[str] = []
+    for transport in order:
+        try:
+            if transport == "sftp":
+                try:
+                    size = download_file(device, remote, local)
+                except TerminalError as exc:
+                    raise DeviceError(str(exc)) from exc
+            else:
+                size = mt.download_via_ftp(remote, local)
+        except DeviceError as exc:
+            problems.append(str(exc))
+            continue
+        if not chosen.get("transport"):
+            # Один раз на точку за прогон: по этой строке человек видит,
+            # можно ли выключать FTP на площадке, не гадая
+            log.info("Файлы с %s забираем по %s", device.get("host"), transport.upper())
+        chosen["transport"] = transport
+        return size
+
+    # Наверх уходит последняя причина, а не склейка всех: склеенная строка
+    # не переводится (перевод ищет сообщение целиком) и в окне задачи
+    # не читается. Полная картина остаётся в журнале панели.
+    if len(problems) > 1:
+        log.warning("Не удалось забрать %s с %s: %s", remote, device.get("host"),
+                    "; ".join(problems))
+    raise DeviceError(problems[-1] if problems else f"Не удалось скачать {remote}")
+
+
 def _run_backup(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]) -> str:
     """
     Полный цикл резервного копирования:
-    создать файлы на устройстве → дождаться их появления → скачать по FTP →
-    убрать за собой.
+    создать файлы на устройстве → дождаться их появления → скачать
+    (SFTP или FTP, см. `_fetch_file`) → убрать за собой.
 
     Вынесено в отдельную функцию, потому что используется ещё и обновлением
     RouterOS (бэкап перед установкой).
@@ -1081,6 +1132,7 @@ def _run_backup(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]) ->
 
     dev_dir = _device_backup_dir(device)
     results: list[str] = []
+    chosen: dict[str, str] = {}
 
     # --- бинарный бэкап ----------------------------------------------------
     if do_binary:
@@ -1093,7 +1145,7 @@ def _run_backup(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]) ->
         remote = f"{base}.backup"
         _wait_for_file(mt, remote)
         local = dev_dir / f"{safe_filename(device['name'])}_{stamp}.backup"
-        size = mt.download_via_ftp(remote, local)
+        size = _fetch_file(mt, device, remote, local, chosen)
         _record_backup(device, "binary", local, size, params.get("_job_id"))
         results.append(f"{local.name} ({_kb(size)})")
         if cleanup:
@@ -1112,7 +1164,7 @@ def _run_backup(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]) ->
         remote = f"{base}.rsc"
         _wait_for_file(mt, remote)
         local = dev_dir / f"{safe_filename(device['name'])}_{stamp}.rsc"
-        size = mt.download_via_ftp(remote, local)
+        size = _fetch_file(mt, device, remote, local, chosen)
         _record_backup(device, "export", local, size, params.get("_job_id"))
         results.append(f"{local.name} ({_kb(size)})")
         if cleanup:
