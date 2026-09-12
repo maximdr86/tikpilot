@@ -13,11 +13,18 @@
 повторяет введённое эхом и выдаёт ответ на пару известных команд.
 Полностью изображать RouterOS незачем, терминал прозрачен и содержимого
 не разбирает.
+
+Здесь же подсистема SFTP, только на чтение: по ней панель забирает бэкапы,
+когда FTP на точке выключен. На запись она не нужна, а разрешать её значило
+бы дать тесту возможность, которой у панели нет.
 """
 
 from __future__ import annotations
 
+import errno
+import os
 import socket
+import tempfile
 import threading
 import time
 from typing import Any
@@ -50,6 +57,10 @@ class _Server(paramiko.ServerInterface):
         self.exec_requested = threading.Event()
         self.executed: list[str] = []
         self.size: tuple[int, int] = (0, 0)
+        #: Каналы, отданные подсистеме SFTP. Их обслуживает paramiko
+        #: в своём потоке, и лезть в них оболочкой нельзя: два писателя
+        #: в одном канале рвут протокол передачи файлов
+        self.subsystems: set[int] = set()
 
     def check_auth_password(self, username: str, password: str) -> int:
         if username == self.username and password == self.password:
@@ -100,10 +111,78 @@ class _Server(paramiko.ServerInterface):
         self.exec_requested.set()
         return True
 
+    def check_channel_subsystem_request(self, channel, name) -> bool:  # noqa: ANN001
+        """Запрос подсистемы. Нас интересует только SFTP."""
+        if str(name) == "sftp":
+            self.subsystems.add(channel.get_id())
+        return super().check_channel_subsystem_request(channel, name)
+
     def check_channel_window_change_request(self, channel, width, height,  # noqa: ANN001
                                             pixelwidth, pixelheight) -> bool:
         self.size = (width, height)
         return True
+
+
+class _Handle(paramiko.SFTPHandle):
+    """Открытый файл на стороне сервера. Нужен только для чтения."""
+
+    def stat(self) -> Any:
+        try:
+            return paramiko.SFTPAttributes.from_stat(os.fstat(self.readfile.fileno()))
+        except OSError as exc:
+            return paramiko.SFTPServer.convert_errno(exc.errno)
+
+
+class _SFTP(paramiko.SFTPServerInterface):
+    """
+    Подсистема SFTP поверх одной папки, только чтение.
+
+    RouterOS отдаёт файлы из своего плоского хранилища, папок там нет,
+    поэтому из пути берём только имя: так заглушка ведёт себя как роутер
+    и заодно не даёт тесту выйти за свою папку.
+    """
+
+    def __init__(self, server: Any, *args: Any, root: str = "", **kwargs: Any) -> None:
+        super().__init__(server, *args, **kwargs)
+        self.root = root
+
+    def _real(self, path: str) -> str:
+        return os.path.join(self.root, os.path.basename(str(path)))
+
+    def open(self, path: str, flags: int, attr: Any) -> Any:
+        if flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND):
+            return paramiko.SFTP_PERMISSION_DENIED
+        try:
+            readfile = open(self._real(path), "rb")  # noqa: SIM115 — закроет paramiko
+        except OSError as exc:
+            return paramiko.SFTPServer.convert_errno(exc.errno)
+        handle = _Handle(flags)
+        handle.filename = path  # type: ignore[attr-defined]
+        handle.readfile = readfile  # type: ignore[attr-defined]
+        return handle
+
+    def stat(self, path: str) -> Any:
+        try:
+            return paramiko.SFTPAttributes.from_stat(os.stat(self._real(path)))
+        except OSError as exc:
+            return paramiko.SFTPServer.convert_errno(exc.errno)
+
+    lstat = stat
+
+    def list_folder(self, path: str) -> Any:
+        try:
+            out = []
+            for name in os.listdir(self.root):
+                item = paramiko.SFTPAttributes.from_stat(
+                    os.stat(os.path.join(self.root, name)))
+                item.filename = name
+                out.append(item)
+            return out
+        except OSError as exc:
+            return paramiko.SFTPServer.convert_errno(exc.errno)
+
+    def remove(self, path: str) -> int:
+        return paramiko.SFTPServer.convert_errno(errno.EACCES)
 
 
 class FakeSSH:
@@ -117,9 +196,12 @@ class FakeSSH:
     PROMPT = "[admin@MikroTik] > "
 
     def __init__(self, username: str = "tikpilot", password: str = "s3cret",
-                 key: Any = None, authorized: Any = None) -> None:
+                 key: Any = None, authorized: Any = None, root: str = "") -> None:
         self.username, self.password = username, password
         self.key = key or host_key()
+        #: Папка, которую отдаёт подсистема SFTP. Пусто — значит файлов нет,
+        #: и попытка скачать кончится отказом, как на роутере без них
+        self.root = root or tempfile.mkdtemp(prefix="fake-sftp-")
         #: Публичная часть ключа, которую сервер примет. Аналог того, что
         #: на роутере лежит в `/user ssh-keys`
         self.authorized = authorized
@@ -162,6 +244,8 @@ class FakeSSH:
         """
         transport = paramiko.Transport(conn)
         transport.add_server_key(self.key)
+        transport.set_subsystem_handler("sftp", paramiko.SFTPServer, _SFTP,
+                                        root=self.root)
         server = _Server(self.username, self.password, self.authorized)
         self.server = server
         try:
@@ -185,11 +269,15 @@ class FakeSSH:
     def _channel(self, server: "_Server", channel: Any) -> None:
         """Обслужить один канал: либо команду, либо интерактивную оболочку."""
         try:
-            # Клиент просит либо оболочку, либо команду. Ждём, что придёт
+            # Клиент просит оболочку, команду или подсистему. Ждём, что придёт
             for _ in range(100):
+                if channel.get_id() in server.subsystems:
+                    return          # SFTP обслуживает paramiko, мы тут лишние
                 if server.shell.is_set() or server.exec_requested.is_set():
                     break
                 time.sleep(0.05)
+            if channel.get_id() in server.subsystems:
+                return
 
             if server.exec_requested.is_set():
                 command = server.executed[-1] if server.executed else ""
@@ -234,6 +322,11 @@ class FakeSSH:
         if line:
             return "выполнено: %s\r\n" % line
         return ""
+
+    def put(self, name: str, data: bytes) -> None:
+        """Положить файл в хранилище, как будто его создал роутер."""
+        with open(os.path.join(self.root, name), "wb") as fh:
+            fh.write(data)
 
     def stop(self) -> None:
         self._stop.set()

@@ -287,7 +287,10 @@ Each device needs the API enabled and a dedicated user. Run this on the router:
 # optionally restrict it to the server address:
 /ip service set api address=192.0.2.10/32
 
-# 2. FTP is only needed to download backups
+# 2. FTP is only needed to download backups, and only when SSH is not used:
+#    by default the panel tries SFTP (inside SSH) first and falls back to FTP
+#    when SSH is unavailable. To avoid enabling FTP at all, set
+#    BACKUP_TRANSPORT=sftp and give the user the ssh policy
 /ip service set ftp disabled=no address=192.0.2.10/32
 
 # 3. A group with minimal rights
@@ -971,6 +974,53 @@ long. Execution on the device is not interrupted.
 
 ---
 
+## Updating the panel
+
+The panel is usually installed by copying files rather than with git, so
+`git pull` is not an option here. A script does the update:
+
+```bash
+cd /opt/tikpilot
+bash tools/update.sh
+```
+
+The argument says what to take:
+
+```bash
+bash tools/update.sh --check          # only report what is available
+bash tools/update.sh v1.75.0          # a particular release
+bash tools/update.sh main             # a branch, the code between releases
+bash tools/update.sh ~/panel.tar.gz   # a local archive, no internet
+```
+
+If the script is not in the panel directory yet, the first run can go without
+it, from that directory:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/maximdr86/tikpilot/main/tools/update.sh \
+    | bash -s -- main
+```
+
+It installs itself along with the rest of the code, so after that
+`bash tools/update.sh` is enough.
+
+The order is fixed: the current code is kept in `.update-backup`, the files
+are replaced, dependencies are installed if `requirements.txt` changed, the
+service is restarted (systemd on Ubuntu, launchd on macOS) and `/healthz` is
+polled. If the panel does not come up within half a minute, the script puts
+the previous code back and restarts again, so a working install is never left
+broken.
+
+`data` and `.env` are never touched. Files that are not part of the release
+(your own `devices.csv`, your notes) stay where they are: only what the
+archive contains is replaced.
+
+If no service is found, the script updates the code and asks you to restart
+the panel yourself: there is no point health-checking something nobody
+restarted.
+
+---
+
 ## Moving to another server
 
 Everything worth keeping lives in the `data` folder: the database, the
@@ -1148,6 +1198,7 @@ tar czf tikpilot-$(date +%F).tar.gz data/ .env
 | `MAX_WORKERS` | `12` | how many devices are processed at once |
 | `API_TIMEOUT` | `10` | RouterOS API timeout, seconds |
 | `FTP_TIMEOUT` | `30` | backup download timeout, seconds |
+| `BACKUP_TRANSPORT` | `auto` | how backups are fetched: `auto` (SFTP, then FTP), `sftp`, `ftp` |
 | `MONITOR_ENABLED` | `1` | availability monitoring |
 | `MONITOR_INTERVAL` | `60` | how often to check the link, seconds |
 | `MONITOR_FULL_INTERVAL` | `900` | how often to poll in detail, seconds |
@@ -1234,6 +1285,7 @@ And set `COOKIE_SECURE=1` in `.env`.
 | Did not answer within N s | the command is long, usually a script. Raise "wait for completion". The device is reachable |
 | RouterOS rejected the command | the user lacks a policy (`write`, `test`, `policy`, `reboot`) |
 | FTP: download failed | is the `ftp` service on, does the user have the `ftp` policy, is port 21 reachable |
+| SFTP: download failed | is the `ssh` service on, does the user have the `ssh` policy, is port 22 reachable |
 | The backup file never appeared | not enough space on the device (`/system/resource print`) |
 | Every device went offline after changing `FERNET_KEY` | the passwords are encrypted with the old key. Restore `data/fernet.key` or re-enter the passwords |
 

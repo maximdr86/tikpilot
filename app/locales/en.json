@@ -311,6 +311,18 @@
       "FTP: could not download \\1 (\\2)"
     ],
     [
+      "^SFTP: не удалось скачать (.+?) \\((.*)\\)$",
+      "SFTP: could not download \\1 (\\2)"
+    ],
+    [
+      "^SFTP: на устройстве нет файла (.*)$",
+      "SFTP: no such file on the device: \\1"
+    ],
+    [
+      "^Не удалось скачать (.*)$",
+      "Could not download \\1"
+    ],
+    [
       "^Identity установлен: (.*)$",
       "Identity set: \\1"
     ],

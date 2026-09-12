@@ -46,6 +46,7 @@ import re
 import socket
 import threading
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from .config import settings
@@ -273,6 +274,45 @@ def connect(device: dict[str, Any]) -> Any:
     if seen.get("fingerprint") and not known:
         remember_fingerprint(device_id, seen["fingerprint"])
     return client
+
+
+def download_file(device: dict[str, Any], remote_name: str, local_path: Path) -> int:
+    """
+    Скачать файл с устройства по SFTP. Возвращает размер в байтах.
+
+    Зачем, когда есть FTP: FTP на точке это отдельная служба, которая держит
+    открытый порт и принимает пароль в открытом виде, а SSH там включён и так.
+    RouterOS отдаёт файлы подсистемой SFTP своего сервера SSH, и этого
+    достаточно, чтобы службу FTP не включать вовсе.
+
+    Соединение разовое, как и у команд по SSH: бэкап снимается раз в сутки,
+    держать ради него постоянную сессию незачем.
+    """
+    client = connect(device)
+    try:
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        sftp = client.open_sftp()
+        try:
+            sftp.get(remote_name, str(local_path))
+        finally:
+            try:
+                sftp.close()
+            except Exception:  # noqa: BLE001 — закрытие не должно подменять ошибку
+                pass
+    except TerminalError:
+        raise
+    except FileNotFoundError as exc:
+        raise TerminalError(f"SFTP: на устройстве нет файла {remote_name}") from exc
+    except Exception as exc:  # noqa: BLE001 — paramiko бросает и OSError, и своё
+        # Подсистему SFTP можно выключить в /ip ssh, и тогда канал просто
+        # не открывается. Человеку нужно знать, что дело в ней, а не в сети.
+        raise TerminalError(f"SFTP: не удалось скачать {remote_name} ({_explain(exc)})") from exc
+    finally:
+        try:
+            client.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return local_path.stat().st_size
 
 
 class Session:

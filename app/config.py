@@ -116,6 +116,18 @@ class Settings:
         self.api_timeout: int = _int_env("API_TIMEOUT", 10)
         self.ftp_timeout: int = _int_env("FTP_TIMEOUT", 30)
 
+        # Чем забирать файлы бэкапов с устройства:
+        #   auto — сначала SFTP (внутри SSH), при неудаче FTP. По умолчанию,
+        #          потому что SSH на точке обычно уже включён, и тогда службу
+        #          FTP с паролем в открытом виде можно не держать вовсе.
+        #   sftp — только SFTP. Честный отказ лучше тихого возврата к FTP,
+        #          если FTP выключен намеренно.
+        #   ftp  — только FTP, как было до версии 1.75.
+        transport = os.getenv("BACKUP_TRANSPORT", "auto").strip().lower()
+        if transport not in ("auto", "sftp", "ftp"):
+            transport = "auto"
+        self.backup_transport: str = transport
+
         # Ожидание устройства после перезагрузки (обновление RouterOS)
         self.reboot_initial_delay: int = _int_env("REBOOT_INITIAL_DELAY", 20)
         self.reboot_probe_interval: int = _int_env("REBOOT_PROBE_INTERVAL", 10)
