@@ -299,6 +299,24 @@ def _allowed_networks() -> list[Any]:
     return result
 
 
+def _name_keys(name: Any) -> list[str]:
+    """
+    Ключи, по которым ищем точку по имени из строки журнала.
+
+    Имя узла в syslog не может содержать пробел: он разделяет поля, и
+    RouterOS пробелы выбрасывает. Точка «NV st. 253» приезжает как
+    «NVst.253», поэтому кроме самого имени держим вариант без пробелов.
+    """
+    value = str(name or "").strip().lower()
+    if not value:
+        return []
+    keys = [value]
+    squashed = "".join(value.split())
+    if squashed and squashed != value:
+        keys.append(squashed)
+    return keys
+
+
 class _Sources:
     """
     Кто нам пишет: адрес источника в устройство панели.
@@ -329,9 +347,9 @@ class _Sources:
             self._by_name = {}
             for row in rows:
                 for name in (row["identity"], row["name"]):
-                    if name:
+                    for key in _name_keys(name):
                         self._by_name.setdefault(
-                            str(name).strip().lower(), {"id": row["id"], "name": row["name"]})
+                            key, {"id": row["id"], "name": row["name"]})
 
             # Адреса, разрешённые человеком по кнопке на странице журнала
             self._extra = {}
@@ -356,7 +374,11 @@ class _Sources:
         точкой.
         """
         self.refresh()
-        return self._by_name.get(str(host or "").strip().lower())
+        for key in _name_keys(host):
+            found = self._by_name.get(key)
+            if found:
+                return found
+        return None
 
     def match(self, address: str) -> tuple[int | None, str, bool]:
         """
@@ -432,13 +454,16 @@ def _accept(raw: str, address: str) -> None:
         return
 
     row = parse(raw)
-    if device_id is None:
-        # Адрес разрешён, но за устройством не закреплён. Пробуем узнать
-        # точку по имени, которым она подписалась: роутер пишет свой
-        # identity, и он у нас есть.
-        guess = _sources.by_name(row.get("host", ""))
-        if guess:
-            device_id, device_name = guess["id"], guess["name"]
+    # Имя из строки точнее адреса, и проверяется оно всегда, а не только
+    # когда адрес ни за кем не закреплён. Причина: за хабом SSTP полсотни
+    # точек, хаб подставляет в отправителя свой адрес, и адрес этот в панели
+    # заведён как устройство. Пока адрес побеждал, журнал всего парка был
+    # подписан хабом, и найти в нём что-либо по точке было нельзя.
+    # Имя в syslog ничем не заверено, но подписаться чужой точкой может
+    # только тот, кому уже разрешено писать, а это проверено выше.
+    guess = _sources.by_name(row.get("host", ""))
+    if guess:
+        device_id, device_name = guess["id"], guess["name"]
 
     # Правило «не сохранять» работает здесь, до очереди и до базы: смысл
     # его в том, чтобы шум не занимал место и не съедал потолок в два

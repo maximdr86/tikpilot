@@ -8972,6 +8972,40 @@ def test_syslog_source_can_be_allowed_by_hand(client, router):
     assert query_one("SELECT COUNT(*) AS c FROM syslog")["c"] == before
 
 
+def test_syslog_sender_name_wins_over_source_address(client, router):
+    """
+    Строку подписывает имя отправителя, а не адрес, с которого она пришла.
+
+    За хабом SSTP стоит весь парк, хаб подставляет в отправителя свой
+    адрес, и этот адрес заведён в панели как устройство. Пока адрес
+    побеждал имя, журнал всех точек был подписан хабом, и найти в нём
+    что-либо по точке было нельзя.
+    """
+    from app import syslog
+    from app.database import execute
+
+    # Порядок важен: адрес у заглушки один на всех, и по адресу панель
+    # находит заведённое последним. Значит хаб должен быть последним,
+    # иначе проверка прошла бы и без починки.
+    site_id = _add_device(client, router, "NV st. 253")
+    execute("UPDATE devices SET identity = '' WHERE id = ?", (site_id,))
+    hub_id = _add_device(client, router, "hub-sstp")
+    syslog._sources.refresh(force=True)
+
+    by_address, _, allowed = syslog._sources.match("127.0.0.1")
+    assert allowed and by_address == hub_id, "по адресу должен находиться хаб"
+
+    # Пробел в имени узла syslog не пропускает, RouterOS его выбрасывает:
+    # точка «NV st. 253» приезжает как «NVst.253»
+    syslog.receive_for_tests(
+        "<134>Aug  7 10:15:00 NVst.253 system,info из-за хаба", "127.0.0.1")
+    syslog.flush()
+
+    row = query_one("SELECT device_id, device_name FROM syslog ORDER BY id DESC")
+    assert row["device_id"] == site_id, "строка подписана не той точкой"
+    assert row["device_name"] == "NV st. 253"
+
+
 def test_syslog_highlighting_rules(client, router):
     """
     Подсветка: побеждает первое подошедшее правило.
