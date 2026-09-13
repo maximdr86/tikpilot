@@ -127,12 +127,22 @@
         }
         .picker .go { background: var(--accent); border-color: var(--accent); color: #fff; cursor: pointer; }
         .picker summary { margin-top: 10px; cursor: pointer; color: var(--accent); }
+        /* Колонки, а не сетка: точки разложены по группам, и блок группы
+           должен переноситься целиком. В сетке ячейки выравниваются по
+           самой высокой в ряду, и между короткими группами зияли бы дыры */
         .picker .devices {
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-            gap: 4px 14px; margin-top: 8px; max-height: 260px; overflow: auto;
+            columns: 3 230px; column-gap: 18px;
+            margin-top: 8px; max-height: 300px; overflow: auto;
             border: 1px solid var(--border); border-radius: 3px; padding: 8px 10px;
         }
-        .picker .devices label { font-size: 13px; }
+        .picker .dev-group { break-inside: avoid; margin-bottom: 12px; }
+        .picker .dev-group-name {
+            font-size: 12px; font-weight: 600; color: var(--muted);
+            text-transform: uppercase; letter-spacing: .04em;
+            padding-bottom: 3px; margin-bottom: 4px;
+            border-bottom: 1px solid var(--border);
+        }
+        .picker .devices label { font-size: 13px; display: block; }
         .picker .muted { color: var(--muted); }
 
         /* ------------------------------------------------------------ печать */

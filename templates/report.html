@@ -60,23 +60,7 @@
         <span class="muted">Обе даты включительно. Заданный интервал сильнее периода</span>
     </div>
 
-    <div class="line">
-        <span class="muted">Отмеченные точки сильнее выбранной группы</span>
-    </div>
-
-    <details {% if chosen %}open{% endif %}>
-        <summary>Отдельные точки{% if chosen %}: {{ chosen | length }}{% endif %}</summary>
-        <div class="devices">
-            {% for d in all_devices %}
-                <label>
-                    <input type="checkbox" name="devices" value="{{ d.id }}"
-                           {% if d.id in chosen %}checked{% endif %}>
-                    {{ d.name }}
-                    {% if d.group_name %}<span class="muted">{{ d.group_name | t }}</span>{% endif %}
-                </label>
-            {% endfor %}
-        </div>
-    </details>
+    {% include "partials/report_picker_devices.html" %}
 </form>
 
 <div class="sheet">

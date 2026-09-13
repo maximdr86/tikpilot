@@ -712,6 +712,35 @@ async def device_report_page(request: Request, device_id: int, hours: int = 720,
     )
 
 
+def _picker_devices(user) -> list[dict[str, Any]]:
+    """
+    Точки для выбора руками, разложенные по группам.
+
+    Плоский список на полсотни площадок приходится читать целиком: имена
+    у них похожие, а группа была видна только припиской справа от имени.
+    Заголовок группы даёт якорь, и нужное находится глазами.
+
+    Без группы идут последними: это остаток, а не раздел наравне
+    с остальными, и начинать им список значит начинать с мусора.
+    """
+    where, params = permissions.scope_sql(user)
+    rows = query(
+        "SELECT d.id, d.name, g.name AS group_name FROM devices d "
+        "LEFT JOIN groups g ON g.id = d.group_id "
+        f"WHERE d.enabled = 1{where} "
+        "ORDER BY d.name COLLATE NOCASE",
+        tuple(params))
+
+    by_group: dict[str, list[Any]] = {}
+    for row in rows:
+        by_group.setdefault((row["group_name"] or "").strip(), []).append(row)
+
+    order = sorted((name for name in by_group if name), key=str.casefold)
+    if "" in by_group:
+        order.append("")
+    return [{"name": name, "devices": by_group[name]} for name in order]
+
+
 @router.get("/monitoring/report")
 async def availability_report_page(request: Request, hours: int = 720,
                                    group_id: int = 0,
@@ -820,12 +849,7 @@ async def availability_report_page(request: Request, hours: int = 720,
         chosen=chosen,
         devices_param=",".join(str(i) for i in chosen),
         all_groups=query("SELECT id, name FROM groups ORDER BY name COLLATE NOCASE"),
-        all_devices=query(
-            "SELECT d.id, d.name, g.name AS group_name FROM devices d "
-            "LEFT JOIN groups g ON g.id = d.group_id "
-            f"WHERE d.enabled = 1{permissions.scope_sql(user)[0]} "
-            "ORDER BY d.name COLLATE NOCASE",
-            tuple(permissions.scope_sql(user)[1])),
+        device_groups=_picker_devices(user),
     )
 
 
@@ -971,6 +995,7 @@ async def availability_summary_page(request: Request, hours: int = 720,
         chosen=chosen,
         devices_param=",".join(str(i) for i in chosen),
         all_groups=query("SELECT id, name FROM groups ORDER BY name COLLATE NOCASE"),
+        device_groups=_picker_devices(user),
     )
 
 
