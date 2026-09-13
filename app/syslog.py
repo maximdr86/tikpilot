@@ -269,11 +269,20 @@ def _parse_cef(text: str, raw: str, facility: int, severity: int,
 
     severity = _cef_severity(topics, weight, severity)
 
-    if not host:
-        # Имя узла в CEF-строке стоит до самого CEF, как в обычном syslog
-        words = head.split()
-        if words:
-            host = words[-1]
+    # Имя узла берём из dvchost, а не из заголовка syslog. В заголовке
+    # пробел разделяет поля, поэтому разбор отдаёт только первое слово,
+    # и точка «Sergeeva N. N. Tekhnolog» приезжает как «Sergeeva»: ни с
+    # одним identity такое не совпадает, и строка остаётся безымянной.
+    # В dvchost то же имя лежит целиком, вместе с пробелами, и кончается
+    # там же, где начинается следующая пара «ключ=значение».
+    found = re.search(r"\bdvchost=(.+?)(?=\s+[a-zA-Z][\w.-]*=|$)", tail)
+    if found and found.group(1).strip():
+        host = found.group(1).strip()
+    else:
+        # Без dvchost имя всё равно целиком стоит до самого CEF: первое
+        # слово уже у нас, остаток лежит в голове строки. Склеиваем, иначе
+        # потеряем ровно то же, что теряли с dvchost.
+        host = " ".join(part for part in (host, head.strip()) if part).strip()
 
     return {
         "facility": facility,

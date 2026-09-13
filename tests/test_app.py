@@ -9185,6 +9185,59 @@ def test_syslog_sender_name_wins_over_source_address(client, router):
     assert row["device_name"] == "NV st. 253"
 
 
+def test_syslog_cef_keeps_the_whole_name_of_the_point(client, router):
+    """
+    В CEF-строке имя точки берётся целиком, вместе с пробелами.
+
+    Заголовок syslog отдаёт только первое слово: пробел там разделяет поля,
+    и «Sergeeva N. N. Tekhnolog» приезжает как «Sergeeva». Ни с одним
+    identity такое не совпадает, поэтому строки точки оставались без имени
+    и в журнале были подписаны адресом хаба, через который пришли. Целое
+    имя лежит в dvchost, и оно сильнее заголовка.
+    """
+    from app import syslog
+    from app.database import execute
+
+    # Хаб заведён последним: по адресу заглушки панель находит именно его,
+    # значит без починки строка досталась бы хабу, а не точке
+    site_id = _add_device(client, router, "Сергеева")
+    execute("UPDATE devices SET identity = ? WHERE id = ?",
+            ("Sergeeva N. N. Tekhnolog", site_id))
+    _add_device(client, router, "hub-sstp")
+    syslog._sources.refresh(force=True)
+
+    syslog.receive_for_tests(
+        "Sep 13 07:04:59 Sergeeva N. N. Tekhnolog "
+        "CEF:0|MikroTik|hAP ac lite|7.23.5 (long-term)|34|sstp,ppp,info|Low|"
+        "dvchost=Sergeeva N. N. Tekhnolog dvc=192.168.124.1 "
+        "msg=discount34: authenticated", "127.0.0.1")
+    syslog.flush()
+
+    row = query_one("SELECT device_id, device_name, topics, message "
+                    "FROM syslog ORDER BY id DESC")
+    assert row["device_id"] == site_id, "строка подписана не той точкой"
+    assert row["device_name"] == "Сергеева"
+    assert row["topics"] == "sstp,ppp,info"
+    assert row["message"] == "discount34: authenticated"
+
+
+def test_syslog_cef_without_dvchost_reads_the_whole_header():
+    """
+    Без dvchost имя всё равно достаётся целиком.
+
+    Поле необязательное, а имя в CEF-строке стоит ещё и до самого «CEF:0|».
+    Разбор syslog успевает откусить от него первое слово, поэтому остаток
+    надо приклеить обратно: иначе потеряется ровно то же, что терялось
+    с dvchost, только тише.
+    """
+    from app.syslog import parse
+
+    row = parse("Sep 13 07:04:59 NV st. 253 CEF:0|MikroTik|hAP ac lite|"
+                "7.21.5|10|script,info|Low|msg=lte-watchdog: panel unreachable")
+    assert row["host"] == "NV st. 253"
+    assert row["message"] == "lte-watchdog: panel unreachable"
+
+
 def test_syslog_highlighting_rules(client, router):
     """
     Подсветка: побеждает первое подошедшее правило.
