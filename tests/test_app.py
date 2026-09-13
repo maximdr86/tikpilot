@@ -12727,3 +12727,37 @@ def test_icons_carry_their_own_drawing_rules(client):
     known = {name for name, _ in icons}
     used = set(re.findall(r'<use href="#(i-[a-z]+)"', page))
     assert used <= known, f"ссылки на несуществующие значки: {sorted(used - known)}"
+
+
+def test_every_way_to_install_raises_the_file_limit():
+    """
+    Все три способа установки поднимают предел на открытые файлы.
+
+    Панель держит полсотни постоянных сессий к роутерам, приём журнала,
+    бэкапы и веб, и на каждый поток ещё соединение с базой, а в режиме WAL
+    это три дескриптора. Юнит systemd это учитывал с самого начала, а plist
+    для launchd писался руками, и строку туда не перенесли: launchd даёт
+    демону 256 файлов, они кончались на проходе монитора, и SQLite отвечал
+    «unable to open database file». Панель при этом жива и слушает порт,
+    поэтому на дескрипторы не думаешь и ищешь двое суток.
+
+    Тест сторожит именно перенос: способов установки три, и предел легко
+    поднять в одном, забыв про остальные.
+    """
+    import pathlib
+    import plistlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+
+    unit = (root / "install-ubuntu.sh").read_text(encoding="utf-8")
+    assert "LimitNOFILE=8192" in unit, "в юните systemd нет предела на файлы"
+
+    compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "nofile:" in compose, "в docker-compose нет предела на файлы"
+
+    plist_path = root / "ru.tikpilot.panel.plist"
+    assert plist_path.exists(), "нет шаблона plist для launchd"
+    with open(plist_path, "rb") as fh:
+        plist = plistlib.load(fh)
+    limit = plist.get("SoftResourceLimits", {}).get("NumberOfFiles")
+    assert limit and limit >= 4096, f"в plist предел на файлы {limit!r}"

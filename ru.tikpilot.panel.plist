@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Служба панели для macOS. В репозитории установщика под macOS нет,
+  каталог переносится копированием, поэтому службу заводят этим файлом.
+
+  Заменить /opt/tikpilot на свой каталог, USERNAME на его владельца,
+  8080 на нужный порт, затем:
+
+      sudo cp ru.tikpilot.panel.plist /Library/LaunchDaemons/
+      sudo chown root:wheel /Library/LaunchDaemons/ru.tikpilot.panel.plist
+      sudo launchctl bootstrap system /Library/LaunchDaemons/ru.tikpilot.panel.plist
+
+  Перезапуск после правки настроек: launchctl kickstart -k
+  system/ru.tikpilot.panel. Он нужен всегда, когда менялся .env: файл
+  читается один раз при старте, и работающий процесс о правке не узнает.
+
+  Daemon, а не Agent: после ночной перезагрузки из-за света панель
+  поднимется, не дожидаясь, пока кто-то войдёт в систему.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ru.tikpilot.panel</string>
+
+    <key>UserName</key>
+    <string>USERNAME</string>
+
+    <!-- Рабочий каталог задан отдельно: .env и data панель ищет рядом
+         с собой, а launchd запускает процесс из корня файловой системы -->
+    <key>WorkingDirectory</key>
+    <string>/opt/tikpilot</string>
+
+    <!-- uvicorn запускается напрямую, минуя run.sh: launchd следит за
+         процессом сам, и оболочка между ними только мешает остановке -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/tikpilot/.venv/bin/python</string>
+        <string>-m</string>
+        <string>uvicorn</string>
+        <string>app.main:app</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>8080</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PYTHONDONTWRITEBYTECODE</key>
+        <string>1</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Полсотни постоянных сессий к роутерам, приём журнала, бэкапы и веб.
+         launchd по умолчанию даёт демону 256 открытых файлов, и на проходе
+         монитора они кончаются: SQLite отвечает «unable to open database
+         file», панель жива, но не отвечает ни на один запрос, а причину
+         сообщение не называет. В юните systemd то же самое задаёт
+         LimitNOFILE, и потерять эту строку при переносе очень легко. -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>8192</integer>
+    </dict>
+
+    <!-- Журнал самой службы: сюда попадает то, что панель пишет в консоль -->
+    <key>StandardOutPath</key>
+    <string>/opt/tikpilot/data/panel.log</string>
+    <key>StandardErrorPath</key>
+    <string>/opt/tikpilot/data/panel.log</string>
+</dict>
+</plist>
