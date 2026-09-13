@@ -1,0 +1,30 @@
+{# Точки для выбора руками, разложенные по группам.
+
+   Плоский список на полсотни точек приходится читать целиком: имена
+   площадок начинаются одинаково, а группа видна только припиской справа.
+   Заголовок группы даёт якорь, и нужное находится глазами, без перебора.
+
+   Разметка общая для технического отчёта и отчёта руководителю. Иначе
+   два списка со временем разъедутся, и человек, привыкший к одному,
+   в другом будет искать заново. #}
+<div class="line">
+    <span class="muted">Отмеченные точки сильнее выбранной группы</span>
+</div>
+
+<details {% if chosen %}open{% endif %}>
+    <summary>Отдельные точки{% if chosen %}: {{ chosen | length }}{% endif %}</summary>
+    <div class="devices">
+        {% for grp in device_groups %}
+            <div class="dev-group">
+                <div class="dev-group-name">{% if grp.name %}{{ grp.name | t }}{% else %}без группы{% endif %}</div>
+                {% for d in grp.devices %}
+                    <label>
+                        <input type="checkbox" name="devices" value="{{ d.id }}"
+                               {% if d.id in chosen %}checked{% endif %}>
+                        {{ d.name }}
+                    </label>
+                {% endfor %}
+            </div>
+        {% endfor %}
+    </div>
+</details>

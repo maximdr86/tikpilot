@@ -9185,6 +9185,55 @@ def test_syslog_sender_name_wins_over_source_address(client, router):
     assert row["device_name"] == "NV st. 253"
 
 
+def test_report_picker_lays_points_out_by_group(client, router):
+    """
+    Выбор отдельных точек разложен по группам, и одинаково в обоих отчётах.
+
+    Плоский список на полсотни площадок приходилось читать целиком: имена
+    похожие, а группа была видна только припиской справа от имени. Теперь
+    у каждой группы заголовок, и он же служит якорем при выборе.
+
+    Точки без группы идут последними: это остаток, а не раздел наравне
+    с остальными.
+    """
+    import re
+    from app.database import execute
+
+    north = client.post("/api/groups", data={"name": "Север"}).json()["id"]
+    city = client.post("/api/groups", data={"name": "Город"}).json()["id"]
+
+    at_north = _add_device(client, router, "Вышка 1")
+    at_city = _add_device(client, router, "Магазин 1")
+    homeless = _add_device(client, router, "Ничья точка")
+    execute("UPDATE devices SET group_id = ? WHERE id = ?", (north, at_north))
+    execute("UPDATE devices SET group_id = ? WHERE id = ?", (city, at_city))
+    execute("UPDATE devices SET group_id = NULL WHERE id = ?", (homeless,))
+
+    # Оба отчёта берут один и тот же кусок разметки: разъехаться им нельзя,
+    # иначе привыкший к одному списку в другом будет искать заново
+    for url in ("/monitoring/report", "/monitoring/summary"):
+        page = client.get(url).text
+        assert "Отдельные точки" in page, f"{url}: выбора точек нет вовсе"
+
+        # Проверяем правило, а не готовый список: база в общем прогоне
+        # несёт следы соседних тестов, и сверка с тремя именами была бы
+        # зелёной в одиночку и красной вместе со всеми
+        headings = re.findall(r'dev-group-name">([^<]+)<', page)
+        assert {"Север", "Город"} <= set(headings), \
+            f"{url}: заголовков групп нет: {headings}"
+        assert headings[-1] == "без группы", \
+            f"{url}: остаток без группы должен идти последним: {headings}"
+        named = headings[:-1]
+        assert named == sorted(named, key=str.casefold), \
+            f"{url}: группы не по алфавиту: {named}"
+
+        # Точка стоит под своей группой, а не просто где-то на странице
+        blocks = dict(zip(headings, re.split(r'dev-group-name">[^<]+<', page)[1:]))
+        assert "Вышка 1" in blocks["Север"], f"{url}: точка не под своей группой"
+        assert "Магазин 1" in blocks["Город"], f"{url}: точка не под своей группой"
+        assert "Ничья точка" in blocks["без группы"], f"{url}: остаток не в конце"
+
+
 def test_syslog_cef_keeps_the_whole_name_of_the_point(client, router):
     """
     В CEF-строке имя точки берётся целиком, вместе с пробелами.
