@@ -341,6 +341,46 @@ def test_csv_import(client):
     assert query_one("SELECT id FROM groups WHERE name = 'ИмпортТест'") is not None
 
 
+def test_csv_import_enables_api_ssl_for_port_8729(client):
+    import io
+
+    csv = ("name;host;api_port\n"
+           "ssl-router;192.0.2.12;8729\n"
+           "plain-router;192.0.2.13;8728\n")
+    response = client.post(
+        "/api/devices/import",
+        files={"file": ("devices.csv", io.BytesIO(csv.encode()), "text/csv")},
+    )
+
+    assert response.status_code == 200 and response.json()["created"] == 2
+    assert query_one("SELECT use_ssl FROM devices WHERE name = ?", ("ssl-router",))["use_ssl"] == 1
+    assert query_one("SELECT use_ssl FROM devices WHERE name = ?", ("plain-router",))["use_ssl"] == 0
+
+
+def test_csv_import_honors_optional_use_ssl_column(client):
+    import io
+
+    csv = ("name;host;api_port;use_ssl\n"
+           "custom-ssl;192.0.2.14;8728;yes\n"
+           "plain-8729;192.0.2.15;8729;no\n"
+           "fallback-ssl;192.0.2.16;8729;\n")
+    response = client.post(
+        "/api/devices/import",
+        files={"file": ("devices.csv", io.BytesIO(csv.encode()), "text/csv")},
+    )
+
+    assert response.status_code == 200 and response.json()["created"] == 3
+    assert query_one("SELECT use_ssl FROM devices WHERE name = ?", ("custom-ssl",))["use_ssl"] == 1
+    assert query_one("SELECT use_ssl FROM devices WHERE name = ?", ("plain-8729",))["use_ssl"] == 0
+    assert query_one("SELECT use_ssl FROM devices WHERE name = ?", ("fallback-ssl",))["use_ssl"] == 1
+
+    exported = client.get("/api/devices/export/csv").content.decode("utf-8-sig")
+    header, *rows = exported.splitlines()
+    ssl_column = header.split(";").index("use_ssl")
+    custom_ssl_row = next(row for row in rows if row.startswith("custom-ssl;"))
+    assert custom_ssl_row.split(";")[ssl_column] == "1"
+
+
 def test_backup_downloaded_over_ftp(client, router, monkeypatch):
     """Полный цикл действия «Снять бэкап»: создание файлов, FTP-скачивание, запись в БД."""
     payload_backup = b"\x88\xac\x00\x00FAKE-BINARY-BACKUP" * 16
