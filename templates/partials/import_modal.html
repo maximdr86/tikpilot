@@ -10,8 +10,10 @@
             <div class="body">
                 <div class="alert info">
                     Первая строка файла это заголовки. Распознаются колонки:
-                    <span class="mono">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>.
+                    <span class="mono">name, host, username, password, api_port, use_ssl, ftp_port, ssh_port, group, comment</span>.
                     Разделитель (<span class="mono">,</span> или <span class="mono">;</span>) определяется автоматически.
+                    Значение <span class="mono">use_ssl</span> (1/0) имеет приоритет; если ячейка пуста или колонки нет,
+                    порт 8729 включает API-SSL автоматически.
                     Несуществующие группы создаются на лету.
                 </div>
 
@@ -30,9 +32,9 @@
 
                 <details>
                     <summary class="muted small" style="cursor:pointer">Пример файла</summary>
-                    <pre class="mono small" style="background:var(--panel-2);padding:10px;border-radius:8px;overflow:auto">name;host;username;password;group;comment
-core-01;10.0.0.1;tikpilot;Secret123;Core;{{ _("магистраль") }}
-acc-01;10.0.1.10;tikpilot;Secret123;Access;{{ _("подъезд 1") }}</pre>
+                    <pre class="mono small" style="background:var(--panel-2);padding:10px;border-radius:8px;overflow:auto">name;host;username;password;api_port;use_ssl;group;comment
+core-01;10.0.0.1;tikpilot;Secret123;8729;;Core;{{ _("магистраль") }}
+acc-01;10.0.1.10;tikpilot;Secret123;8728;0;Access;{{ _("подъезд 1") }}</pre>
                 </details>
             </div>
 
