@@ -26,7 +26,7 @@ from .routes import (
     alerts as alert_routes,
     auth_routes, backups, clients, devices, groups, jobs, pages, public,
     snippets as snippet_routes, syslog as syslog_routes,
-    terminal as terminal_routes, visits, wireguard,
+    terminal as terminal_routes, visits, wireguard, wireguard_peers,
 )
 
 logging.basicConfig(
@@ -203,6 +203,7 @@ app.include_router(groups.router)
 app.include_router(jobs.router)
 app.include_router(backups.router)
 app.include_router(wireguard.router)
+app.include_router(wireguard_peers.router)
 # Публичный лист состояния: единственный роут без авторизации
 app.include_router(clients.router)
 app.include_router(syslog_routes.router)

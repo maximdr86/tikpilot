@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}WireGuard Peer client · Tikpilot{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/wireguard_peers.css">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>WireGuard · Peer client</h1>
+        <div class="sub">Gestione dei peer client. Separata dai collegamenti site-to-site.</div>
+    </div>
+    <form class="btn-row" id="wg-peer-select-form" method="get" action="/wireguard/peers">
+        <label class="sr-only" for="wg-peer-device">Router</label>
+        <select id="wg-peer-device" name="device_id">
+            <option value="0">Seleziona router</option>
+            {% for device in devices %}
+            <option value="{{ device.id }}" {% if device.id == device_id %}selected{% endif %}>
+                {{ device.name }} ({{ device.host }})
+            </option>
+            {% endfor %}
+        </select>
+        {% if interfaces %}
+        <label class="sr-only" for="wg-peer-interface">Interfaccia WireGuard</label>
+        <select id="wg-peer-interface" name="interface">
+            {% for item in interfaces %}
+            <option value="{{ item.name }}" {% if item.name == interface %}selected{% endif %}>
+                {{ item.name }}{% if item['listen-port'] %} · porta {{ item['listen-port'] }}{% endif %}
+            </option>
+            {% endfor %}
+        </select>
+        {% endif %}
+    </form>
+</div>
+
+{% if not devices %}
+<div class="panel"><div class="panel-body">
+    <div class="empty">Nessun router con interfaccia WireGuard attiva rilevato nell'inventory. Esegui un check e riprova.</div>
+</div></div>
+{% elif not device_id %}
+<div class="panel"><div class="panel-body">
+    <div class="hint">Seleziona un router e un'interfaccia WireGuard per visualizzare i peer client.</div>
+</div></div>
+{% elif error %}
+<div class="panel"><div class="panel-body">
+    <div class="alert error">{{ error | t }}</div>
+</div></div>
+{% elif hub %}
+<div class="panel">
+    <h2>{{ selected_device.name }} <span class="h2-extra muted">{{ interface }} · <span id="wg-peer-count">{{ peers | length }}</span> peer</span></h2>
+    <div class="panel-body">
+        <div class="grid cols-2">
+            <div class="field">
+                <span class="muted small">Endpoint usato nell'export</span>
+                <div class="mono">{{ hub.public_host or '—' }}{% if hub.listen_port %}:{{ hub.listen_port }}{% endif %}</div>
+            </div>
+            <div class="field">
+                <span class="muted small">Reti incluse nelle configurazioni client</span>
+                <div class="mono">{{ allowed_ips | join(', ') or 'Non disponibili' }}</div>
+            </div>
+        </div>
+        {% if not hub.public_host or not hub.public_key or not hub.tunnel_address or not hub.listen_port %}
+        <div class="alert warn">Per creare o esportare un peer servono endpoint, chiave pubblica, porta e indirizzo tunnel leggibili dal dispositivo.</div>
+        {% endif %}
+        {% if endpoint_fallback %}
+        <div class="alert warn">Non è configurato un endpoint pubblico per il sito: l'export userà l'host di gestione del router, che potrebbe non essere raggiungibile dai client esterni.</div>
+        {% endif %}
+        <div class="hint">L'endpoint usa l'indirizzo pubblico già salvato per il sito oppure l'host del router in TikPilot. Le Allowed IPs derivano dalla subnet WireGuard e dalle LAN già configurate per il sito. Nessun nuovo dato viene richiesto o salvato.</div>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>Crea peer</h2>
+    <div class="panel-body">
+        <form id="wg-peer-create-form" class="btn-row" autocomplete="off">
+            <input type="hidden" name="device_id" value="{{ device_id }}">
+            <input type="hidden" name="interface" value="{{ interface }}">
+            <label class="sr-only" for="wg-peer-name">Nome nuovo peer</label>
+            <input id="wg-peer-name" name="name" type="text" maxlength="128" required placeholder="Nome del client">
+            <button class="btn primary" type="submit">Crea peer</button>
+            <span class="hint">L'IP libero viene assegnato automaticamente. La chiave privata è mostrata una volta sola.</span>
+        </form>
+        <div id="wg-peer-message" class="alert wg-peer-message" role="status" aria-live="polite" hidden></div>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>Ricerca client <span class="h2-extra muted">{{ interface }} · <span id="wg-peer-count">{{ peers | length }}</span> peer</span></h2>
+    <div class="panel-body">
+        <div class="filters wg-peer-search-filter">
+            <div class="field grow">
+                <label for="wg-peer-search">Cerca peer</label>
+                <input id="wg-peer-search" type="search" placeholder="Nome, IP o endpoint">
+            </div>
+        </div>
+    </div>
+    <div class="table-wrap">
+        <table id="wg-peer-table">
+            <thead><tr>
+                <th><button class="table-sort" type="button" data-sort="name">Nome</button></th>
+                <th><button class="table-sort" type="button" data-sort="ip">IP</button></th>
+                <th><button class="table-sort" type="button" data-sort="status">Stato / handshake</button></th>
+                <th><button class="table-sort" type="button" data-sort="endpoint">Endpoint</button></th>
+                <th><button class="table-sort" type="button" data-sort="traffic">Traffico</button></th>
+                <th>Azioni</th>
+            </tr></thead>
+            <tbody id="wg-peer-rows"></tbody>
+        </table>
+        <div id="wg-peer-empty" class="empty" hidden></div>
+    </div>
+    <div class="panel-body btn-row wg-peer-pagination" id="wg-peer-pagination" hidden>
+        <button class="btn" type="button" id="wg-peer-prev">Precedente</button>
+        <span id="wg-peer-page-label" class="muted"></span>
+        <button class="btn" type="button" id="wg-peer-next">Successiva</button>
+    </div>
+</div>
+
+<script type="application/json" id="wg-peer-initial">{{ peers | tojson }}</script>
+
+<div class="modal-backdrop" id="wg-peer-export-modal" aria-hidden="true">
+    <section class="modal wide" role="dialog" aria-modal="true" aria-labelledby="wg-peer-export-title">
+        <header><h3 id="wg-peer-export-title">Configurazione client</h3>
+            <button class="close-x" type="button" data-peer-close aria-label="Chiudi">&times;</button></header>
+        <div class="body">
+            <div class="hint" id="wg-peer-export-warning">La configurazione contiene una chiave privata. Copiala o scaricala ora; TikPilot non la conserva.</div>
+            <div class="wg-peer-export-toolbar">
+                <div class="btn-row wg-peer-export-formats" aria-label="Formato export">
+                    <button class="btn active" type="button" data-export-format="conf">WireGuard .conf</button>
+                    <button class="btn" type="button" data-export-format="rsc">RouterOS .rsc</button>
+                    <button class="btn" type="button" data-export-format="qr">QR</button>
+                </div>
+                <div class="wg-peer-export-actions" aria-label="Azioni sulla configurazione">
+                    <span class="wg-peer-export-action-label">Esporta</span>
+                    <button id="wg-peer-copy-button" class="btn" type="button"
+                            data-export-copy data-copy-label="Copia" data-copied-label="Copiato ✓">Copia</button>
+                    <span id="wg-peer-copy-feedback" class="wg-peer-copy-feedback"
+                          role="status" aria-live="polite"></span>
+                    <button class="btn primary" type="button" data-export-download>Scarica</button>
+                </div>
+            </div>
+            <textarea id="wg-peer-export-text" class="mono" rows="16" readonly aria-label="Configurazione WireGuard"></textarea>
+            <div id="wg-peer-export-qr" class="wg-qr" hidden></div>
+        </div>
+        <footer><button class="btn" type="button" data-peer-close>Chiudi</button></footer>
+    </section>
+</div>
+
+<div class="modal-backdrop" id="wg-peer-rename-modal" aria-hidden="true">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="wg-peer-rename-title">
+        <header><h3 id="wg-peer-rename-title">Rinomina peer</h3>
+            <button class="close-x" type="button" data-peer-close aria-label="Chiudi">&times;</button></header>
+        <form id="wg-peer-rename-form">
+            <div class="body">
+                <label for="wg-peer-rename-name">Nome</label>
+                <input id="wg-peer-rename-name" name="name" maxlength="128" required>
+                <input type="hidden" name="id">
+            </div>
+            <footer><button class="btn" type="button" data-peer-close>Annulla</button>
+                <button class="btn primary" type="submit">Salva nome</button></footer>
+        </form>
+    </section>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if hub %}
+<script src="/static/wireguard_peers.js" defer></script>
+{% endif %}
+<script>
+    document.getElementById('wg-peer-device')?.addEventListener('change', function () {
+        document.getElementById('wg-peer-interface')?.removeAttribute('name');
+        document.getElementById('wg-peer-select-form').submit();
+    });
+    document.getElementById('wg-peer-interface')?.addEventListener('change', function () {
+        document.getElementById('wg-peer-select-form').submit();
+    });
+</script>
+{% endblock %}

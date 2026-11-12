@@ -156,8 +156,13 @@
         </a>
         {% endif %}
         {% if can("wireguard.manage") %}
-        <a class="nav-link {% if active == 'wireguard' %}active{% endif %}" href="/wireguard" title="WireGuard">
-            <svg viewBox="0 0 24 24"><use href="#i-wireguard"/></svg><span class="label">WireGuard</span>
+        <a class="nav-link {% if active == 'wireguard' %}active{% endif %}" href="/wireguard" title="WireGuard Site-to-site">
+            <svg viewBox="0 0 24 24"><use href="#i-wireguard"/></svg><span class="label">WireGuard · Site-to-site</span>
+        </a>
+        {% endif %}
+        {% if can("wireguard.peers.manage") %}
+        <a class="nav-link {% if active == 'wireguard-peers' %}active{% endif %}" href="/wireguard/peers" title="WireGuard Peer client">
+            <svg viewBox="0 0 24 24"><use href="#i-wireguard"/></svg><span class="label">WireGuard · Peer client</span>
         </a>
         {% endif %}
 
