@@ -43,7 +43,7 @@ LOCALES_DIR = BASE_DIR / "app" / "locales"
 SOURCE_LANG = "ru"
 
 #: Подписи для переключателя. Ключ — код языка, значение — как он называет сам себя.
-LANGUAGE_NAMES = {"ru": "Русский", "en": "English"}
+LANGUAGE_NAMES = {"ru": "Русский", "en": "English", "it": "Italiano"}
 
 _catalogs: dict[str, dict[str, str]] = {}
 _patterns: dict[str, list[tuple[re.Pattern[str], str]]] = {}

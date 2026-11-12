@@ -2279,6 +2279,35 @@ def test_browser_strings_are_translated():
     assert not untranslated, "нет перевода для строк JS:\n  " + "\n  ".join(untranslated)
 
 
+def test_every_interface_string_is_translated_into_italian():
+    """В итальянском каталоге есть все строки шаблонов."""
+    from pathlib import Path
+
+    from app import i18n
+
+    i18n.load_catalogs()
+    missing = i18n.missing_translations("it", Path("templates"))
+    assert not missing, "нет итальянского перевода для строк:\n  " + "\n  ".join(missing)
+
+
+def test_browser_strings_are_translated_into_italian():
+    """Строки JavaScript тоже должны иметь итальянский перевод."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    catalog = i18n.js_catalog("it")
+    untranslated = [text for text in i18n.js_strings() if catalog.get(text) == text]
+    assert not untranslated, "нет итальянского перевода для строк JS:\n  " + "\n  ".join(untranslated)
+
+
+def test_italian_language_has_a_native_name():
+    """В переключателе языков итальянский называется Italiano."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    assert ("it", "Italiano") in i18n.available_languages()
+
+
 def test_interface_switches_to_english(client):
     """Переключение языка меняет надписи, а не только код в <html lang>."""
     client.get("/lang/ru", follow_redirects=False)
@@ -2293,6 +2322,16 @@ def test_interface_switches_to_english(client):
 
     client.get("/lang/ru", follow_redirects=False)
     assert "Устройства" in client.get("/devices").text
+
+
+def test_interface_switches_to_italian(client):
+    """Переключение на итальянский переводит страницу устройств."""
+    client.get("/lang/it", follow_redirects=False)
+    page = client.get("/devices").text
+    assert 'lang="it"' in page
+    assert "Dispositivi" in page
+    assert "Устройства" not in page
+    client.get("/lang/ru", follow_redirects=False)
 
 
 def test_language_choice_survives_relogin(client):
@@ -2335,7 +2374,7 @@ def test_unknown_language_falls_back(client):
 
 
 def test_plural_forms_follow_language():
-    """В русском три формы, в английском две."""
+    """Формы множественного числа соответствуют правилам выбранного языка."""
     from app import i18n
 
     i18n.load_catalogs()
@@ -2345,6 +2384,9 @@ def test_plural_forms_follow_language():
     assert i18n.plural(5, ru, "ru") == "устройств"
     assert i18n.plural(1, ru, "en") == "device"
     assert i18n.plural(5, ru, "en") == "devices"
+    assert i18n.plural(1, ru, "it") == "dispositivo"
+    assert i18n.plural(2, ru, "it") == "dispositivi"
+    assert i18n.plural(21, ru, "it") == "dispositivi"
 
 
 def test_ui_texts_have_no_em_dash():
