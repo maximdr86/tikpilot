@@ -221,6 +221,126 @@
   "RouterOS не отвечает, пока скрипт не отработает. Для бэкапов и выгрузок конфигурации ставьте с запасом.": "RouterOS does not reply until the script has finished. Be generous for backups and configuration exports.",
   "UDP ничего не ждёт и на плохом канале теряет часть строк, TCP не теряет, но держит соединение.": "UDP waits for nothing and loses some lines on a bad link, TCP loses nothing but holds a connection.",
   "WireGuard · Tikpilot": "WireGuard · Tikpilot",
+  "<span class=\"small muted\">IP-адрес или имя хоста, порт указывать необязательно. Если порт не указан, используется порт WireGuard на роутере (%(p0)s).</span>": "<span class=\"small muted\">IP address or hostname; port is optional. If omitted, the router's WireGuard port is used (%(p0)s).</span>",
+  "<span class=\"small muted\">Рекомендуемое значение: 1000. Для уникальных портов используйте значение не меньше 256.</span>": "<span class=\"small muted\">Recommended: 1000. Use at least 256 to keep generated ports unique.</span>",
+  "<span class=\"small muted\">Рекомендуемое значение: 30000</span>": "<span class=\"small muted\">Recommended: 30000</span>",
+  "Базовый порт DNAT": "DNAT base port",
+  "Множитель DNAT": "DNAT multiplier",
+  "Публичный endpoint": "Public endpoint",
+  "Свой endpoint для peer-клиентов не задан. Экспорт временно использует адрес сайта для выбранного интерфейса или адрес управления роутером. Сохраните endpoint здесь, чтобы явно задать адрес для клиентов.": "No endpoint is saved for client peers. Exports temporarily use the site's address for this interface, or the router's management address. Save an endpoint here to specify the address for clients.",
+  "Сети Allowed IPs берутся из подсети WireGuard и LAN-сетей, настроенных для сайта. Новые параметры сохраняются отдельно для роутера и интерфейса.": "Allowed IPs are derived from the WireGuard subnet and the site's configured LANs. These settings are stored separately for each router and interface.",
+  "Сохранить настройки": "Save settings",
+  "Настройки WireGuard сохранены.": "WireGuard settings saved.",
+  "Не удалось скопировать порт DNAT.": "Could not copy the DNAT port.",
+  "Порт DNAT скопирован в буфер обмена.": "DNAT port copied to clipboard.",
+  "Сохранить DNAT": "Save DNAT",
+  "Сохранить endpoint": "Save endpoint",
+  "Нажмите, чтобы скопировать": "Click to copy",
+  "Копирование в буфер обмена не удалось.": "Could not copy to the clipboard.",
+  "Скопировать имя": "Copy name",
+  "Скопировать IP": "Copy IP address",
+  "Скопировать порт DNAT": "Copy DNAT port",
+  "Настройки DNAT": "DNAT settings",
+  "Подключайтесь к роутеру клиента по Winbox через туннель на CHR, не открывая клиента в Интернете.<br>Порт рассчитывается в Tikpilot; правило dst-nat на CHR нужно создать вручную.": "Connect to the client's router with Winbox through the CHR tunnel without exposing the client to the Internet.<br>Tikpilot calculates the port; create the dst-nat rule on the CHR manually.",
+  "Формула: базовый порт + третий октет × множитель + четвёртый октет.": "Formula: base port + third octet × multiplier + fourth octet.",
+  "%(p0)s <span class=\"h2-extra muted\">%(p1)s · <span id=\"wg-peer-count\">%(p2)s</span> пиров</span>": "%(p0)s <span class=\"h2-extra muted\">%(p1)s · <span id=\"wg-peer-count\">%(p2)s</span> peers</span>",
+  "<span class=\"hint\">Свободный IP назначается автоматически. Приватный ключ показывается только один раз.</span>": "<span class=\"hint\">A free IP is assigned automatically. The private key is shown only once.</span>",
+  "<span class=\"muted small\">Endpoint, используемый в экспорте</span>": "<span class=\"muted small\">Endpoint used in exports</span>",
+  "<span class=\"muted small\">Сети в конфигурации клиента</span>": "<span class=\"muted small\">Networks included in the client configuration</span>",
+  "<span class=\"wg-peer-export-action-label\">Экспорт</span>": "<span class=\"wg-peer-export-action-label\">Export</span>",
+  "В инвентаре не найдено активных интерфейсов WireGuard. Выполните проверку и повторите попытку.": "No active WireGuard interfaces were found in the inventory. Run a check and try again.",
+  "Выберите роутер": "Select a router",
+  "Выберите роутер и интерфейс WireGuard, чтобы просмотреть клиентские пиры.": "Select a router and WireGuard interface to view client peers.",
+  "Действия с конфигурацией": "Configuration actions",
+  "Для создания или экспорта peer должны быть доступны endpoint, публичный ключ, порт и адрес туннеля роутера.": "The endpoint, public key, port and router tunnel address must be available to create or export a peer.",
+  "Имя клиента": "Client name",
+  "Имя нового клиента": "New client name",
+  "Имя, IP или endpoint": "Name, IP or endpoint",
+  "Конфигурация WireGuard": "WireGuard configuration",
+  "Конфигурация клиента": "Client configuration",
+  "Конфигурация содержит приватный ключ. Скопируйте или скачайте её сейчас; TikPilot не сохраняет ключ.": "This configuration contains a private key. Copy or download it now; TikPilot does not store the key.",
+  "Найти peer": "Search peers",
+  "Переименовать peer": "Rename peer",
+  "Поиск клиентов <span class=\"h2-extra muted\">%(p0)s · <span id=\"wg-peer-count\">%(p1)s</span> пиров</span>": "Client search <span class=\"h2-extra muted\">%(p0)s · <span id=\"wg-peer-count\">%(p1)s</span> peers</span>",
+  "Предыдущая": "Previous",
+  "Роутер": "Router",
+  "Скачать": "Download",
+  "Скопировано ✓": "Copied ✓",
+  "Следующая": "Next",
+  "Создать peer": "Create peer",
+  "Сохранить имя": "Save name",
+  "Статус / handshake": "Status / handshake",
+  "Управление клиентскими пирами WireGuard. Отдельно от соединений site-to-site.": "Manage WireGuard client peers separately from site-to-site links.",
+  "Формат экспорта": "Export format",
+  "Peer создан, но список не удалось обновить.": "Peer created, but the list could not be refreshed.",
+  "Peer создан. Конфигурация доступна только в этом окне.": "Peer created. The configuration is available only in this window.",
+  "Peer удалён.": "Peer deleted.",
+  "Без имени": "Unnamed",
+  "Браузер не разрешил копирование.": "The browser did not allow copying.",
+  "Имя peer обновлено.": "Peer name updated.",
+  "Ключ на роутере заменён. Сразу установите эту конфигурацию на клиент. TikPilot не сохраняет приватный ключ.": "The router key has been replaced. Install this configuration on the client now. TikPilot does not store the private key.",
+  "Ключ обновлён. Предыдущая конфигурация больше не работает.": "The key has been regenerated. The previous configuration no longer works.",
+  "Конфигурация скопирована в буфер обмена.": "Configuration copied to the clipboard.",
+  "Конфигурация скопирована.": "Configuration copied.",
+  "На этом интерфейсе нет пиров.": "There are no peers on this interface.",
+  "Не подключён": "Disconnected",
+  "Не удалось получить доступ к буферу обмена.": "Could not access the clipboard.",
+  "Отключён": "Disabled",
+  "Перевыпустить / экспорт": "Regenerate / Export",
+  "Переименовать": "Rename",
+  "По запросу ничего не найдено.": "No peers match the search.",
+  "Подключён": "Connected",
+  "Не удалось обновить список пиров.": "Could not refresh the peer list.",
+  "Эта конфигурация содержит приватный ключ. Скопируйте или скачайте её сейчас; TikPilot его не сохраняет.": "This configuration contains a private key. Copy or download it now; TikPilot does not store it.",
+  "Возобновить %(p0)s?": "Resume %(p0)s?",
+  "Возобновить": "Reactivate",
+  "Возобновить %(p0)s": "Reactivate %(p0)s",
+  "Peer возобновлён.": "Peer reactivated.",
+  "Заменить ключ peer %(p0)s? Текущий ключ клиента сразу перестанет работать.": "Replace the key for peer %(p0)s? Its current client key will stop working immediately.",
+  "Запрос не выполнен (код %(p0)s).": "Request failed (code %(p0)s).",
+  "Перевыпустить ключ и экспортировать для %(p0)s": "Regenerate the key and export a configuration for %(p0)s",
+  "Переименовать %(p0)s": "Rename %(p0)s",
+  "Приостановить %(p0)s?": "Suspend %(p0)s?",
+  "Приостановить": "Suspend",
+  "Приостановить %(p0)s": "Suspend %(p0)s",
+  "Peer приостановлен.": "Peer suspended.",
+  "Страница %(p0)s из %(p1)s · пиров: %(p2)s": "Page %(p0)s of %(p1)s · peers: %(p2)s",
+  "Удалить %(p0)s": "Delete %(p0)s",
+  "Удалить peer %(p0)s без возможности восстановления?": "Permanently delete peer %(p0)s?",
+  "Интерфейс WireGuard не активен.": "The WireGuard interface is not active.",
+  "Интерфейс WireGuard обязателен.": "A WireGuard interface is required.",
+  "Нет параметров для обновления.": "There are no settings to update.",
+  "Некорректный публичный endpoint.": "The public endpoint is invalid.",
+  "Публичный endpoint слишком длинный.": "The public endpoint is too long.",
+  "Некорректное значение DNAT.": "The DNAT value is invalid.",
+  "Значение DNAT вне допустимого диапазона.": "The DNAT value is outside the allowed range.",
+  "Имя обязательно; максимум 128 символов.": "A name is required and must be no longer than 128 characters.",
+  "Peer с таким именем уже существует.": "A peer with this name already exists.",
+  "У интерфейса нет корректного туннельного адреса.": "The interface has no valid tunnel address.",
+  "В подсети WireGuard нет свободных IP-адресов.": "There are no free IP addresses in the WireGuard subnet.",
+  "Peer не найден.": "Peer not found.",
+  "Некорректное значение disabled.": "The disabled value is invalid.",
+  "У peer не назначен IP-адрес хоста.": "The peer has no host IP address assigned.",
+  "Публичный endpoint не указан.": "No public endpoint was provided.",
+  "Некорректный формат IPv6.": "The IPv6 format is invalid.",
+  "Квадратные скобки допустимы только для адреса IPv6.": "Square brackets are only allowed around an IPv6 address.",
+  "Некорректный порт endpoint.": "The endpoint port is invalid.",
+  "Для IPv6 с портом используйте формат [адрес]:порт.": "For IPv6 with a port, use the format [address]:port.",
+  "Порт WireGuard роутера недоступен.": "The router's WireGuard port is unavailable.",
+  "Неверный публичный endpoint или порт.": "Invalid public endpoint or port.",
+  "Недостаточно данных WireGuard для создания скрипта.": "There is not enough WireGuard data to create the script.",
+  "Некорректный префикс туннеля.": "The tunnel prefix is invalid.",
+  "Некорректный адрес туннеля сервера.": "The server tunnel address is invalid.",
+  "Некорректный адрес клиента.": "The client address is invalid.",
+  "Адреса клиента и сервера должны принадлежать одной IP-семье.": "The client and server addresses must use the same IP family.",
+  "Недоступны endpoint, публичный ключ, порт или адрес туннеля сервера.": "The endpoint, public key, port or server tunnel address is unavailable.",
+  "Некорректный endpoint роутера.": "The router endpoint is invalid.",
+  "Открыть карточку %(p0)s": "Open the device page for %(p0)s",
+  "Открыть карточку устройства": "Open device page",
+  "Недоступны": "Unavailable",
+  "Добавить %(p0)s в парк": "Add %(p0)s to the fleet",
+  "Добавить устройство в парк": "Add device to the fleet",
+  "Нет права добавлять устройства": "You don't have permission to add devices",
   "__patterns__": [
     [
       "^(.*) · меньше всех у (.+?), ([\\d.,]+) МиБ, это ([\\d.,]+)% от диска\\. Обновление RouterOS на такой точке может не встать$",
@@ -455,6 +575,22 @@
       "\\1 h"
     ],
     [
+      "^(\\d+) мин$",
+      "\\1 min"
+    ],
+    [
+      "^(\\d+) с$",
+      "\\1 s"
+    ],
+    [
+      "^(\\d+) ч (\\d+) мин$",
+      "\\1 h \\2 min"
+    ],
+    [
+      "^(\\d+) дн (\\d+) ч$",
+      "\\1 d \\2 h"
+    ],
+    [
       "^точек: (\\d+)$",
       "sites: \\1"
     ],
@@ -633,6 +769,354 @@
     [
       "^за сутки задач: (\\d+), точек с ошибкой: (\\d+)$",
       "jobs in the last day: \\1, sites with errors: \\2"
+    ],
+    [
+      "^Фоновый воркер запущен \\(потоков: (\\d+)\\)$",
+      "Background worker started (threads: \\1)"
+    ],
+    [
+      "^Задача (\\d+) «(.+?)»: начата, устройств (\\d+) \\(запустил (.+)\\)$",
+      "Job \\1 “\\2”: started, \\3 devices (started by \\4)"
+    ],
+    [
+      "^Задача (\\d+): пачка (\\d+)/(\\d+) готова, пауза (\\d+) с$",
+      "Job \\1: batch \\2/\\3 complete, pausing for \\4 s"
+    ],
+    [
+      "^Задача (\\d+) «(.+?)»: завершена, успешно (\\d+), с ошибкой (\\d+)$",
+      "Job \\1 “\\2”: completed, \\3 succeeded, \\4 failed"
+    ],
+    [
+      "^Задача (\\d+) «(.+?)»: отменена, успешно (\\d+), с ошибкой (\\d+)$",
+      "Job \\1 “\\2”: cancelled, \\3 succeeded, \\4 failed"
+    ],
+    [
+      "^(.+): готово$",
+      "\\1: done"
+    ],
+    [
+      "^(.+): готово: (.*)$",
+      "\\1: done: \\2"
+    ],
+    [
+      "^(.+): ошибка, (.*)$",
+      "\\1: error, \\2"
+    ],
+    [
+      "^Устройство недоступно: (.+?) \\((.+?)\\), причина: (.*)$",
+      "Device unreachable: \\1 (\\2), reason: \\3"
+    ],
+    [
+      "^Устройство вернулось: (.+?) \\((.+?)\\), лежало (.*)$",
+      "Device back online: \\1 (\\2), was down for \\3"
+    ],
+    [
+      "^Устройство вернулось: (.+?) \\((.+?)\\)$",
+      "Device back online: \\1 (\\2)"
+    ],
+    [
+      "^Вход в систему: (.+?) \\((.+?)\\)$",
+      "Device login: \\1 (\\2)"
+    ],
+    [
+      "^Вход в систему:$",
+      "Device login:"
+    ],
+    [
+      "^Закрыто сессий: (\\d+)$",
+      "Sessions closed: \\1"
+    ],
+    [
+      "^Диск панели: свободно (.+?) из (.+?) \\(([\\d.,]+)%\\), база (.+?), бэкапы (.+)$",
+      "Panel disk: \\1 free of \\2 (\\3%), database \\4, backups \\5"
+    ],
+    [
+      "^Мониторинг отключён \\(MONITOR_ENABLED=0\\)$",
+      "Monitoring disabled (MONITOR_ENABLED=0)"
+    ],
+    [
+      "^Ошибка цикла мониторинга$",
+      "Monitoring cycle error"
+    ],
+    [
+      "^Мониторинг запущен: проба каждые (.+?) с, полный опрос каждые (.+?) с, порог недоступности (.+?) промаха\\(ов\\)$",
+      "Monitoring started: probe every \\1 s, full poll every \\2 s, unreachable threshold \\3 misses"
+    ],
+    [
+      "^(.+): устройств (\\d+), недоступно (\\d+), за (.+?) с$",
+      "\\1: devices \\2, unreachable \\3, in \\4 s"
+    ],
+    [
+      "^(.+): клиентов (\\d+)$",
+      "\\1: connected clients: \\2"
+    ],
+    [
+      "^Моргание: (.+?) \\((.+?)\\), (.*)$",
+      "Flapping: \\1 (\\2), \\3"
+    ],
+    [
+      "^Ошибка проверки устройства (.+)$",
+      "Device check failed: \\1"
+    ],
+    [
+      "^Клиенты не прочитаны для (.+?): (.*)$",
+      "Could not read clients for \\1: \\2"
+    ],
+    [
+      "^Паспорт не прочитан для (.+?): (.*)$",
+      "Could not read inventory for \\1: \\2"
+    ],
+    [
+      "^Трафик не прочитан для (.+?): (.*)$",
+      "Could not read traffic for \\1: \\2"
+    ],
+    [
+      "^Оператор не определён для (.+?): (.*)$",
+      "Operator not identified for \\1: \\2"
+    ],
+    [
+      "^Проверка задержки не удалась для (.+?): (.*)$",
+      "Latency check failed for \\1: \\2"
+    ],
+    [
+      "^Пороги: сработало (\\d+), погасло (\\d+)$",
+      "Thresholds: fired \\1, cleared \\2"
+    ],
+    [
+      "^Мало места на диске панели: свободно ([\\d.,]+)%$",
+      "Low panel disk space: \\1% free"
+    ],
+    [
+      "^Место на диске панели вернулось в норму: свободно ([\\d.,]+)%$",
+      "Panel disk space back to normal: \\1% free"
+    ],
+    [
+      "^Проверка здоровья не прошла: (.*)$",
+      "Health check failed: \\1"
+    ],
+    [
+      "^Терминал с недоверенного адреса: (.*)$",
+      "Terminal request from an untrusted address: \\1"
+    ],
+    [
+      "^Терминал не открылся$",
+      "Could not open the terminal"
+    ],
+    [
+      "^Ошибка в сессии терминала$",
+      "Terminal session error"
+    ],
+    [
+      "^Приём журнала отключён \\(SYSLOG_ENABLED=0\\)$",
+      "Syslog receiver disabled (SYSLOG_ENABLED=0)"
+    ],
+    [
+      "^Приём журнала запущен: (.*)$",
+      "Syslog receiver started: \\1"
+    ],
+    [
+      "^Приём журнала по UDP не поднялся: (.*)$",
+      "Could not start the UDP syslog receiver: \\1"
+    ],
+    [
+      "^Приём журнала по TCP не поднялся: (.*)$",
+      "Could not start the TCP syslog receiver: \\1"
+    ],
+    [
+      "^Приём журнала: поток остановился \\((.*)\\)\\. Поднимаю заново$",
+      "Syslog receiver: thread stopped (\\1). Restarting"
+    ],
+    [
+      "^Строка журнала не разобралась: (.*)$",
+      "Could not parse a syslog line: \\1"
+    ],
+    [
+      "^Пачка строк журнала не записалась: (.*)$",
+      "Could not save a batch of syslog lines: \\1"
+    ],
+    [
+      "^Уведомление не ушло в (.+?): (.*)$",
+      "Notification to \\1 was not sent: \\2"
+    ],
+    [
+      "^Попытка отправки не записалась в журнал: (.*)$",
+      "Could not log a send attempt: \\1"
+    ],
+    [
+      "^База вендоров обновлена сама: записей (\\d+)$",
+      "Vendor database updated automatically: \\1 records"
+    ],
+    [
+      "^Реестр (.+?) не скачался: (.*)$",
+      "Could not download registry \\1: \\2"
+    ],
+    [
+      "^Не удалось узнать свободное место: (.*)$",
+      "Could not determine free disk space: \\1"
+    ],
+    [
+      "^Файлы с (.+?) забираем по (.+)$",
+      "Downloading files from \\1 over \\2"
+    ],
+    [
+      "^Не удалось забрать (.+?) с (.+?): (.*)$",
+      "Could not download \\1 from \\2: \\3"
+    ],
+    [
+      "^Сигнал живости не ушёл: (.*)$",
+      "Heartbeat was not sent: \\1"
+    ],
+    [
+      "^Доступ к панели с недоверенного адреса: (.*)$",
+      "Panel access from an untrusted address: \\1"
+    ],
+    [
+      "^Расписание (.+?): удалено старых копий (\\d+)$",
+      "Schedule \\1: old copies removed \\2"
+    ],
+    [
+      "^Ошибка диспетчера задач$",
+      "Job dispatcher error"
+    ],
+    [
+      "^Ошибка очистки истории$",
+      "History cleanup error"
+    ],
+    [
+      "^Ошибка обновления базы вендоров$",
+      "Vendor database update error"
+    ],
+    [
+      "^Ошибка проверки порогов$",
+      "Threshold check error"
+    ],
+    [
+      "^Ошибка проверки места на диске$",
+      "Disk space check error"
+    ],
+    [
+      "^Ошибка отправки уведомлений$",
+      "Notification delivery error"
+    ],
+    [
+      "^Ошибка сигнала живости$",
+      "Heartbeat error"
+    ],
+    [
+      "^Ошибка обхода страховок$",
+      "Rollback guard error"
+    ],
+    [
+      "^Ошибка расписания бэкапов$",
+      "Backup scheduler error"
+    ],
+    [
+      "^Проверка (.+) не отработала$",
+      "Check did not run: \\1"
+    ],
+    [
+      "^База от прежнего имени проекта перенесена: (.+?) -> (.+)$",
+      "Database migrated from the previous project name: \\1 -> \\2"
+    ],
+    [
+      "^Убрано строк от удалённых устройств: (\\d+)$",
+      "Rows removed for deleted devices: \\1"
+    ],
+    [
+      "^Режим витрины: не удалось прочитать данные: (.*)$",
+      "Demo mode: could not read data: \\1"
+    ],
+    [
+      "^Не удалось прочитать перевод (.+?): (.*)$",
+      "Could not read translation \\1: \\2"
+    ],
+    [
+      "^Плохое правило в переводе (.+?): (.*)$",
+      "Bad translation rule in \\1: \\2"
+    ],
+    [
+      "^Загружен перевод (.+?): (\\d+) строк, (\\d+) правил$",
+      "Loaded translation \\1: \\2 strings, \\3 rules"
+    ],
+    [
+      "^Плохая подстановка в переводе: (.*)$",
+      "Bad placeholder in translation: \\1"
+    ],
+    [
+      "^Команда ping не найдена, проверка ICMP выключена$",
+      "ping command not found, ICMP checks disabled"
+    ],
+    [
+      "^ВНИМАНИЕ: загружен устаревший код \\(нет методов: (.*)\\)$",
+      "WARNING: stale code loaded (missing methods: \\1)"
+    ],
+    [
+      "^Каталог программы: (.*) \\| база: (.*)$",
+      "Program directory: \\1 | database: \\2"
+    ],
+    [
+      "^Каталог программы: (.*)$",
+      "Program directory: \\1"
+    ],
+    [
+      "^Похоже, сервер запущен не из той папки\\. Обновление RouterOS работать не будет\\.$",
+      "The server appears to be running from the wrong directory. RouterOS upgrades will not work."
+    ],
+    [
+      "^Настройки из панели применены: (.*)$",
+      "Panel settings applied: \\1"
+    ],
+    [
+      "^Библиотека: уточнены имена у записей: (.*)$",
+      "Library: names filled in for entries: \\1"
+    ],
+    [
+      "^Операторы: приведены к человеческим именам: (.*)$",
+      "Operators: converted to readable names: \\1"
+    ],
+    [
+      "^Tikpilot (.+) готов: http://(.+):(.+)$",
+      "Tikpilot \\1 ready: http://\\2:\\3"
+    ],
+    [
+      "^ADMIN_NETWORKS=(.+): с этой машины \\(127\\.0\\.0\\.1\\) панель откажет\\. Добавьте 127\\.0\\.0\\.1 в список или очистите настройку в \\.env$",
+      "ADMIN_NETWORKS=\\1: the panel will reject connections from this machine (127.0.0.1). Add 127.0.0.1 to the list or clear the setting in .env"
+    ],
+    [
+      "^Непонятная запись в списке сетей: (.*)$",
+      "Unrecognised entry in the network list: \\1"
+    ],
+    [
+      "^Не удалось прочитать (.+?), имена операторов останутся как в реестре$",
+      "Could not read \\1; operator names from the registry will be kept"
+    ],
+    [
+      "^В архив не войдёт restore\\.sh: (.+?) нет в установке\\. Пояснение внутри архива описывает разворачивание руками\\.$",
+      "restore.sh will not be included in the archive: \\1 is not present in the installation. The note in the archive explains how to restore it manually."
+    ],
+    [
+      "^SYSLOG_NETWORKS: не разобрать «(.+)», пропускаю$",
+      "SYSLOG_NETWORKS: could not parse «\\1», skipping"
+    ],
+    [
+      "^Строки журнала от удалённых точек \\((.+)\\): ссылка снята, текст сохранён$",
+      "Log lines from deleted devices (\\1): source detached, text retained"
+    ],
+    [
+      "^Не удалось прочитать (.+?), останутся только скачанные имена$",
+      "Could not read \\1; only downloaded names will remain"
+    ],
+    [
+      "^Не удалось прочитать базу вендоров: (.*)$",
+      "Could not read the vendor database: \\1"
+    ],
+    [
+      "^Несогласованный код при работе с (.+?): (.*)$",
+      "Code mismatch while working with \\1: \\2"
+    ],
+    [
+      "^Необработанная ошибка на устройстве (.+)$",
+      "Unhandled error on device \\1"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
@@ -1409,6 +1893,7 @@
   "Создана группа": "Group created",
   "Создана при импорте": "Created during import",
   "Создание и удаление линков между роутерами, маршруты и правила.": "Creating and deleting links between routers, plus routes and rules.",
+  "Peer-клиенты на интерфейсах выбранных роутеров: конфигурации, ключи и доступ.": "Client peers on selected routers: configurations, keys and access.",
   "Создание и удаление правил автоматического снятия бэкапов.": "Creating and removing rules for taking backups automatically.",
   "Создание учётных записей и выдача прав. Фактически полный контроль.": "Creating accounts and granting rights. Effectively full control.",
   "Создание, переименование, удаление групп.": "Creating, renaming and deleting groups.",
@@ -1543,6 +2028,7 @@
   "Укажите подсеть": "Enter a subnet",
   "Управление парком MikroTik": "MikroTik fleet management",
   "Управлять группами": "Manage groups",
+  "Управлять клиентами WireGuard": "Manage WireGuard client peers",
   "Управлять пользователями": "Manage users",
   "Управлять связями WireGuard": "Manage WireGuard links",
   "Успешно": "Succeeded",
@@ -2188,8 +2674,11 @@
   "Порт SSH": "SSH port",
   "Нужен только терминалу": "Used by the terminal only",
   "Скачивание бэкапов": "Downloading backups",
-  "Первая строка файла это заголовки. Распознаются колонки: <span class=\"mono\">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>. Разделитель (<span class=\"mono\">,</span> или <span class=\"mono\">;</span>) определяется автоматически. Несуществующие группы создаются на лету.": "The first line of the file is the header. Recognised columns: <span class=\"mono\">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>. The separator (<span class=\"mono\">,</span> or <span class=\"mono\">;</span>) is detected automatically. Groups that do not exist are created on the fly.",
+  "Первая строка файла это заголовки. Распознаются колонки: <span class=\"mono\">name, host, username, password, api_port, use_ssl, ftp_port, ssh_port, group, comment</span>. Разделитель (<span class=\"mono\">,</span> или <span class=\"mono\">;</span>) определяется автоматически. Значение <span class=\"mono\">use_ssl</span> (1/0) имеет приоритет; если ячейка пуста или колонки нет, порт 8729 включает API-SSL автоматически. Несуществующие группы создаются на лету.": "The first row contains the headers. Recognised columns: <span class=\"mono\">name, host, username, password, api_port, use_ssl, ftp_port, ssh_port, group, comment</span>. The delimiter (<span class=\"mono\">,</span> or <span class=\"mono\">;</span>) is detected automatically. An explicit <span class=\"mono\">use_ssl</span> value (1/0) takes precedence; if the cell is empty or the column is absent, port 8729 enables API-SSL automatically. Groups that do not exist yet are created on the fly.",
   "Скачать файлом": "Download as file",
   "Файл сохранён: %s": "Saved as %s",
-  "Мало места на роутерах": "Low disk space on routers"
+  "Мало места на роутерах": "Low disk space on routers",
+  "действия": "actions",
+  "полный опрос": "full poll",
+  "проверка": "check"
 }

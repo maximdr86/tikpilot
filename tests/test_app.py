@@ -341,6 +341,46 @@ def test_csv_import(client):
     assert query_one("SELECT id FROM groups WHERE name = 'ИмпортТест'") is not None
 
 
+def test_csv_import_enables_api_ssl_for_port_8729(client):
+    import io
+
+    csv = ("name;host;api_port\n"
+           "ssl-router;192.0.2.12;8729\n"
+           "plain-router;192.0.2.13;8728\n")
+    response = client.post(
+        "/api/devices/import",
+        files={"file": ("devices.csv", io.BytesIO(csv.encode()), "text/csv")},
+    )
+
+    assert response.status_code == 200 and response.json()["created"] == 2
+    assert query_one("SELECT use_ssl FROM devices WHERE name = ?", ("ssl-router",))["use_ssl"] == 1
+    assert query_one("SELECT use_ssl FROM devices WHERE name = ?", ("plain-router",))["use_ssl"] == 0
+
+
+def test_csv_import_honors_optional_use_ssl_column(client):
+    import io
+
+    csv = ("name;host;api_port;use_ssl\n"
+           "custom-ssl;192.0.2.14;8728;yes\n"
+           "plain-8729;192.0.2.15;8729;no\n"
+           "fallback-ssl;192.0.2.16;8729;\n")
+    response = client.post(
+        "/api/devices/import",
+        files={"file": ("devices.csv", io.BytesIO(csv.encode()), "text/csv")},
+    )
+
+    assert response.status_code == 200 and response.json()["created"] == 3
+    assert query_one("SELECT use_ssl FROM devices WHERE name = ?", ("custom-ssl",))["use_ssl"] == 1
+    assert query_one("SELECT use_ssl FROM devices WHERE name = ?", ("plain-8729",))["use_ssl"] == 0
+    assert query_one("SELECT use_ssl FROM devices WHERE name = ?", ("fallback-ssl",))["use_ssl"] == 1
+
+    exported = client.get("/api/devices/export/csv").content.decode("utf-8-sig")
+    header, *rows = exported.splitlines()
+    ssl_column = header.split(";").index("use_ssl")
+    custom_ssl_row = next(row for row in rows if row.startswith("custom-ssl;"))
+    assert custom_ssl_row.split(";")[ssl_column] == "1"
+
+
 def test_backup_downloaded_over_ftp(client, router, monkeypatch):
     """Полный цикл действия «Снять бэкап»: создание файлов, FTP-скачивание, запись в БД."""
     payload_backup = b"\x88\xac\x00\x00FAKE-BINARY-BACKUP" * 16
@@ -2239,6 +2279,35 @@ def test_browser_strings_are_translated():
     assert not untranslated, "нет перевода для строк JS:\n  " + "\n  ".join(untranslated)
 
 
+def test_every_interface_string_is_translated_into_italian():
+    """В итальянском каталоге есть все строки шаблонов."""
+    from pathlib import Path
+
+    from app import i18n
+
+    i18n.load_catalogs()
+    missing = i18n.missing_translations("it", Path("templates"))
+    assert not missing, "нет итальянского перевода для строк:\n  " + "\n  ".join(missing)
+
+
+def test_browser_strings_are_translated_into_italian():
+    """Строки JavaScript тоже должны иметь итальянский перевод."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    catalog = i18n.js_catalog("it")
+    untranslated = [text for text in i18n.js_strings() if catalog.get(text) == text]
+    assert not untranslated, "нет итальянского перевода для строк JS:\n  " + "\n  ".join(untranslated)
+
+
+def test_italian_language_has_a_native_name():
+    """В переключателе языков итальянский называется Italiano."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    assert ("it", "Italiano") in i18n.available_languages()
+
+
 def test_interface_switches_to_english(client):
     """Переключение языка меняет надписи, а не только код в <html lang>."""
     client.get("/lang/ru", follow_redirects=False)
@@ -2253,6 +2322,16 @@ def test_interface_switches_to_english(client):
 
     client.get("/lang/ru", follow_redirects=False)
     assert "Устройства" in client.get("/devices").text
+
+
+def test_interface_switches_to_italian(client):
+    """Переключение на итальянский переводит страницу устройств."""
+    client.get("/lang/it", follow_redirects=False)
+    page = client.get("/devices").text
+    assert 'lang="it"' in page
+    assert "Dispositivi" in page
+    assert "Устройства" not in page
+    client.get("/lang/ru", follow_redirects=False)
 
 
 def test_language_choice_survives_relogin(client):
@@ -2295,7 +2374,7 @@ def test_unknown_language_falls_back(client):
 
 
 def test_plural_forms_follow_language():
-    """В русском три формы, в английском две."""
+    """Формы множественного числа соответствуют правилам выбранного языка."""
     from app import i18n
 
     i18n.load_catalogs()
@@ -2305,6 +2384,9 @@ def test_plural_forms_follow_language():
     assert i18n.plural(5, ru, "ru") == "устройств"
     assert i18n.plural(1, ru, "en") == "device"
     assert i18n.plural(5, ru, "en") == "devices"
+    assert i18n.plural(1, ru, "it") == "dispositivo"
+    assert i18n.plural(2, ru, "it") == "dispositivi"
+    assert i18n.plural(21, ru, "it") == "dispositivi"
 
 
 def test_ui_texts_have_no_em_dash():
@@ -7496,6 +7578,698 @@ def test_wireguard_needs_permission(client, router):
     assert not any(p.get("comment") == "wgpanel:Чужой" for p in router.wg_peers)
 
 
+def _wireguard_peer_device(client, router, name="wg-peer-device"):
+    """Устройство с найденным inventory-интерфейсом и адресом WireGuard."""
+    from app.database import execute
+
+    device_id = _add_device(client, router, name)
+    execute(
+        "INSERT INTO device_ports (device_id,name,kind,running,disabled,updated_at) "
+        "VALUES (?,?,?,1,0,datetime('now'))",
+        (device_id, "wg-hub", "wireguard"),
+    )
+    router.ip_addresses.append({
+        ".id": "*wg-peer-address", "address": "10.30.0.1/24",
+        "interface": "wg-hub",
+    })
+    return device_id
+
+
+def test_wireguard_peer_client_page_is_separate_and_uses_inventory(client, router):
+    device_id = _wireguard_peer_device(client, router)
+    router.wg_peers.append({
+        ".id": "*wg-client-1", "interface": "wg-hub", "name": "Telefono",
+        "allowed-address": "10.30.0.2/32", "last-handshake": "30s",
+        "rx": "1024", "tx": "2048", "disabled": "false",
+    })
+
+    response = client.get(f"/wireguard/peers?device_id={device_id}")
+
+    assert response.status_code == 200, response.text
+    assert "Peer client" in response.text
+    assert "Telefono" in response.text
+    assert "10.30.0.2" in response.text
+    assert "Свой endpoint для peer-клиентов не задан" in response.text
+    assert "Collegamenti" not in response.text
+    # La pagina site-to-site resta inalterata e raggiungibile.
+    assert client.get("/wireguard").status_code == 200
+
+
+def test_wireguard_peer_client_page_uses_selected_locale(client, router):
+    device_id = _wireguard_peer_device(client, router, "wg-peer-page-locale")
+
+    client.get("/lang/en", follow_redirects=False)
+    english = client.get(f"/wireguard/peers?device_id={device_id}&interface=wg-hub").text
+    assert "Manage WireGuard client peers separately from site-to-site links." in english
+    assert "Create peer" in english
+    assert "Gestione dei peer client" not in english
+    assert "Client configuration" in english
+    assert "This configuration contains a private key" in english
+    assert "Copy" in english
+    assert "Download" in english
+    assert "Configurazione client" not in english
+
+    client.get("/lang/it", follow_redirects=False)
+    italian = client.get(f"/wireguard/peers?device_id={device_id}&interface=wg-hub").text
+    assert "Gestione dei peer client WireGuard, separata dai collegamenti site-to-site." in italian
+    assert "Crea peer" in italian
+    assert "Configurazione client" in italian
+    assert "Questa configurazione contiene una chiave privata" in italian
+    assert "Copia" in italian
+    assert "Scarica" in italian
+    assert "Manage client peers separately from site-to-site links." not in italian
+    client.get("/lang/ru", follow_redirects=False)
+
+
+def test_wireguard_peer_connection_badge_requires_recent_handshake():
+    from app.routes.wireguard_peers import _peer_row
+
+    connected = _peer_row({".id": "*1", "interface": "wg0", "name": "online",
+                           "last-handshake": "30s", "disabled": "false"})
+    assert connected["connected"]
+    assert connected["connection_status"] == "connected"
+    assert connected["handshake"] == "30s"
+    idle = _peer_row({".id": "*2", "interface": "wg0", "name": "idle",
+                      "last-handshake": "6m", "disabled": "false"})
+    assert not idle["connected"]
+    assert idle["handshake"] == ""
+    assert not _peer_row({".id": "*3", "interface": "wg0", "name": "never",
+                          "disabled": "false"})["connected"]
+    disabled = _peer_row({".id": "*4", "interface": "wg0", "name": "disabled",
+                          "last-handshake": "2s", "disabled": "true"})
+    assert not disabled["connected"]
+    assert disabled["connection_status"] == "disabled"
+    assert disabled["handshake"] == ""
+
+
+def test_wireguard_peer_table_exposes_state_and_traffic_sort_controls(client, router):
+    device_id = _wireguard_peer_device(client, router, "wg-peer-sort")
+
+    response = client.get(f"/wireguard/peers?device_id={device_id}")
+
+    assert response.status_code == 200
+    assert 'data-sort="status"' in response.text
+    assert 'data-sort="traffic"' in response.text
+    assert 'data-sort="endpoint"' in response.text
+    assert 'id="wg-peer-count"' in response.text
+    assert "Поиск клиентов" in response.text
+    assert "Abilitato" not in response.text
+    assert 'id="wg-peer-copy-feedback"' in response.text
+    assert 'aria-live="polite"' in response.text
+
+
+def test_wireguard_client_script_includes_server_management_address():
+    from app.wireguard_clients import build_routeros_script
+
+    script = build_routeros_script(
+        client_ip="10.30.0.5", prefix=24, private_key="PRIVATE=",
+        server_public_key="SERVER=", server_endpoint="vpn.example.com:13231",
+        allowed_ips=["10.30.0.0/24"], server_ip="3.0.0.1", preshared_key="SHARED=",
+    )
+
+    assert 'add name="wg-10-30-0-5"' in script
+    assert 'add address="10.30.0.5/24" network="10.30.0.0"' in script
+    assert "/ip/firewall/address-list\nadd address=3.0.0.1 list=MANAGEMENT" in script
+    peer_command = next(line for line in script.splitlines()
+                        if line.startswith("add interface=") and "public-key=" in line)
+    assert 'preshared-key="SHARED="' in peer_command
+    assert 'preshared-key="SHARED="' not in script.split("/ip/firewall/address-list")[1]
+
+
+def test_wireguard_client_routeros_interface_name_uses_only_its_ip():
+    from app.wireguard_clients import client_interface_name
+
+    assert client_interface_name("3.0.0.5") == "wg-3-0-0-5"
+
+
+def test_wireguard_public_endpoint_accepts_host_or_ip_with_optional_port():
+    import pytest
+
+    from app.wireguard_clients import resolve_public_endpoint
+
+    assert resolve_public_endpoint("mailserver.resnovae.it:13231", 51820) == (
+        "mailserver.resnovae.it:13231")
+    assert resolve_public_endpoint("mailserver.resnovae.it", 13231) == (
+        "mailserver.resnovae.it:13231")
+    assert resolve_public_endpoint("203.0.113.10:13231", 51820) == "203.0.113.10:13231"
+    assert resolve_public_endpoint("2001:db8::1", 13231) == "[2001:db8::1]:13231"
+    assert resolve_public_endpoint("[2001:db8::1]:51820", 13231) == "[2001:db8::1]:51820"
+    with pytest.raises(ValueError):
+        resolve_public_endpoint("vpn.example.com:70000", 13231)
+    with pytest.raises(ValueError):
+        resolve_public_endpoint("https://vpn.example.com", 13231)
+
+
+def test_wireguard_dnat_port_uses_third_and_fourth_ipv4_octets():
+    from app.wireguard_clients import dnat_port
+
+    assert dnat_port("3.0.0.24", 30000, 1000) == 30024
+    assert dnat_port("3.0.7.24", 30000, 1000) == 37024
+    assert dnat_port("2001:db8::24", 30000, 1000) is None
+    assert dnat_port("3.0.40.24", 30000, 1000) is None
+
+
+def test_wireguard_peer_settings_persist_per_interface_and_render_controls(client, router):
+    from app.database import query_one
+
+    device_id = _wireguard_peer_device(client, router, "wg-peer-settings")
+    router.wg_interfaces.append({
+        ".id": "*11", "name": "wg-hub-2", "listen-port": "51820",
+        "public-key": "OTHERHUBPUBLICKEY00000000000000000000000000000=",
+        "running": "true",
+    })
+    router.ip_addresses.append({
+        ".id": "*wg-peer-address-2", "address": "10.31.0.1/24",
+        "interface": "wg-hub-2",
+    })
+
+    saved = client.post("/api/wg/peers/settings", json={
+        "device_id": device_id,
+        "interface": "wg-hub",
+        "public_endpoint": "mailserver.resnovae.it",
+        "dnat_base": 30000,
+        "dnat_multiplier": 1000,
+    })
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["settings"] == {
+        "public_endpoint": "mailserver.resnovae.it",
+        "dnat_base": 30000,
+        "dnat_multiplier": 1000,
+    }
+    row = query_one(
+        "SELECT public_endpoint,dnat_base,dnat_multiplier FROM wg_peer_settings "
+        "WHERE device_id=? AND interface=?", (device_id, "wg-hub"),
+    )
+    assert tuple(row) == ("mailserver.resnovae.it", 30000, 1000)
+
+    page = client.get(f"/wireguard/peers?device_id={device_id}&interface=wg-hub").text
+    assert 'value="mailserver.resnovae.it"' in page
+    assert 'value="30000"' in page
+    assert 'value="1000"' in page
+    assert "DNAT" in page
+    assert 'data-sort="dnat"' in page
+    assert 'id="wg-peer-endpoint-form"' in page
+    assert 'id="wg-peer-dnat-form"' in page
+    endpoint_row = page.split('<div class="wg-peer-endpoint-row">', 1)[1].split("</div>", 1)[0]
+    assert "Сохранить endpoint" in endpoint_row
+    assert '<details class="wg-peer-dnat-settings">' in page
+    assert "<summary>Настройки DNAT</summary>" in page
+    dnat_section = page.split('<details class="wg-peer-dnat-settings">', 1)[1].split(
+        "</details>", 1)[0]
+    assert "Сохранить DNAT" in dnat_section
+    assert "Сохранить endpoint" in page
+
+    other_saved = client.post("/api/wg/peers/settings", json={
+        "device_id": device_id,
+        "interface": "wg-hub-2",
+        "public_endpoint": "other.example.net:51821",
+        "dnat_base": 31000,
+        "dnat_multiplier": 2000,
+    })
+    assert other_saved.status_code == 200, other_saved.text
+    other = query_one(
+        "SELECT public_endpoint,dnat_base,dnat_multiplier FROM wg_peer_settings "
+        "WHERE device_id=? AND interface=?", (device_id, "wg-hub-2"),
+    )
+    assert tuple(other) == ("other.example.net:51821", 31000, 2000)
+
+    created = client.post("/api/wg/peers/create", json={
+        "device_id": device_id, "interface": "wg-hub", "name": "Endpoint test",
+    })
+    assert created.status_code == 200, created.text
+    assert "Endpoint = mailserver.resnovae.it:13231" in created.json()["peer"]["config"]
+
+
+def test_wireguard_dnat_column_requires_both_settings_and_computes_peer_port(client, router):
+    device_id = _wireguard_peer_device(client, router, "wg-peer-dnat-column")
+    router.wg_peers.append({
+        ".id": "*dnat-peer", "interface": "wg-hub", "name": "Router client",
+        "allowed-address": "10.30.7.24/32", "disabled": "false",
+    })
+
+    partial = client.post("/api/wg/peers/settings", json={
+        "device_id": device_id, "interface": "wg-hub",
+        "dnat_base": 30000,
+    })
+    assert partial.status_code == 200, partial.text
+    page = client.get(f"/wireguard/peers?device_id={device_id}&interface=wg-hub").text
+    assert 'data-sort="dnat"' not in page
+    assert 'placeholder="30000"' in page
+    assert 'placeholder="1000"' in page
+
+    complete = client.post("/api/wg/peers/settings", json={
+        "device_id": device_id, "interface": "wg-hub",
+        "dnat_base": 30000, "dnat_multiplier": 1000,
+    })
+    assert complete.status_code == 200, complete.text
+    page = client.get(f"/wireguard/peers?device_id={device_id}&interface=wg-hub").text
+    assert 'data-sort="dnat"' in page
+    assert '"dnat_port": 37024' in page
+    snapshot = client.get(f"/api/wg/peers?device_id={device_id}&interface=wg-hub")
+    assert snapshot.status_code == 200
+    assert snapshot.json()["peers"][0]["dnat_port"] == 37024
+
+
+def test_peer_client_legacy_endpoint_is_a_warned_unsaved_fallback(client, router):
+    from app.database import execute
+
+    device_id = _wireguard_peer_device(client, router, "wg-peer-legacy-endpoint")
+    execute(
+        "INSERT INTO wg_hubs (device_id,interface,public_host,lan_subnets,listen_port,updated_at) "
+        "VALUES (?,?,?,?,?,datetime('now'))",
+        (device_id, "wg-hub", "site.example.net", "", 51820),
+    )
+
+    page = client.get(f"/wireguard/peers?device_id={device_id}&interface=wg-hub").text
+
+    assert "site.example.net:13231" in page
+    assert 'name="public_endpoint" type="text"' in page
+    assert 'value="site.example.net"' not in page
+    assert "Свой endpoint для peer-клиентов не задан" in page
+
+
+def test_peer_client_dnat_help_is_translated_into_italian(client, router):
+    device_id = _wireguard_peer_device(client, router, "wg-peer-dnat-italian")
+    client.get("/lang/it", follow_redirects=False)
+
+    page = client.get(f"/wireguard/peers?device_id={device_id}&interface=wg-hub").text
+
+    assert 'lang="it"' in page
+    assert "Accedi al router del client con Winbox attraverso il tunnel sul CHR" in page
+    assert "La porta è calcolata da Tikpilot" in page
+    assert "Impostazioni DNAT" in page
+    assert "Настройки DNAT" not in page
+    client.get("/lang/ru", follow_redirects=False)
+
+
+def test_wireguard_peer_settings_validate_input_and_permission_scope(client, router):
+    device_id = _wireguard_peer_device(client, router, "wg-peer-settings-scope")
+    _make_user(client, "peer-settings-denied", ["wireguard.manage"])
+
+    with _as("peer-settings-denied") as denied:
+        response = denied.post("/api/wg/peers/settings", json={
+            "device_id": device_id, "interface": "wg-hub",
+            "public_endpoint": "vpn.example.com",
+        })
+        assert response.status_code == 403
+
+    _make_user(client, "peer-settings-outside", ["wireguard.peers.manage"],
+               scope_all=False, devices=[])
+    with _as("peer-settings-outside") as out_of_scope:
+        response = out_of_scope.post("/api/wg/peers/settings", json={
+            "device_id": device_id, "interface": "wg-hub",
+            "public_endpoint": "vpn.example.com",
+        })
+        assert response.status_code == 403
+
+    for payload in (
+        {"public_endpoint": "vpn.example.com:70000"},
+        {"dnat_base": 30000, "dnat_multiplier": 255},
+    ):
+        response = client.post("/api/wg/peers/settings", json={
+            "device_id": device_id, "interface": "wg-hub", **payload,
+        })
+        assert response.status_code == 400, response.text
+
+    response = client.post("/api/wg/peers/settings", json={
+        "device_id": device_id, "interface": "not-active",
+        "public_endpoint": "vpn.example.com",
+    })
+    assert response.status_code == 400
+
+    client.get("/lang/en", follow_redirects=False)
+    invalid_endpoint = client.post("/api/wg/peers/settings", json={
+        "device_id": device_id, "interface": "wg-hub",
+        "public_endpoint": "vpn.example.com:70000",
+    })
+    assert invalid_endpoint.json()["error"] == "Invalid public endpoint or port."
+    client.get("/lang/ru", follow_redirects=False)
+
+
+def test_wireguard_peer_settings_partial_updates_preserve_other_section(client, router):
+    from app.database import query_one
+
+    device_id = _wireguard_peer_device(client, router, "wg-peer-settings-partial")
+    initial = client.post("/api/wg/peers/settings", json={
+        "device_id": device_id, "interface": "wg-hub",
+        "public_endpoint": "vpn.example.com:13231",
+        "dnat_base": 30000, "dnat_multiplier": 1000,
+    })
+    assert initial.status_code == 200, initial.text
+
+    endpoint_update = client.post("/api/wg/peers/settings", json={
+        "device_id": device_id, "interface": "wg-hub",
+        "public_endpoint": "new-vpn.example.com",
+    })
+    assert endpoint_update.status_code == 200, endpoint_update.text
+    row = query_one(
+        "SELECT public_endpoint,dnat_base,dnat_multiplier FROM wg_peer_settings "
+        "WHERE device_id=? AND interface=?", (device_id, "wg-hub"),
+    )
+    assert tuple(row) == ("new-vpn.example.com", 30000, 1000)
+    page = client.get(f"/wireguard/peers?device_id={device_id}&interface=wg-hub").text
+    assert 'data-sort="dnat"' in page
+    assert 'value="30000"' in page
+    assert 'value="1000"' in page
+
+    dnat_update = client.post("/api/wg/peers/settings", json={
+        "device_id": device_id, "interface": "wg-hub",
+        "dnat_base": 31000, "dnat_multiplier": 2000,
+    })
+    assert dnat_update.status_code == 200, dnat_update.text
+    row = query_one(
+        "SELECT public_endpoint,dnat_base,dnat_multiplier FROM wg_peer_settings "
+        "WHERE device_id=? AND interface=?", (device_id, "wg-hub"),
+    )
+    assert tuple(row) == ("new-vpn.example.com", 31000, 2000)
+
+
+def test_wireguard_peer_page_remembers_last_device_for_each_user(client, router):
+    from app.database import execute
+
+    first_id = _wireguard_peer_device(client, router, "wg-peer-recent-first")
+    second_id = _wireguard_peer_device(client, router, "wg-peer-recent-second")
+
+    selected = client.get(f"/wireguard/peers?device_id={first_id}")
+    assert selected.status_code == 200
+
+    reopened = client.get("/wireguard/peers")
+    assert f'<option value="{first_id}" selected>' in reopened.text
+    assert f'<option value="{second_id}" selected>' not in reopened.text
+
+    cleared = client.get("/wireguard/peers?device_id=0")
+    assert cleared.status_code == 200
+    reopened = client.get("/wireguard/peers")
+    assert f'<option value="{first_id}" selected>' not in reopened.text
+
+    limited_user_id = _make_user(
+        client, "wg-peer-recent-limited", ["wireguard.peers.manage"],
+        scope_all=False, devices=[second_id],
+    )
+    execute(
+        "INSERT INTO wg_peer_user_preferences (user_id,device_id,updated_at) "
+        "VALUES (?,?,datetime('now'))", (limited_user_id, first_id),
+    )
+    with _as("wg-peer-recent-limited") as limited:
+        scoped_page = limited.get("/wireguard/peers")
+        assert scoped_page.status_code == 200
+        assert f'<option value="{first_id}" selected>' not in scoped_page.text
+        assert f'<option value="{second_id}" selected>' not in scoped_page.text
+
+        limited.get(f"/wireguard/peers?device_id={second_id}")
+        scoped_reopened = limited.get("/wireguard/peers")
+        assert f'<option value="{second_id}" selected>' in scoped_reopened.text
+
+
+def test_wireguard_peer_page_defaults_to_interface_with_saved_dnat(client, router):
+    from app.database import execute
+
+    device_id = _wireguard_peer_device(client, router, "wg-peer-dnat-interface-default")
+    router.wg_interfaces.append({
+        ".id": "*12", "name": "wg-hub-2", "listen-port": "51821",
+        "public-key": "OTHERHUBPUBLICKEY00000000000000000000000000000=",
+        "running": "true",
+    })
+    router.ip_addresses.append({
+        ".id": "*wg-peer-address-2", "address": "10.31.0.1/24",
+        "interface": "wg-hub-2",
+    })
+    execute(
+        "INSERT INTO device_ports (device_id,name,kind,running,disabled,updated_at) "
+        "VALUES (?,?,?,?,?,datetime('now'))",
+        (device_id, "wg-hub-2", "wireguard", 1, 0),
+    )
+    saved = client.post("/api/wg/peers/settings", json={
+        "device_id": device_id, "interface": "wg-hub-2",
+        "dnat_base": 30000, "dnat_multiplier": 1000,
+    })
+    assert saved.status_code == 200, saved.text
+    endpoint_only = client.post("/api/wg/peers/settings", json={
+        "device_id": device_id, "interface": "wg-hub",
+        "public_endpoint": "hub.example.net",
+    })
+    assert endpoint_only.status_code == 200, endpoint_only.text
+    execute(
+        "UPDATE wg_peer_settings SET updated_at='9999-01-01T00:00:00Z' "
+        "WHERE device_id=? AND interface='wg-hub'", (device_id,),
+    )
+
+    page = client.get(f"/wireguard/peers?device_id={device_id}")
+
+    assert page.status_code == 200
+    assert f'<option value="{device_id}" selected>' in page.text
+    assert '<option value="wg-hub-2" selected>' in page.text
+    assert 'data-sort="dnat"' in page.text
+    assert 'value="30000"' in page.text
+    reopened = client.get("/wireguard/peers")
+    assert f'<option value="{device_id}" selected>' in reopened.text
+    assert '<option value="wg-hub-2" selected>' in reopened.text
+
+
+def test_wireguard_peer_rows_link_managed_devices_by_normalized_ip(client, router):
+    import json
+
+    from app.database import execute
+
+    hub_id = _wireguard_peer_device(client, router, "wg-peer-ip-match-hub")
+    managed_id = _add_device(client, router, "managed-v6-client")
+    execute("UPDATE devices SET host=? WHERE id=?", ("2001:0db8:0:0::2", managed_id))
+    router.wg_peers.extend([
+        {".id": "*managed-client", "interface": "wg-hub", "name": "Managed client",
+         "allowed-address": "2001:db8::2/128", "disabled": "false"},
+        {".id": "*unmanaged-client", "interface": "wg-hub", "name": "New client",
+         "allowed-address": "2001:db8::3/128", "disabled": "false"},
+    ])
+
+    snapshot = client.get(f"/api/wg/peers?device_id={hub_id}&interface=wg-hub")
+
+    assert snapshot.status_code == 200, snapshot.text
+    peers = {peer["id"]: peer for peer in snapshot.json()["peers"]}
+    assert peers["*managed-client"]["managed_devices"] == [{
+        "id": managed_id, "name": "managed-v6-client",
+    }]
+    assert peers["*unmanaged-client"]["managed_devices"] == []
+    assert "username" not in str(snapshot.json())
+
+    page = client.get(f"/wireguard/peers?device_id={hub_id}&interface=wg-hub").text
+    initial = page.split('id="wg-peer-initial">', 1)[1].split("</script>", 1)[0]
+    page_peers = {peer["id"]: peer for peer in json.loads(initial)}
+    assert page_peers["*managed-client"]["managed_devices"] == peers["*managed-client"]["managed_devices"]
+    assert "<th>В парке</th>" not in page
+    script = client.get("/static/wireguard_peers.js").text
+    assert 'href="/devices/${Number(managedDevice.id)}"' in script
+    assert 'href="/devices?add_name=' in script
+    assert 'class="wg-peer-name-link"' in script
+    assert "wg-peer-add-device" in script
+    assert "wg-peer-fleet-cell" not in script
+
+
+def test_wireguard_peer_page_does_not_match_devices_outside_user_scope(client, router):
+    from app.database import execute
+
+    hub_id = _wireguard_peer_device(client, router, "wg-peer-ip-scope-hub")
+    managed_id = _add_device(client, router, "private-managed-client")
+    execute("UPDATE devices SET host=? WHERE id=?", ("10.30.0.2", managed_id))
+    router.wg_peers.append({
+        ".id": "*private-client", "interface": "wg-hub", "name": "Private client",
+        "allowed-address": "10.30.0.2/32", "disabled": "false",
+    })
+    _make_user(client, "wg-peer-narrow", ["wireguard.peers.manage"],
+               scope_all=False, devices=[hub_id])
+
+    with _as("wg-peer-narrow") as limited:
+        snapshot = limited.get(f"/api/wg/peers?device_id={hub_id}&interface=wg-hub")
+
+    assert snapshot.status_code == 200, snapshot.text
+    peer = next(item for item in snapshot.json()["peers"] if item["id"] == "*private-client")
+    assert peer["managed_devices"] == []
+
+
+def test_device_add_link_prefills_existing_device_form(client):
+    import json
+
+    page = client.get("/devices?add_name=New%20client&add_host=2001%3Adb8%3A%3A3")
+
+    assert page.status_code == 200
+    payload = page.text.split('id="device-prefill">', 1)[1].split("</script>", 1)[0]
+    assert json.loads(payload) == {"host": "2001:db8::3", "name": "New client"}
+    script = client.get("/static/app.js").text
+    assert "device-prefill" in script
+    assert "$('#device-form [name=host]').value = values.host || '';" in script
+
+
+def test_wireguard_peer_add_link_requires_device_edit_permission(client, router):
+    device_id = _wireguard_peer_device(client, router, "wg-peer-no-device-add")
+    _make_user(client, "wg-peer-no-device-edit", ["wireguard.peers.manage"])
+
+    with _as("wg-peer-no-device-edit") as limited:
+        page = limited.get(f"/wireguard/peers?device_id={device_id}")
+
+    assert page.status_code == 200
+    assert 'data-can-add-device="false"' in page.text
+
+
+def test_wireguard_peer_router_selector_excludes_inactive_interfaces(client, router):
+    from app.database import execute
+
+    _wireguard_peer_device(client, router, "wg-peer-selector-active")
+    disabled_id = _add_device(client, router, "wg-peer-selector-disabled")
+    stopped_id = _add_device(client, router, "wg-peer-selector-stopped")
+    execute(
+        "INSERT INTO device_ports (device_id,name,kind,running,disabled,updated_at) "
+        "VALUES (?,?,?,1,1,datetime('now'))",
+        (disabled_id, "wg-disabled", "wireguard"),
+    )
+    execute(
+        "INSERT INTO device_ports (device_id,name,kind,running,disabled,updated_at) "
+        "VALUES (?,?,?,0,0,datetime('now'))",
+        (stopped_id, "wg-stopped", "wireguard"),
+    )
+
+    page = client.get("/wireguard/peers").text
+
+    assert "wg-peer-selector-active" in page
+    assert "wg-peer-selector-disabled" not in page
+    assert "wg-peer-selector-stopped" not in page
+
+
+def test_wireguard_peer_client_create_returns_ephemeral_client_exports(client, router):
+    device_id = _wireguard_peer_device(client, router, "wg-peer-create")
+
+    response = client.post("/api/wg/peers/create", json={
+        "device_id": device_id, "interface": "wg-hub", "name": "Telefono",
+    })
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["peer"]["ip"] == "10.30.0.2"
+    assert "PrivateKey = " in body["peer"]["config"]
+    assert "/interface/wireguard/peers" in body["peer"]["script"]
+    assert 'add name="wg-10-30-0-2"' in body["peer"]["script"]
+    assert "/ip/firewall/address-list\nadd address=10.30.0.1 list=MANAGEMENT" in body["peer"]["script"]
+    assert body["peer"]["qr"].startswith("<svg")
+    peer = next(p for p in router.wg_peers if p.get("name") == "Telefono")
+    assert peer["interface"] == "wg-hub"
+    assert peer["allowed-address"] == "10.30.0.2/32"
+    assert peer["public-key"]
+
+
+def test_wireguard_peer_ip_allocation_skips_every_local_interface_address(client, router):
+    device_id = _wireguard_peer_device(client, router, "wg-peer-address-pool")
+    router.ip_addresses.append({
+        ".id": "*wg-peer-address-reserved", "address": "10.30.0.2/24",
+        "interface": "wg-hub",
+    })
+
+    response = client.post("/api/wg/peers/create", json={
+        "device_id": device_id, "interface": "wg-hub", "name": "Pool test",
+    })
+
+    assert response.status_code == 200, response.text
+    assert response.json()["peer"]["ip"] == "10.30.0.3"
+
+
+def test_wireguard_peer_client_has_independent_permission_and_respects_scope(client, router):
+    device_id = _wireguard_peer_device(client, router, "wg-peer-permission")
+    _make_user(client, "onlylinks", ["wireguard.manage"])
+
+    with _as("onlylinks") as limited:
+        assert limited.get(f"/wireguard/peers?device_id={device_id}").status_code == 403
+        assert limited.post("/api/wg/peers/create", json={
+            "device_id": device_id, "interface": "wg-hub", "name": "Nope",
+        }).status_code == 403
+
+    _make_user(client, "peeroperator", ["wireguard.peers.manage"],
+               scope_all=False, devices=[])
+    with _as("peeroperator") as out_of_scope:
+        assert out_of_scope.get(f"/wireguard/peers?device_id={device_id}").status_code == 403
+
+
+def test_wireguard_peer_client_private_key_is_not_persisted(client, router):
+    from app.database import query
+
+    device_id = _wireguard_peer_device(client, router, "wg-peer-secret")
+    response = client.post("/api/wg/peers/create", json={
+        "device_id": device_id, "interface": "wg-hub", "name": "Secret client",
+    })
+    assert response.status_code == 200, response.text
+    private = response.json()["peer"]["config"].split("PrivateKey = ", 1)[1].splitlines()[0]
+
+    for table in ("devices", "audit_log", "jobs", "job_items"):
+        assert private not in str([dict(row) for row in query(f"SELECT * FROM {table}")]), table
+
+
+def test_wireguard_peer_client_lifecycle_is_limited_to_selected_interface(client, router):
+    device_id = _wireguard_peer_device(client, router, "wg-peer-lifecycle")
+    router.wg_peers.extend([
+        {".id": "*wg-managed", "interface": "wg-hub", "name": "Tablet",
+         "allowed-address": "10.30.0.8/32", "public-key": "OLDKEY=", "disabled": "false"},
+        {".id": "*wg-other", "interface": "wg-other", "name": "Non toccare",
+         "allowed-address": "10.31.0.8/32", "public-key": "OTHERKEY=", "disabled": "false"},
+    ])
+
+    rename = client.post("/api/wg/peers/rename", json={
+        "device_id": device_id, "interface": "wg-hub", "id": "*wg-managed",
+        "name": "Tablet nuova",
+    })
+    assert rename.status_code == 200, rename.text
+    assert next(p for p in router.wg_peers if p[".id"] == "*wg-managed")["name"] == "Tablet nuova"
+
+    wrong_interface = client.post("/api/wg/peers/delete", json={
+        "device_id": device_id, "interface": "wg-hub", "id": "*wg-other",
+    })
+    assert wrong_interface.status_code == 404
+    assert any(p[".id"] == "*wg-other" for p in router.wg_peers)
+
+    disabled = client.post("/api/wg/peers/toggle", json={
+        "device_id": device_id, "interface": "wg-hub", "id": "*wg-managed",
+        "disabled": True,
+    })
+    assert disabled.status_code == 200, disabled.text
+    assert next(p for p in router.wg_peers if p[".id"] == "*wg-managed")["disabled"] == "yes"
+
+    rotated = client.post("/api/wg/peers/regenerate", json={
+        "device_id": device_id, "interface": "wg-hub", "id": "*wg-managed",
+    })
+    assert rotated.status_code == 200, rotated.text
+    body = rotated.json()["peer"]
+    updated = next(p for p in router.wg_peers if p[".id"] == "*wg-managed")
+    assert updated["public-key"] != "OLDKEY="
+    assert "PrivateKey = " in body["config"]
+    assert "PresharedKey" not in body["config"]
+
+    deleted = client.post("/api/wg/peers/delete", json={
+        "device_id": device_id, "interface": "wg-hub", "id": "*wg-managed",
+    })
+    assert deleted.status_code == 200, deleted.text
+    assert not any(p[".id"] == "*wg-managed" for p in router.wg_peers)
+    assert any(p[".id"] == "*wg-other" for p in router.wg_peers)
+
+
+def test_wireguard_peer_client_creation_requires_router_derived_config(client, router):
+    device_id = _add_device(client, router, "wg-peer-incomplete")
+    router.wg_interfaces[0]["public-key"] = ""
+    router.ip_addresses.append({
+        ".id": "*wg-peer-address-missing", "address": "10.40.0.1/24",
+        "interface": "wg-hub",
+    })
+    from app.database import execute
+
+    execute(
+        "INSERT INTO device_ports (device_id,name,kind,running,disabled,updated_at) "
+        "VALUES (?,?,?,1,0,datetime('now'))",
+        (device_id, "wg-hub", "wireguard"),
+    )
+
+    response = client.post("/api/wg/peers/create", json={
+        "device_id": device_id, "interface": "wg-hub", "name": "No config",
+    })
+
+    assert response.status_code == 400
+    assert not any(p.get("name") == "No config" for p in router.wg_peers)
+
+
 def test_foreign_routes_are_not_deletable(client, router):
     """Маршрут без метки панели удалить нельзя: он чужой."""
     device_id = _wg_hub(client, router)
@@ -8546,6 +9320,93 @@ def test_console_shows_what_people_do(client, router):
     bad = [r for r in activity.tail() if "Неудачный вход" in r["text"]][0]
     assert bad["level"] == "warning"
     assert "10.0.0.1" in bad["text"]
+
+
+def test_console_translates_live_rows_and_status_into_italian(client):
+    """I log arrivati via polling e le etichette dinamiche seguono la lingua."""
+    from app import activity
+    from app.database import execute, utcnow
+
+    activity.install()
+    activity.clear()
+    activity.add(
+        "INFO",
+        "Задача 123 «Проверить статус»: начата, устройств 1 (запустил admin)",
+        "tikpilot.worker",
+    )
+    activity.add("INFO", "router-1: готово", "tikpilot.worker")
+    activity.add(
+        "WARNING",
+        "Устройство недоступно: router-1 (10.0.0.1), причина: Таймаут подключения",
+        "tikpilot.monitor",
+    )
+    activity.add("INFO", "admin: Вход в систему · 10.0.0.1", "tikpilot.audit")
+    activity.add(
+        "INFO",
+        "Вход в систему: Albergo dente del gigante (3.0.0.120)",
+        "tikpilot.sessions",
+    )
+    activity.add("INFO", "Вход в систему:", "tikpilot.sessions")
+    activity.add("INFO", "Albergo dente del gigante: клиентов 22", "tikpilot.monitor")
+    activity.add(
+        "INFO",
+        "полный опрос: устройств 362, недоступно 110, за 187.4 с",
+        "tikpilot.monitor",
+    )
+    activity.add(
+        "INFO",
+        "проверка: устройств 362, недоступно 110, за 30.1 с",
+        "tikpilot.monitor",
+    )
+    activity.add("INFO", "Studio Chinaglia: клиентов 20", "tikpilot.monitor")
+    activity.add(
+        "INFO",
+        "Диск панели: свободно 542,1 ГиБ из 1,5 ТиБ (34.4%), база 51,3 МиБ, бэкапы 7,8 МиБ",
+        "tikpilot.audit",
+    )
+    activity.add(
+        "INFO",
+        "Устройство вернулось: Thomain Lucrezia - SXT (3.0.0.100), лежало 1 мин",
+        "tikpilot.monitor",
+    )
+    job_id = execute(
+        "INSERT INTO jobs (action, action_label, params_json, username, status, total,"
+        " created_at) VALUES (?,?,?,?,?,?,?)",
+        ("check", "Проверить статус", "{}", "admin", "running", 1, utcnow()),
+    )
+
+    client.get("/lang/it?next=/console", follow_redirects=False)
+    try:
+        page = client.get("/console").text
+        assert "Log del pannello" in page
+        assert "Последние" not in page
+        assert "Attività 123 «Verifica stato»: avviata" in page
+
+        feed = client.get("/api/console?after=0").json()
+        translated = "\n".join(row["source"] + ": " + row["text"] for row in feed["rows"])
+        assert "attività: Attività 123 «Verifica stato»: avviata, dispositivi 1 (avviata da admin)" in translated
+        assert "attività: router-1: completato" in translated
+        assert "monitoraggio: Dispositivo non raggiungibile: router-1 (10.0.0.1), motivo: Timeout di connessione" in translated
+        assert "azioni: admin: Accesso effettuato · 10.0.0.1" in translated
+        assert "sessioni: Accesso al dispositivo: Albergo dente del gigante (3.0.0.120)" in translated
+        assert any(
+            row["source"] == "sessioni" and row["text"] == "Accesso al dispositivo:"
+            for row in feed["rows"]
+        )
+        assert "monitoraggio: Albergo dente del gigante: client connessi: 22" in translated
+        assert "monitoraggio: controllo completo: dispositivi 362, non raggiungibili 110, in 187.4 s" in translated
+        assert "monitoraggio: verifica: dispositivi 362, non raggiungibili 110, in 30.1 s" in translated
+        assert "monitoraggio: Studio Chinaglia: client connessi: 20" in translated
+        assert "azioni: Disco del pannello: liberi 542,1 GiB su 1,5 TiB (34.4%), database 51,3 MiB, backup 7,8 MiB" in translated
+        assert "monitoraggio: Dispositivo tornato online: Thomain Lucrezia - SXT (3.0.0.100), inattivo per 1 min" in translated
+
+        now = client.get("/api/console/now").json()
+        job = next(row for row in now["jobs"] if row["id"] == job_id)
+        assert job["action_label"] == "Verifica stato"
+    finally:
+        execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        activity.clear()
+        client.get("/lang/ru?next=/console", follow_redirects=False)
 
 
 @pytest.mark.slow

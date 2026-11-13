@@ -1108,3 +1108,20 @@ function setupFolds() {
 }
 
 setupFolds();
+
+const devicePrefill = $('#device-prefill');
+if (devicePrefill && $('#device-form')) {
+    try {
+        const values = JSON.parse(devicePrefill.textContent || '{}');
+        newDevice();
+        $('#device-form [name=name]').value = values.name || '';
+        $('#device-form [name=host]').value = values.host || '';
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('add_name');
+        cleanUrl.searchParams.delete('add_host');
+        window.history.replaceState(null, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+        $('#device-form [name=name]').focus();
+    } catch (error) {
+        console.error('Could not prefill the add-device form.', error);
+    }
+}
