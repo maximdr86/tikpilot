@@ -1214,6 +1214,8 @@
   "Видеть настройки": "See the settings",
   "Видеть список бэкапов": "See the backup list",
   "Включать пароли в export (show-sensitive)": "Include passwords in the export (show-sensitive)",
+  "<span>Включать пароли в export (show-sensitive)</span>": "<span>Include passwords in the export (show-sensitive)</span>",
+  "Внимание: при включении пароли и другие чувствительные значения попадут в текстовый .rsc-файл. Он будет храниться на сервере согласно количеству копий в правиле. Включайте только при необходимости и ограничьте доступ к файлам бэкапов.": "Warning: when enabled, passwords and other sensitive values will be included in the text .rsc file. It will be stored on the server according to the rule's retention count. Enable only when needed and restrict access to backup files.",
   "Включить": "Enable",
   "Возможность новая и на живом оборудовании ещё не проверялась. Если сомневаетесь, откатите сами, не дожидаясь срока.": "This is new and has not been verified on live hardware yet. If in doubt, roll it back yourself without waiting for the deadline.",
   "Войти": "Sign in",

@@ -1214,6 +1214,8 @@
   "Видеть настройки": "Visualizzare le impostazioni",
   "Видеть список бэкапов": "Visualizzare l'elenco dei backup",
   "Включать пароли в export (show-sensitive)": "Includere le password nell'esportazione (show-sensitive)",
+  "<span>Включать пароли в export (show-sensitive)</span>": "<span>Includere le password nell'esportazione (show-sensitive)</span>",
+  "Внимание: при включении пароли и другие чувствительные значения попадут в текстовый .rsc-файл. Он будет храниться на сервере согласно количеству копий в правиле. Включайте только при необходимости и ограничьте доступ к файлам бэкапов.": "Attenzione: se attivata, le password e altri valori sensibili saranno inclusi nel file di testo .rsc. Il file resterà sul server in base al numero di copie conservate dalla regola. Attivare solo se necessario e limitare l'accesso ai file di backup.",
   "Включить": "Abilita",
   "Возможность новая и на живом оборудовании ещё не проверялась. Если сомневаетесь, откатите сами, не дожидаясь срока.": "Funzionalità nuova non ancora verificata su hardware di produzione. In caso di dubbio, procedere autonomamente al ripristino senza attendere la scadenza.",
   "Войти": "Accedi",

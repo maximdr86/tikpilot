@@ -746,6 +746,7 @@ CREATE TABLE IF NOT EXISTS backup_schedules (
     keep         INTEGER NOT NULL DEFAULT 14,   -- сколько последних копий оставлять
     do_binary    INTEGER NOT NULL DEFAULT 1,
     do_export    INTEGER NOT NULL DEFAULT 1,
+    show_sensitive INTEGER NOT NULL DEFAULT 0,
     enabled      INTEGER NOT NULL DEFAULT 1,
     next_run_at  TEXT,                          -- UTC
     last_run_at  TEXT,                          -- UTC
@@ -842,6 +843,10 @@ MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         # Правило расписания, породившее задачу. По нему после её окончания
         # чистятся лишние копии.
         ("schedule_id", "INTEGER"),
+    ],
+    "backup_schedules": [
+        # Пароли в текстовом export не включаются, пока это явно не разрешили
+        ("show_sensitive", "INTEGER NOT NULL DEFAULT 0"),
     ],
     "groups": [
         # Публичная ссылка на лист состояния. Пусто — ссылки нет.

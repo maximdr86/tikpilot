@@ -138,7 +138,7 @@
                             <div class="small muted">
                                 {% if r.do_binary %}.backup{% endif %}
                                 {% if r.do_binary and r.do_export %}·{% endif %}
-                                {% if r.do_export %}.rsc{% endif %}
+                                {% if r.do_export %}.rsc{% if r.show_sensitive %} · show-sensitive{% endif %}{% endif %}
                             </div>
                         {% endif %}
                     </td>
@@ -210,6 +210,7 @@
                 <label>Что снимать с устройств</label>
                 <label class="check"><input type="checkbox" id="r-binary" checked><span>Бинарный .backup</span></label>
                 <label class="check"><input type="checkbox" id="r-export" checked><span>Текстовый .rsc</span></label>
+                <label class="check"><input type="checkbox" id="r-sensitive"><span>Включать пароли в export (show-sensitive)</span></label>
             </div>
             <div class="field">
                 <label for="r-name">Подпись</label>
@@ -217,12 +218,13 @@
             </div>
         </div>
 
+        <div class="alert warn">
+            Внимание: при включении пароли и другие чувствительные значения попадут в текстовый .rsc-файл.
+            Он будет храниться на сервере согласно количеству копий в правиле. Включайте только при необходимости
+            и ограничьте доступ к файлам бэкапов.
+        </div>
         <div class="btn-row">
             <button class="btn primary" onclick="createRule()">Добавить правило</button>
-        </div>
-        <div class="hint" style="margin-top:8px">
-            Пароли в текстовый export по расписанию не попадают: такой файл лежит
-            на диске месяцами, и решение о нём принимается руками.
         </div>
     </div>
 </div>
@@ -317,6 +319,7 @@
                 keep: document.getElementById('r-keep').value,
                 do_binary: document.getElementById('r-binary').checked,
                 do_export: document.getElementById('r-export').checked,
+                show_sensitive: document.getElementById('r-sensitive').checked,
                 name: document.getElementById('r-name').value,
             }});
             window.location.reload();
