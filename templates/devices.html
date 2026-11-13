@@ -135,6 +135,9 @@
 
 {% include "partials/device_modal.html" %}
 {% include "partials/import_modal.html" %}
+{% if device_prefill %}
+<script type="application/json" id="device-prefill">{{ device_prefill | tojson }}</script>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

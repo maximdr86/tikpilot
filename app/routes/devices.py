@@ -113,6 +113,8 @@ async def devices_page(
     q: str = "",
     group_id: str = "",
     status: str = "",
+    add_name: str = "",
+    add_host: str = "",
     user=Depends(current_user),
 ):
     """Основная страница со списком устройств."""
@@ -129,6 +131,11 @@ async def devices_page(
         f_q=q,
         f_group=group_id,
         f_status=status,
+        device_prefill=(
+            {"name": add_name, "host": add_host}
+            if permissions.has(user, "devices.edit") and (add_name or add_host)
+            else None
+        ),
     )
 
 
@@ -826,7 +833,7 @@ async def import_devices(
     Импорт устройств из CSV.
 
     Ожидаемые колонки (регистр не важен, лишние игнорируются):
-        name, host, username, password, api_port, ftp_port, ssh_port, group, comment
+        name, host, username, password, api_port, use_ssl, ftp_port, ssh_port, group, comment
     Разделитель определяется автоматически (запятая или точка с запятой).
     """
     raw = (await file.read()).decode("utf-8-sig", errors="replace")
@@ -861,15 +868,19 @@ async def import_devices(
         elif default_group:
             group_id = int(default_group)
 
+        api_port = int(row.get("api_port") or 8728)
+        use_ssl_value = row.get("use_ssl", "")
+        use_ssl = form_bool(use_ssl_value) if use_ssl_value else int(api_port == 8729)
         execute(
-            "INSERT INTO devices (name, host, api_port, ftp_port, ssh_port, username, password_enc, "
-            "group_id, comment, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO devices (name, host, api_port, ftp_port, ssh_port, use_ssl, username, password_enc, "
+            "group_id, comment, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 name,
                 host,
-                int(row.get("api_port") or 8728),
+                api_port,
                 int(row.get("ftp_port") or 21),
                 int(row.get("ssh_port") or 22),
+                use_ssl,
                 row.get("username") or "admin",
                 encrypt(row.get("password") or ""),
                 group_id,
@@ -895,11 +906,11 @@ async def export_devices(user=Depends(current_user)):
     # Модель в выгрузке нужна ровно за тем же, зачем в таблице: план
     # обновления парка обычно составляют в электронной таблице, и там
     # «какая это коробка» столбец не менее важный, чем версия
-    writer.writerow(["name", "host", "api_port", "ftp_port", "ssh_port", "username", "group",
+    writer.writerow(["name", "host", "api_port", "use_ssl", "ftp_port", "ssh_port", "username", "group",
                      "comment", "status", "version", "model", "architecture"])
     for r in rows:
         writer.writerow(
-            [r["name"], r["host"], r["api_port"], r["ftp_port"], r["ssh_port"], r["username"],
+            [r["name"], r["host"], r["api_port"], r["use_ssl"], r["ftp_port"], r["ssh_port"], r["username"],
              r["group_name"] or "", r["comment"], r["status"], r["ros_version"],
              r["board_name"], r["architecture"]]
         )
