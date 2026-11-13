@@ -4905,7 +4905,7 @@ def test_modem_that_stays_silent_is_not_called_missing(client, router):
     assert operator.from_modem(NoModem()) == ({}, "")
 
 
-def test_missing_operator_explains_itself(client, router):
+def test_missing_operator_explains_itself(client, router, monkeypatch):
     """
     Когда оператора узнать неоткуда, панель говорит почему.
 
@@ -4914,6 +4914,9 @@ def test_missing_operator_explains_itself(client, router):
     точке, а внешний адрес спрятан за NAT провайдера.
     """
     from app import operator
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "operator_lookup", False)
 
     device_id = _add_device(client, router, "точка-без-модема")
     router.lte_monitor = None          # модема нет
