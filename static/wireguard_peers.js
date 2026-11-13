@@ -4,9 +4,11 @@
     const interfaceName = root.querySelector('#wg-peer-create-form [name="interface"]')?.value || '';
     const initial = root.getElementById('wg-peer-initial');
     const tbody = root.getElementById('wg-peer-rows');
-    if (!initial || !tbody) return;
+    const table = root.getElementById('wg-peer-table');
+    if (!initial || !tbody || !table) return;
 
     let peers = JSON.parse(initial.textContent || '[]');
+    const dnatEnabled = table.dataset.dnatEnabled === 'true';
     let page = 1;
     let sort = { field: 'name', direction: 1 };
     let exportData = null;
@@ -17,6 +19,11 @@
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     })[char]);
+
+    function format(text, ...values) {
+        return values.reduce((result, value, index) =>
+            result.replace(`%(p${index})s`, String(value)), text);
+    }
 
     function bytes(value) {
         let amount = Number.parseInt(value, 10) || 0;
@@ -39,7 +46,7 @@
 
     function clearCopyFeedback() {
         const button = root.getElementById('wg-peer-copy-button');
-        button.textContent = button.dataset.copyLabel;
+        button.textContent = T('Скопировать');
         button.classList.remove('copied');
         const feedback = root.getElementById('wg-peer-copy-feedback');
         feedback.textContent = '';
@@ -49,7 +56,7 @@
     function showCopyFeedback(text, error = false) {
         const button = root.getElementById('wg-peer-copy-button');
         const feedback = root.getElementById('wg-peer-copy-feedback');
-        button.textContent = error ? button.dataset.copyLabel : button.dataset.copiedLabel;
+        button.textContent = error ? T('Скопировать') : T('Скопировано ✓');
         button.classList.toggle('copied', !error);
         feedback.textContent = text;
         feedback.classList.toggle('error', error);
@@ -57,6 +64,7 @@
 
     function sortValue(peer, field) {
         if (field === 'status') return peer.disabled ? 2 : peer.connected ? 0 : 1;
+        if (field === 'dnat') return Number(peer.dnat_port) || 0;
         if (field === 'traffic') {
             return (Number.parseInt(peer.rx, 10) || 0) + (Number.parseInt(peer.tx, 10) || 0);
         }
@@ -88,38 +96,77 @@
         const visible = found.slice((page - 1) * pageSize, page * pageSize);
         tbody.innerHTML = visible.map((peer) => {
             const disabled = peer.connection_status === 'disabled'
-                ? '<span class="badge offline">Disattivo</span>'
+                ? `<span class="badge offline">${escapeHtml(T('Отключён'))}</span>`
                 : '';
             const connection = peer.connection_status === 'connected'
-                ? '<span class="badge online"><span class="led"></span>Connesso</span>'
+                ? `<span class="badge online"><span class="led"></span>${escapeHtml(T('Подключён'))}</span>`
                 : peer.connection_status === 'disconnected'
-                    ? '<span class="badge unknown">Non connesso</span>'
+                    ? `<span class="badge unknown">${escapeHtml(T('Не подключён'))}</span>`
                     : '';
             const handshake = peer.connection_status === 'connected' && peer.handshake
                 ? `<span class="wg-peer-handshake">${escapeHtml(peer.handshake)}</span>`
                 : '';
+            const dnatPort = Number.isInteger(peer.dnat_port) ? peer.dnat_port : null;
+            const toggleLabel = format(
+                peer.disabled ? T('Возобновить %(p0)s') : T('Приостановить %(p0)s'),
+                peer.name,
+            );
+            const ipCell = peer.ip
+                ? `<button class="badge wg-peer-copy-value wg-peer-ip-badge" type="button"
+                    data-copy-value="${escapeHtml(peer.ip)}"
+                    aria-label="${escapeHtml(T('Скопировать IP'))}: ${escapeHtml(peer.ip)}"
+                    title="${escapeHtml(T('Нажмите, чтобы скопировать'))}">${escapeHtml(peer.ip)}</button>`
+                : '—';
+            const dnatCell = dnatEnabled
+                ? `<td class="mono">${dnatPort === null ? '—' : `<button class="badge wg-peer-copy-value wg-peer-dnat-copy" type="button" data-copy-value="${dnatPort}" aria-label="${escapeHtml(T('Скопировать порт DNAT'))}: ${dnatPort}" title="${escapeHtml(T('Нажмите, чтобы скопировать'))}">${dnatPort}</button>`}</td>`
+                : '';
+            const managedDevices = Array.isArray(peer.managed_devices)
+                ? peer.managed_devices.filter((device) => Number.isInteger(Number(device.id))
+                    && Number(device.id) > 0)
+                : [];
+            const managedDevice = managedDevices[0] || null;
+            const displayName = peer.name || T('Без имени');
+            const nameCell = managedDevice
+                ? `<a class="wg-peer-name-link" href="/devices/${Number(managedDevice.id)}"
+                    aria-label="${escapeHtml(format(T('Открыть карточку %(p0)s'), peer.name || managedDevice.name))}"
+                    title="${escapeHtml(T('Открыть карточку устройства'))}">${escapeHtml(displayName)}</a>`
+                : peer.name
+                    ? `<button class="wg-peer-copy-value wg-peer-name-copy" type="button"
+                        data-copy-value="${escapeHtml(peer.name)}"
+                        aria-label="${escapeHtml(T('Скопировать имя'))}: ${escapeHtml(peer.name)}"
+                        title="${escapeHtml(T('Нажмите, чтобы скопировать'))}"><span class="wg-peer-name-copy-text">${escapeHtml(peer.name)}</span></button>`
+                    : escapeHtml(T('Без имени'));
+            const addLink = managedDevices.length
+                ? ''
+                : table.dataset.canAddDevice === 'true'
+                    ? `<a class="btn sm wg-peer-add-device"
+                        href="/devices?add_name=${encodeURIComponent(peer.name || '')}&amp;add_host=${encodeURIComponent(peer.ip || '')}"
+                        aria-label="${escapeHtml(format(T('Добавить %(p0)s в парк'), peer.name || peer.ip || ''))}"
+                        title="${escapeHtml(T('Добавить устройство в парк'))}">+</a>`
+                    : `<span class="muted" title="${escapeHtml(T('Нет права добавлять устройства'))}">—</span>`;
             return `<tr data-peer-row="${escapeHtml(peer.id)}"${peer.disabled ? ' class="wg-peer-disabled"' : ''}>
-                <td><strong>${escapeHtml(peer.name || 'Senza nome')}</strong></td>
-                <td class="mono">${escapeHtml(peer.ip || '—')}</td>
+                <td><div class="wg-peer-name-cell"><strong>${nameCell}</strong>${addLink}</div></td>
+                <td class="mono">${ipCell}</td>
+                ${dnatCell}
                 <td><div class="wg-peer-state">${disabled}${connection}${handshake}</div></td>
                 <td class="mono">${escapeHtml(peer.endpoint || '—')}</td>
                 <td class="small nowrap">↓ ${bytes(peer.rx)} · ↑ ${bytes(peer.tx)}</td>
                 <td><div class="wg-peer-actions">
                     <button class="btn sm" type="button" data-peer-action="rename"
                         data-peer-id="${escapeHtml(peer.id)}"
-                        aria-label="Rinomina ${escapeHtml(peer.name)}">Rinomina</button>
+                        aria-label="${escapeHtml(format(T('Переименовать %(p0)s'), peer.name))}">${escapeHtml(T('Переименовать'))}</button>
                     <button class="btn sm" type="button" data-peer-action="toggle"
                         data-peer-id="${escapeHtml(peer.id)}"
                         data-disabled="${peer.disabled ? 'true' : 'false'}"
-                        aria-label="${peer.disabled ? 'Riattiva' : 'Sospendi'} ${escapeHtml(peer.name)}">
-                        ${peer.disabled ? 'Riattiva' : 'Sospendi'}</button>
+                        aria-label="${escapeHtml(toggleLabel)}">
+                        ${escapeHtml(peer.disabled ? T('Возобновить') : T('Приостановить'))}</button>
                     <button class="btn sm" type="button" data-peer-action="regenerate"
                         data-peer-id="${escapeHtml(peer.id)}"
-                        aria-label="Rigenera chiave ed esporta per ${escapeHtml(peer.name)}">
-                        Rigenera / Export</button>
+                        aria-label="${escapeHtml(format(T('Перевыпустить ключ и экспортировать для %(p0)s'), peer.name))}">
+                        ${escapeHtml(T('Перевыпустить / экспорт'))}</button>
                     <button class="btn sm danger" type="button" data-peer-action="delete"
                         data-peer-id="${escapeHtml(peer.id)}"
-                        aria-label="Elimina ${escapeHtml(peer.name)}">Elimina</button>
+                        aria-label="${escapeHtml(format(T('Удалить %(p0)s'), peer.name))}">${escapeHtml(T('Удалить'))}</button>
                 </div></td>
             </tr>`;
         }).join('');
@@ -127,12 +174,13 @@
         const empty = root.getElementById('wg-peer-empty');
         empty.hidden = visible.length > 0;
         empty.textContent = peers.length === 0
-            ? 'Nessun peer su questa interfaccia.'
-            : 'Nessun peer corrisponde alla ricerca.';
+            ? T('На этом интерфейсе нет пиров.')
+            : T('По запросу ничего не найдено.');
         const pagination = root.getElementById('wg-peer-pagination');
         pagination.hidden = found.length <= pageSize;
-        root.getElementById('wg-peer-page-label').textContent =
-            `Pagina ${page} di ${pages} · ${found.length} peer`;
+        root.getElementById('wg-peer-page-label').textContent = format(
+            T('Страница %(p0)s из %(p1)s · пиров: %(p2)s'), page, pages, found.length,
+        );
         root.getElementById('wg-peer-prev').disabled = page <= 1;
         root.getElementById('wg-peer-next').disabled = page >= pages;
         root.querySelectorAll('[data-sort]').forEach((button) => {
@@ -150,7 +198,10 @@
             body: JSON.stringify({ device_id: deviceId, interface: interfaceName, ...payload }),
         });
         const body = await response.json();
-        if (!response.ok) throw new Error(body.error || `Richiesta fallita (${response.status})`);
+        if (!response.ok) {
+            const message = body.error || format(T('Запрос не выполнен (код %(p0)s).'), response.status);
+            throw new Error(T(message));
+        }
         return body;
     }
 
@@ -161,7 +212,10 @@
             const params = new URLSearchParams({ device_id: deviceId, interface: interfaceName });
             const response = await fetch(`/api/wg/peers?${params}`, { credentials: 'same-origin' });
             const body = await response.json();
-            if (!response.ok) throw new Error(body.error || 'Impossibile aggiornare i peer');
+            if (!response.ok) {
+                const message = body.error || T('Не удалось обновить список пиров.');
+                throw new Error(T(message));
+            }
             peers = body.peers;
             render();
             return true;
@@ -229,11 +283,10 @@
             root.getElementById('wg-peer-search').value = '';
             const refreshed = await refresh(true);
             showExport(body.peer, button,
-                'Questa configurazione contiene la chiave privata. Copiala o scaricala ora; '
-                + 'TikPilot non la conserva.');
+                T('Эта конфигурация содержит приватный ключ. Скопируйте или скачайте её сейчас; TikPilot его не сохраняет.'));
             showMessage(refreshed
-                ? 'Peer creato. La configurazione è disponibile solo in questa finestra.'
-                : 'Peer creato, ma non è stato possibile aggiornare la lista.', !refreshed);
+                ? T('Peer создан. Конфигурация доступна только в этом окне.')
+                : T('Peer создан, но список не удалось обновить.'), !refreshed);
         } catch (error) {
             showMessage(error.message, true);
         } finally {
@@ -241,7 +294,50 @@
         }
     });
 
+    async function saveSettings(form, statusId, settings) {
+        const button = form.querySelector('[type="submit"]');
+        const status = root.getElementById(statusId);
+        button.disabled = true;
+        status.textContent = '';
+        try {
+            await post('/api/wg/peers/settings', settings);
+            status.textContent = T('Настройки WireGuard сохранены.');
+            window.setTimeout(() => window.location.reload(), 500);
+        } catch (error) {
+            status.textContent = error.message;
+            showMessage(error.message, true);
+            button.disabled = false;
+        }
+    }
+
+    root.getElementById('wg-peer-endpoint-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        saveSettings(form, 'wg-peer-endpoint-status', {
+            public_endpoint: form.elements.public_endpoint.value.trim(),
+        });
+    });
+
+    root.getElementById('wg-peer-dnat-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        saveSettings(form, 'wg-peer-dnat-status', {
+            dnat_base: form.elements.dnat_base.value || null,
+            dnat_multiplier: form.elements.dnat_multiplier.value || null,
+        });
+    });
+
     root.getElementById('wg-peer-rows').addEventListener('click', async (event) => {
+        const copyValue = event.target.closest('[data-copy-value]');
+        if (copyValue) {
+            try {
+                await copyText(copyValue.dataset.copyValue);
+                showMessage(T('Скопировано'));
+            } catch {
+                showMessage(T('Копирование в буфер обмена не удалось.'), true);
+            }
+            return;
+        }
         const button = event.target.closest('[data-peer-action]');
         if (!button) return;
         const peer = peers.find((row) => row.id === button.dataset.peerId);
@@ -257,29 +353,33 @@
                 }
                 case 'toggle': {
                     const disabled = button.dataset.disabled !== 'true';
-                    const question = disabled ? `Sospendere ${peer.name}?` : `Riattivare ${peer.name}?`;
+                    const questionTemplate = disabled
+                        ? T('Приостановить %(p0)s?')
+                        : T('Возобновить %(p0)s?');
+                    const question = format(questionTemplate, peer.name);
                     if (!window.confirm(question)) return;
                     await post('/api/wg/peers/toggle', { id: peer.id, disabled });
-                    showMessage(disabled ? 'Peer sospeso.' : 'Peer riattivato.');
+                    showMessage(disabled ? T('Peer приостановлен.') : T('Peer возобновлён.'));
                     await refresh();
                     break;
                 }
                 case 'delete':
-                    if (!window.confirm(`Eliminare definitivamente il peer ${peer.name}?`)) return;
+                    if (!window.confirm(format(T('Удалить peer %(p0)s без возможности восстановления?'), peer.name))) return;
                     await post('/api/wg/peers/delete', { id: peer.id });
-                    showMessage('Peer eliminato.');
+                    showMessage(T('Peer удалён.'));
                     await refresh();
                     break;
                 case 'regenerate': {
-                    const question = `Rigenerare la chiave di ${peer.name}? `
-                        + 'La chiave client attuale smetterà subito di funzionare.';
+                    const question = format(
+                        T('Заменить ключ peer %(p0)s? Текущий ключ клиента сразу перестанет работать.'),
+                        peer.name,
+                    );
                     if (!window.confirm(question)) return;
                     button.disabled = true;
                     const body = await post('/api/wg/peers/regenerate', { id: peer.id });
                     showExport(body.peer, button,
-                        'La chiave sul router è stata sostituita. Distribuisci subito questa nuova '
-                        + 'configurazione al client. TikPilot non conserva la chiave privata.');
-                    showMessage('Chiave rigenerata. La configurazione precedente non è più valida.');
+                        T('Ключ на роутере заменён. Сразу установите эту конфигурацию на клиент. TikPilot не сохраняет приватный ключ.'));
+                    showMessage(T('Ключ обновлён. Предыдущая конфигурация больше не работает.'));
                     await refresh();
                     break;
                 }
@@ -300,7 +400,7 @@
                 name: form.elements.name.value.trim(),
             });
             closeModal(root.getElementById('wg-peer-rename-modal'));
-            showMessage('Nome peer aggiornato.');
+            showMessage(T('Имя peer обновлено.'));
             await refresh();
         } catch (error) {
             showMessage(error.message, true);
@@ -356,7 +456,7 @@
         exportFormat = button.dataset.exportFormat;
         renderExport();
     }));
-    async function copyExport(text) {
+    async function copyText(text) {
         if (window.isSecureContext && typeof navigator.clipboard?.writeText === 'function') {
             try {
                 await navigator.clipboard.writeText(text);
@@ -383,18 +483,18 @@
             buffer.remove();
             previousFocus?.focus?.();
         }
-        if (!copied) throw new Error('Il browser non ha consentito la copia');
+        if (!copied) throw new Error(T('Браузер не разрешил копирование.'));
     }
 
     root.querySelector('[data-export-copy]').addEventListener('click', async () => {
         if (exportFormat === 'qr') return;
         try {
-            await copyExport(root.getElementById('wg-peer-export-text').value);
-            showCopyFeedback('Configurazione copiata negli appunti.');
-            showMessage('Configurazione copiata.');
+            await copyText(root.getElementById('wg-peer-export-text').value);
+            showCopyFeedback(T('Конфигурация скопирована в буфер обмена.'));
+            showMessage(T('Конфигурация скопирована.'));
         } catch (error) {
             showCopyFeedback(error.message, true);
-            showMessage('Impossibile accedere agli appunti.', true);
+            showMessage(T('Не удалось получить доступ к буферу обмена.'), true);
         }
     });
     root.querySelector('[data-export-download]').addEventListener('click', () => {

@@ -6,12 +6,12 @@
 <div class="page-head">
     <div>
         <h1>WireGuard · Peer client</h1>
-        <div class="sub">Gestione dei peer client. Separata dai collegamenti site-to-site.</div>
+        <div class="sub">Управление клиентскими пирами WireGuard. Отдельно от соединений site-to-site.</div>
     </div>
     <form class="btn-row" id="wg-peer-select-form" method="get" action="/wireguard/peers">
-        <label class="sr-only" for="wg-peer-device">Router</label>
+        <label class="sr-only" for="wg-peer-device">Роутер</label>
         <select id="wg-peer-device" name="device_id">
-            <option value="0">Seleziona router</option>
+            <option value="0">Выберите роутер</option>
             {% for device in devices %}
             <option value="{{ device.id }}" {% if device.id == device_id %}selected{% endif %}>
                 {{ device.name }} ({{ device.host }})
@@ -19,11 +19,11 @@
             {% endfor %}
         </select>
         {% if interfaces %}
-        <label class="sr-only" for="wg-peer-interface">Interfaccia WireGuard</label>
+        <label class="sr-only" for="wg-peer-interface">Интерфейс WireGuard</label>
         <select id="wg-peer-interface" name="interface">
             {% for item in interfaces %}
             <option value="{{ item.name }}" {% if item.name == interface %}selected{% endif %}>
-                {{ item.name }}{% if item['listen-port'] %} · porta {{ item['listen-port'] }}{% endif %}
+                {{ item.name }}{% if item['listen-port'] %} · порт {{ item['listen-port'] }}{% endif %}
             </option>
             {% endfor %}
         </select>
@@ -33,11 +33,11 @@
 
 {% if not devices %}
 <div class="panel"><div class="panel-body">
-    <div class="empty">Nessun router con interfaccia WireGuard attiva rilevato nell'inventory. Esegui un check e riprova.</div>
+    <div class="empty">В инвентаре не найдено активных интерфейсов WireGuard. Выполните проверку и повторите попытку.</div>
 </div></div>
 {% elif not device_id %}
 <div class="panel"><div class="panel-body">
-    <div class="hint">Seleziona un router e un'interfaccia WireGuard per visualizzare i peer client.</div>
+    <div class="hint">Выберите роутер и интерфейс WireGuard, чтобы просмотреть клиентские пиры.</div>
 </div></div>
 {% elif error %}
 <div class="panel"><div class="panel-body">
@@ -45,71 +45,117 @@
 </div></div>
 {% elif hub %}
 <div class="panel">
-    <h2>{{ selected_device.name }} <span class="h2-extra muted">{{ interface }} · <span id="wg-peer-count">{{ peers | length }}</span> peer</span></h2>
+    <h2>{{ selected_device.name }} <span class="h2-extra muted">{{ interface }} · <span id="wg-peer-count">{{ peers | length }}</span> пиров</span></h2>
     <div class="panel-body">
         <div class="grid cols-2">
             <div class="field">
-                <span class="muted small">Endpoint usato nell'export</span>
+                <span class="muted small">Endpoint, используемый в экспорте</span>
                 <div class="mono">{{ hub.public_host or '—' }}{% if hub.listen_port %}:{{ hub.listen_port }}{% endif %}</div>
             </div>
             <div class="field">
-                <span class="muted small">Reti incluse nelle configurazioni client</span>
-                <div class="mono">{{ allowed_ips | join(', ') or 'Non disponibili' }}</div>
+                <span class="muted small">Сети в конфигурации клиента</span>
+                <div class="mono">{{ allowed_ips | join(', ') or ('Недоступны' | t) }}</div>
             </div>
         </div>
         {% if not hub.public_host or not hub.public_key or not hub.tunnel_address or not hub.listen_port %}
-        <div class="alert warn">Per creare o esportare un peer servono endpoint, chiave pubblica, porta e indirizzo tunnel leggibili dal dispositivo.</div>
+        <div class="alert warn">Для создания или экспорта peer должны быть доступны endpoint, публичный ключ, порт и адрес туннеля роутера.</div>
         {% endif %}
         {% if endpoint_fallback %}
-        <div class="alert warn">Non è configurato un endpoint pubblico per il sito: l'export userà l'host di gestione del router, che potrebbe non essere raggiungibile dai client esterni.</div>
+        <div class="alert warn">Свой endpoint для peer-клиентов не задан. Экспорт временно использует адрес сайта для выбранного интерфейса или адрес управления роутером. Сохраните endpoint здесь, чтобы явно задать адрес для клиентов.</div>
         {% endif %}
-        <div class="hint">L'endpoint usa l'indirizzo pubblico già salvato per il sito oppure l'host del router in TikPilot. Le Allowed IPs derivano dalla subnet WireGuard e dalle LAN già configurate per il sito. Nessun nuovo dato viene richiesto o salvato.</div>
+        <div class="hint">Сети Allowed IPs берутся из подсети WireGuard и LAN-сетей, настроенных для сайта. Новые параметры сохраняются отдельно для роутера и интерфейса.</div>
+        <form id="wg-peer-endpoint-form" class="wg-peer-settings-form" autocomplete="off">
+            <div class="field">
+                <label for="wg-peer-public-endpoint">Публичный endpoint</label>
+                <div class="wg-peer-endpoint-row">
+                    <input id="wg-peer-public-endpoint" name="public_endpoint" type="text"
+                           maxlength="300" value="{{ peer_settings.public_endpoint }}"
+                           placeholder="vpn.example.com:13231" spellcheck="false">
+                    <button class="btn" type="submit">Сохранить endpoint</button>
+                </div>
+                <span class="small muted">IP-адрес или имя хоста, порт указывать необязательно. Если порт не указан, используется порт WireGuard на роутере ({{ hub.listen_port }}).</span>
+                <div id="wg-peer-endpoint-status" role="status" aria-live="polite"></div>
+            </div>
+        </form>
+        <details class="wg-peer-dnat-settings">
+            <summary>Настройки DNAT</summary>
+            <div class="wg-peer-dnat-body">
+                <p class="small muted">Подключайтесь к роутеру клиента по Winbox через туннель на CHR, не открывая клиента в Интернете.<br>Порт рассчитывается в Tikpilot; правило dst-nat на CHR нужно создать вручную.</p>
+                <p class="small muted">Формула: базовый порт + третий октет × множитель + четвёртый октет.</p>
+                <form id="wg-peer-dnat-form" class="wg-peer-settings-form" autocomplete="off">
+                    <div class="grid cols-2">
+                        <div class="field">
+                            <label for="wg-peer-dnat-base">Базовый порт DNAT</label>
+                            <input id="wg-peer-dnat-base" name="dnat_base" type="number"
+                                   min="1" max="65535" step="1"
+                                   value="{{ peer_settings.dnat_base if peer_settings.dnat_base is not none else '' }}"
+                                   placeholder="30000">
+                            <span class="small muted">Рекомендуемое значение: 30000</span>
+                        </div>
+                        <div class="field">
+                            <label for="wg-peer-dnat-multiplier">Множитель DNAT</label>
+                            <input id="wg-peer-dnat-multiplier" name="dnat_multiplier" type="number"
+                                   min="256" max="65535" step="1"
+                                   value="{{ peer_settings.dnat_multiplier if peer_settings.dnat_multiplier is not none else '' }}"
+                                   placeholder="1000">
+                            <span class="small muted">Рекомендуемое значение: 1000. Для уникальных портов используйте значение не меньше 256.</span>
+                        </div>
+                    </div>
+                    <div class="btn-row">
+                        <button class="btn" type="submit">Сохранить DNAT</button>
+                        <span id="wg-peer-dnat-status" role="status" aria-live="polite"></span>
+                    </div>
+                </form>
+            </div>
+        </details>
     </div>
 </div>
 
 <div class="panel">
-    <h2>Crea peer</h2>
+    <h2>Создать peer</h2>
     <div class="panel-body">
         <form id="wg-peer-create-form" class="btn-row" autocomplete="off">
             <input type="hidden" name="device_id" value="{{ device_id }}">
             <input type="hidden" name="interface" value="{{ interface }}">
-            <label class="sr-only" for="wg-peer-name">Nome nuovo peer</label>
-            <input id="wg-peer-name" name="name" type="text" maxlength="128" required placeholder="Nome del client">
-            <button class="btn primary" type="submit">Crea peer</button>
-            <span class="hint">L'IP libero viene assegnato automaticamente. La chiave privata è mostrata una volta sola.</span>
+            <label class="sr-only" for="wg-peer-name">Имя нового клиента</label>
+            <input id="wg-peer-name" name="name" type="text" maxlength="128" required placeholder="Имя клиента">
+            <button class="btn primary" type="submit">Создать peer</button>
+            <span class="hint">Свободный IP назначается автоматически. Приватный ключ показывается только один раз.</span>
         </form>
         <div id="wg-peer-message" class="alert wg-peer-message" role="status" aria-live="polite" hidden></div>
     </div>
 </div>
 
 <div class="panel">
-    <h2>Ricerca client <span class="h2-extra muted">{{ interface }} · <span id="wg-peer-count">{{ peers | length }}</span> peer</span></h2>
+    <h2>Поиск клиентов <span class="h2-extra muted">{{ interface }} · <span id="wg-peer-count">{{ peers | length }}</span> пиров</span></h2>
     <div class="panel-body">
-        <div class="filters wg-peer-search-filter">
-            <div class="field grow">
-                <label for="wg-peer-search">Cerca peer</label>
-                <input id="wg-peer-search" type="search" placeholder="Nome, IP o endpoint">
-            </div>
+        <div class="field wg-peer-search-field">
+            <label for="wg-peer-search">Найти peer</label>
+            <input id="wg-peer-search" type="search" placeholder="Имя, IP или endpoint">
         </div>
     </div>
     <div class="table-wrap">
-        <table id="wg-peer-table">
+        <table id="wg-peer-table" data-dnat-enabled="{{ 'true' if show_dnat_column else 'false' }}"
+               data-can-add-device="{{ 'true' if can_add_device else 'false' }}">
             <thead><tr>
-                <th><button class="table-sort" type="button" data-sort="name">Nome</button></th>
+                <th><button class="table-sort" type="button" data-sort="name">Имя</button></th>
                 <th><button class="table-sort" type="button" data-sort="ip">IP</button></th>
-                <th><button class="table-sort" type="button" data-sort="status">Stato / handshake</button></th>
+                {% if show_dnat_column %}
+                <th><button class="table-sort" type="button" data-sort="dnat">DNAT</button></th>
+                {% endif %}
+                <th><button class="table-sort" type="button" data-sort="status">Статус / handshake</button></th>
                 <th><button class="table-sort" type="button" data-sort="endpoint">Endpoint</button></th>
-                <th><button class="table-sort" type="button" data-sort="traffic">Traffico</button></th>
-                <th>Azioni</th>
+                <th><button class="table-sort" type="button" data-sort="traffic">Трафик</button></th>
+                <th>Действия</th>
             </tr></thead>
             <tbody id="wg-peer-rows"></tbody>
         </table>
         <div id="wg-peer-empty" class="empty" hidden></div>
     </div>
     <div class="panel-body btn-row wg-peer-pagination" id="wg-peer-pagination" hidden>
-        <button class="btn" type="button" id="wg-peer-prev">Precedente</button>
+        <button class="btn" type="button" id="wg-peer-prev">Предыдущая</button>
         <span id="wg-peer-page-label" class="muted"></span>
-        <button class="btn" type="button" id="wg-peer-next">Successiva</button>
+        <button class="btn" type="button" id="wg-peer-next">Следующая</button>
     </div>
 </div>
 
@@ -117,44 +163,44 @@
 
 <div class="modal-backdrop" id="wg-peer-export-modal" aria-hidden="true">
     <section class="modal wide" role="dialog" aria-modal="true" aria-labelledby="wg-peer-export-title">
-        <header><h3 id="wg-peer-export-title">Configurazione client</h3>
-            <button class="close-x" type="button" data-peer-close aria-label="Chiudi">&times;</button></header>
+        <header><h3 id="wg-peer-export-title">Конфигурация клиента</h3>
+            <button class="close-x" type="button" data-peer-close aria-label="Закрыть">&times;</button></header>
         <div class="body">
-            <div class="hint" id="wg-peer-export-warning">La configurazione contiene una chiave privata. Copiala o scaricala ora; TikPilot non la conserva.</div>
+            <div class="hint" id="wg-peer-export-warning">Конфигурация содержит приватный ключ. Скопируйте или скачайте её сейчас; TikPilot не сохраняет ключ.</div>
             <div class="wg-peer-export-toolbar">
-                <div class="btn-row wg-peer-export-formats" aria-label="Formato export">
+                <div class="btn-row wg-peer-export-formats" aria-label="Формат экспорта">
                     <button class="btn active" type="button" data-export-format="conf">WireGuard .conf</button>
                     <button class="btn" type="button" data-export-format="rsc">RouterOS .rsc</button>
                     <button class="btn" type="button" data-export-format="qr">QR</button>
                 </div>
-                <div class="wg-peer-export-actions" aria-label="Azioni sulla configurazione">
-                    <span class="wg-peer-export-action-label">Esporta</span>
+                <div class="wg-peer-export-actions" aria-label="Действия с конфигурацией">
+                    <span class="wg-peer-export-action-label">Экспорт</span>
                     <button id="wg-peer-copy-button" class="btn" type="button"
-                            data-export-copy data-copy-label="Copia" data-copied-label="Copiato ✓">Copia</button>
+                            data-export-copy>Скопировать</button>
                     <span id="wg-peer-copy-feedback" class="wg-peer-copy-feedback"
                           role="status" aria-live="polite"></span>
-                    <button class="btn primary" type="button" data-export-download>Scarica</button>
+                    <button class="btn primary" type="button" data-export-download>Скачать</button>
                 </div>
             </div>
-            <textarea id="wg-peer-export-text" class="mono" rows="16" readonly aria-label="Configurazione WireGuard"></textarea>
+            <textarea id="wg-peer-export-text" class="mono" rows="16" readonly aria-label="Конфигурация WireGuard"></textarea>
             <div id="wg-peer-export-qr" class="wg-qr" hidden></div>
         </div>
-        <footer><button class="btn" type="button" data-peer-close>Chiudi</button></footer>
+        <footer><button class="btn" type="button" data-peer-close>Закрыть</button></footer>
     </section>
 </div>
 
 <div class="modal-backdrop" id="wg-peer-rename-modal" aria-hidden="true">
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="wg-peer-rename-title">
-        <header><h3 id="wg-peer-rename-title">Rinomina peer</h3>
-            <button class="close-x" type="button" data-peer-close aria-label="Chiudi">&times;</button></header>
+        <header><h3 id="wg-peer-rename-title">Переименовать peer</h3>
+            <button class="close-x" type="button" data-peer-close aria-label="Закрыть">&times;</button></header>
         <form id="wg-peer-rename-form">
             <div class="body">
-                <label for="wg-peer-rename-name">Nome</label>
+                <label for="wg-peer-rename-name">Имя</label>
                 <input id="wg-peer-rename-name" name="name" maxlength="128" required>
                 <input type="hidden" name="id">
             </div>
-            <footer><button class="btn" type="button" data-peer-close>Annulla</button>
-                <button class="btn primary" type="submit">Salva nome</button></footer>
+            <footer><button class="btn" type="button" data-peer-close>Отмена</button>
+                <button class="btn primary" type="submit">Сохранить имя</button></footer>
         </form>
     </section>
 </div>

@@ -7,10 +7,10 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import JSONResponse
 
-from .. import permissions, wireguard as wg, wireguard_clients as clients
+from .. import i18n, permissions, wireguard as wg, wireguard_clients as clients
 from ..auth import Forbidden, client_ip, require
-from ..database import log_audit, query, query_one
-from .deps import render
+from ..database import execute, log_audit, query, query_one, utcnow
+from .deps import render, resolve_lang
 
 router = APIRouter()
 PERMISSION = "wireguard.peers.manage"
@@ -37,6 +37,46 @@ def _devices(user: dict[str, Any]) -> list[dict[str, Any]]:
     )]
 
 
+def _managed_devices_by_ip(user: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Index visible fleet devices by canonical literal host IP."""
+    scope, params = permissions.scope_sql(user)
+    rows = query(
+        "SELECT d.id,d.name,d.host FROM devices d WHERE 1=1" + scope
+        + " ORDER BY d.name COLLATE NOCASE,d.id",
+        tuple(params),
+    )
+    by_ip: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        address = clients.normalize_ip(row["host"])
+        if address:
+            by_ip.setdefault(address, []).append({
+                "id": int(row["id"]), "name": str(row["name"]),
+            })
+    return by_ip
+
+
+def _remembered_selection(user_id: int) -> tuple[int | None, str]:
+    row = query_one(
+        "SELECT device_id,interface_name FROM wg_peer_user_preferences WHERE user_id=?",
+        (user_id,),
+    )
+    if not row:
+        return None, ""
+    device_id = int(row["device_id"]) if row["device_id"] is not None else None
+    return device_id, str(row["interface_name"] or "")
+
+
+def _remember_selection(user_id: int, device_id: int | None,
+                        interface: str = "") -> None:
+    execute(
+        "INSERT INTO wg_peer_user_preferences "
+        "(user_id,device_id,interface_name,updated_at) VALUES (?,?,?,?) "
+        "ON CONFLICT(user_id) DO UPDATE SET device_id=excluded.device_id,"
+        "interface_name=excluded.interface_name,updated_at=excluded.updated_at",
+        (user_id, device_id, interface, utcnow()),
+    )
+
+
 def _read_state(mt: Any) -> dict[str, list[dict[str, Any]]]:
     return {
         "interfaces": list(mt.cmd("/interface/wireguard/print")),
@@ -53,15 +93,82 @@ def _interface(state: dict[str, list[dict[str, Any]]], name: str) -> dict[str, A
     return next((row for row in _active_interfaces(state) if row.get("name") == name), None)
 
 
+def _peer_settings(device_id: int, interface: str) -> dict[str, Any]:
+    row = query_one(
+        "SELECT public_endpoint,dnat_base,dnat_multiplier FROM wg_peer_settings "
+        "WHERE device_id=? AND interface=?",
+        (device_id, interface),
+    )
+    return dict(row) if row else {
+        "public_endpoint": "", "dnat_base": None, "dnat_multiplier": None,
+    }
+
+
+def _configured_interface(device_id: int,
+                          active: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Prefer an active interface with saved peer settings to a bare first interface."""
+    active_names = {str(row.get("name") or "") for row in active}
+    if not active_names:
+        return None
+    settings = query(
+        "SELECT interface FROM wg_peer_settings WHERE device_id=? AND "
+        "(trim(public_endpoint)<>'' OR (dnat_base IS NOT NULL AND dnat_multiplier IS NOT NULL)) "
+        "ORDER BY CASE WHEN dnat_base IS NOT NULL AND dnat_multiplier IS NOT NULL "
+        "THEN 0 ELSE 1 END,updated_at DESC,interface",
+        (device_id,),
+    )
+    configured = next((str(row["interface"]) for row in settings
+                       if str(row["interface"]) in active_names), "")
+    return next((row for row in active if row.get("name") == configured), None)
+
+
+def _optional_int(value: Any, minimum: int, maximum: int) -> int | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValueError("Некорректное значение DNAT.")
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Некорректное значение DNAT.") from exc
+    if not minimum <= number <= maximum:
+        raise ValueError("Значение DNAT вне допустимого диапазона.")
+    return number
+
+
+def _error(request: Request, user: dict[str, Any], message: str,
+           status_code: int) -> JSONResponse:
+    return JSONResponse(
+        {"error": i18n.translate_text(message, resolve_lang(request, user))},
+        status_code=status_code,
+    )
+
+
 def _hub(device: dict[str, Any], state: dict[str, list[dict[str, Any]]],
          interface: dict[str, Any]) -> tuple[wg.Hub, list[str], bool]:
     address = clients.tunnel_address(state["addresses"], str(interface.get("name") or ""))
     network = wg.network_of(address)
-    settings = query_one("SELECT public_host,lan_subnets FROM wg_hubs WHERE device_id=?",
-                         (device["id"],))
-    saved_host = str(settings["public_host"] if settings else "").strip()
-    public_host = saved_host or str(device.get("host") or "").strip()
-    lan_subnets = wg.split_list(settings["lan_subnets"] if settings else "")
+    legacy = query_one(
+        "SELECT interface,public_host,lan_subnets FROM wg_hubs WHERE device_id=?",
+        (device["id"],),
+    )
+    peer_settings = _peer_settings(int(device["id"]), str(interface.get("name") or ""))
+    listen_port = int(interface.get("listen-port") or 0)
+    endpoint_value = str(peer_settings["public_endpoint"] or "").strip()
+    endpoint_fallback = not bool(endpoint_value)
+    if endpoint_value:
+        resolved = clients.resolve_public_endpoint(endpoint_value, listen_port)
+        public_host, port_text = resolved.rsplit(":", 1)
+        public_host = public_host.strip("[]")
+        listen_port = int(port_text)
+    elif (legacy and legacy["interface"] == interface.get("name")
+          and str(legacy["public_host"] or "").strip()):
+        public_host = str(legacy["public_host"]).strip()
+    else:
+        public_host = str(device.get("host") or "").strip()
+        endpoint_fallback = True
+
+    lan_subnets = wg.split_list(legacy["lan_subnets"] if legacy else "")
     allowed_ips = ([str(network)] if network else [])
     for subnet in lan_subnets:
         parsed = wg.network_of(subnet)
@@ -71,25 +178,29 @@ def _hub(device: dict[str, Any], state: dict[str, list[dict[str, Any]]],
     hub = wg.Hub(
         interface=str(interface.get("name") or ""),
         public_key=str(interface.get("public-key") or ""),
-        listen_port=int(interface.get("listen-port") or 0),
+        listen_port=listen_port,
         tunnel_address=address,
         public_host=public_host,
         lan_subnets=[item for item in allowed_ips[1:]],
     )
-    return hub, allowed_ips, not bool(saved_host)
+    return hub, allowed_ips, endpoint_fallback
 
 
-def _peer_row(peer: dict[str, Any]) -> dict[str, Any]:
+def _peer_row(peer: dict[str, Any], dnat_base: int | None = None,
+              dnat_multiplier: int | None = None,
+              managed_devices_by_ip: dict[str, list[dict[str, Any]]] | None = None
+              ) -> dict[str, Any]:
     """Project only display fields; RouterOS keys and PSKs never go to the list UI."""
     allowed = wg.split_list(peer.get("allowed-address", ""))
     disabled = wg.is_on(peer.get("disabled"))
     handshake = str(peer.get("last-handshake") or "")
     connected = clients.is_connected(handshake, disabled)
-    return {
+    assigned_ip = clients.peer_ip(peer)
+    row = {
         "id": str(peer.get(".id") or ""),
         "interface": str(peer.get("interface") or ""),
         "name": str(peer.get("name") or ""),
-        "ip": clients.peer_ip(peer),
+        "ip": assigned_ip,
         "allowed_address": allowed,
         "endpoint": str(peer.get("current-endpoint-address") or ""),
         "handshake": handshake if connected else "",
@@ -98,7 +209,12 @@ def _peer_row(peer: dict[str, Any]) -> dict[str, Any]:
         "disabled": disabled,
         "connected": connected,
         "connection_status": "disabled" if disabled else "connected" if connected else "disconnected",
+        "managed_devices": (managed_devices_by_ip or {}).get(
+            clients.normalize_ip(assigned_ip), []),
     }
+    if dnat_base is not None and dnat_multiplier is not None:
+        row["dnat_port"] = clients.dnat_port(row["ip"], dnat_base, dnat_multiplier)
+    return row
 
 
 def _find_peer(peers: list[dict[str, Any]], peer_id: str,
@@ -112,11 +228,11 @@ def _config_payload(name: str, client_ip: str, private_key: str,
                     hub: wg.Hub, allowed_ips: list[str],
                     preshared_key: str = "") -> dict[str, str]:
     if not hub.tunnel_address or not hub.public_key or not hub.public_host or not hub.listen_port:
-        raise ValueError("Endpoint, chiave pubblica o indirizzo del server WireGuard non disponibili")
+        raise ValueError("Недоступны endpoint, публичный ключ, порт или адрес туннеля сервера.")
     peer_prefix = 128 if ":" in client_ip else 32
     endpoint = clients.endpoint(hub.public_host, hub.listen_port)
     if not endpoint:
-        raise ValueError("Endpoint del router non valido")
+        raise ValueError("Некорректный endpoint роутера.")
     lines = [
         "[Interface]",
         f"PrivateKey = {private_key}",
@@ -151,12 +267,33 @@ def _config_payload(name: str, client_ip: str, private_key: str,
 
 @router.get("/wireguard/peers")
 def peer_clients_page(request: Request, device_id: int = 0, interface: str = "",
-                     user=Depends(require(PERMISSION))):
+                      user=Depends(require(PERMISSION))):
     devices = _devices(user)
+    available_device_ids = {int(device["id"]) for device in devices}
+    remembered_device_id, remembered_interface = _remembered_selection(int(user["id"]))
+    if "device_id" not in request.query_params:
+        if remembered_device_id in available_device_ids:
+            device_id = remembered_device_id
+            if "interface" not in request.query_params:
+                interface = remembered_interface
+        elif remembered_device_id is not None:
+            _remember_selection(int(user["id"]), None)
+    elif device_id == 0:
+        _remember_selection(int(user["id"]), None)
+    elif device_id in available_device_ids:
+        if not interface and remembered_device_id == device_id:
+            interface = remembered_interface
+        _remember_selection(int(user["id"]), device_id, interface)
+
     context: dict[str, Any] = {
         "devices": devices, "device_id": device_id, "interface": interface,
         "interfaces": [], "peers": [], "error": "", "selected_device": None,
         "hub": None, "allowed_ips": [], "endpoint_fallback": False,
+        "peer_settings": {"public_endpoint": "", "dnat_base": None,
+                          "dnat_multiplier": None},
+        "show_dnat_column": False,
+        "managed_devices_by_ip": _managed_devices_by_ip(user),
+        "can_add_device": permissions.has(user, "devices.edit"),
     }
     if device_id:
         device = _device(device_id, user)
@@ -171,17 +308,32 @@ def peer_clients_page(request: Request, device_id: int = 0, interface: str = "",
         else:
             active = _active_interfaces(state)
             context["interfaces"] = active
-            selected = _interface(state, interface) if interface else (active[0] if active else None)
+            selected = _interface(state, interface) if interface else None
+            if selected is None and not request.query_params.get("interface"):
+                selected = _configured_interface(device_id, active)
+                selected = selected or (active[0] if active else None)
             if not active:
                 context["error"] = "Il router non ha interfacce WireGuard attive"
             elif selected is None:
                 context["error"] = "L'interfaccia selezionata non è attiva"
             else:
                 context["interface"] = selected["name"]
+                if device_id in available_device_ids:
+                    _remember_selection(int(user["id"]), device_id,
+                                        str(selected.get("name") or ""))
+                peer_settings = _peer_settings(device_id, selected["name"])
+                context["peer_settings"] = peer_settings
+                context["show_dnat_column"] = (
+                    peer_settings["dnat_base"] is not None
+                    and peer_settings["dnat_multiplier"] is not None
+                )
                 (context["hub"], context["allowed_ips"],
                  context["endpoint_fallback"]) = _hub(device, state, selected)
                 context["peers"] = [
-                    _peer_row(peer) for peer in state["peers"]
+                    _peer_row(peer, peer_settings["dnat_base"],
+                              peer_settings["dnat_multiplier"],
+                              context["managed_devices_by_ip"])
+                    for peer in state["peers"]
                     if peer.get("interface") == selected["name"]
                 ]
     return render("wireguard_peers.html", request, user,
@@ -189,7 +341,7 @@ def peer_clients_page(request: Request, device_id: int = 0, interface: str = "",
 
 
 @router.get("/api/wg/peers")
-def peer_clients_snapshot(device_id: int, interface: str,
+def peer_clients_snapshot(request: Request, device_id: int, interface: str,
                           user=Depends(require(PERMISSION))):
     device = _device(device_id, user)
     from ..sessions import pool
@@ -198,12 +350,87 @@ def peer_clients_snapshot(device_id: int, interface: str,
         state = _read_state(mt)
     selected = _interface(state, interface)
     if selected is None:
-        return JSONResponse({"error": "Interfaccia WireGuard non attiva"}, status_code=400)
+        return _error(request, user, "Интерфейс WireGuard не активен.", 400)
+    peer_settings = _peer_settings(device_id, interface)
+    managed_devices_by_ip = _managed_devices_by_ip(user)
     return JSONResponse(
-        {"peers": [_peer_row(peer) for peer in state["peers"]
-                   if peer.get("interface") == interface]},
+        {"peers": [_peer_row(peer, peer_settings["dnat_base"],
+                              peer_settings["dnat_multiplier"], managed_devices_by_ip)
+                   for peer in state["peers"] if peer.get("interface") == interface]},
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.post("/api/wg/peers/settings")
+def save_peer_settings(request: Request, payload: dict = Body(default={}),
+                       user=Depends(require(PERMISSION))):
+    device = _device(int(payload.get("device_id") or 0), user)
+    interface_name = str(payload.get("interface") or "").strip()
+    if not interface_name:
+        return _error(request, user, "Интерфейс WireGuard обязателен.", 400)
+
+    setting_fields = {"public_endpoint", "dnat_base", "dnat_multiplier"}
+    if not setting_fields.intersection(payload):
+        return _error(request, user, "Нет параметров для обновления.", 400)
+    current = _peer_settings(int(device["id"]), interface_name)
+    public_endpoint = str(current["public_endpoint"] or "").strip()
+    if "public_endpoint" in payload:
+        raw_endpoint = payload["public_endpoint"]
+        if raw_endpoint is not None and not isinstance(raw_endpoint, str):
+            return _error(request, user, "Некорректный публичный endpoint.", 400)
+        public_endpoint = str(raw_endpoint or "").strip()
+    if len(public_endpoint) > 300:
+        return _error(request, user, "Публичный endpoint слишком длинный.", 400)
+    try:
+        dnat_base = (
+            _optional_int(payload.get("dnat_base"), 1, 65535)
+            if "dnat_base" in payload else current["dnat_base"]
+        )
+        dnat_multiplier = (
+            _optional_int(payload.get("dnat_multiplier"), 256, 65535)
+            if "dnat_multiplier" in payload else current["dnat_multiplier"]
+        )
+    except ValueError as exc:
+        return _error(request, user, str(exc), 400)
+
+    from ..sessions import pool
+
+    with pool.borrow(device) as mt:
+        state = _read_state(mt)
+        selected = _interface(state, interface_name)
+        if selected is None:
+            return _error(request, user, "Интерфейс WireGuard не активен.", 400)
+        if public_endpoint:
+            try:
+                clients.resolve_public_endpoint(
+                    public_endpoint, int(selected.get("listen-port") or 0),
+                )
+            except ValueError as exc:
+                return _error(request, user, str(exc), 400)
+
+    now = utcnow()
+    if not public_endpoint and dnat_base is None and dnat_multiplier is None:
+        execute(
+            "DELETE FROM wg_peer_settings WHERE device_id=? AND interface=?",
+            (device["id"], interface_name),
+        )
+    else:
+        execute(
+            "INSERT INTO wg_peer_settings "
+            "(device_id,interface,public_endpoint,dnat_base,dnat_multiplier,updated_at) "
+            "VALUES (?,?,?,?,?,?) ON CONFLICT(device_id,interface) DO UPDATE SET "
+            "public_endpoint=excluded.public_endpoint,dnat_base=excluded.dnat_base,"
+            "dnat_multiplier=excluded.dnat_multiplier,updated_at=excluded.updated_at",
+            (device["id"], interface_name, public_endpoint, dnat_base,
+             dnat_multiplier, now),
+        )
+    log_audit(user["username"], "Aggiornate impostazioni peer WireGuard",
+              device["name"], interface_name, ip=client_ip(request))
+    return JSONResponse({"settings": {
+        "public_endpoint": public_endpoint,
+        "dnat_base": dnat_base,
+        "dnat_multiplier": dnat_multiplier,
+    }})
 
 
 @router.post("/api/wg/peers/create")
@@ -213,8 +440,7 @@ def create_peer_client(request: Request, payload: dict = Body(default={}),
     interface_name = str(payload.get("interface") or "").strip()
     name = str(payload.get("name") or "").strip()
     if not name or len(name) > 128:
-        return JSONResponse({"error": "Il nome è obbligatorio e non può superare 128 caratteri"},
-                            status_code=400)
+        return _error(request, user, "Имя обязательно; максимум 128 символов.", 400)
 
     from ..sessions import pool
 
@@ -222,14 +448,13 @@ def create_peer_client(request: Request, payload: dict = Body(default={}),
         state = _read_state(mt)
         interface = _interface(state, interface_name)
         if interface is None:
-            return JSONResponse({"error": "Interfaccia WireGuard non attiva"}, status_code=400)
+            return _error(request, user, "Интерфейс WireGuard не активен.", 400)
         hub, allowed_ips, _ = _hub(device, state, interface)
         peers = [p for p in state["peers"] if p.get("interface") == interface_name]
         if any(str(p.get("name") or "").casefold() == name.casefold() for p in peers):
-            return JSONResponse({"error": "Esiste già un peer con questo nome"}, status_code=409)
+            return _error(request, user, "Peer с таким именем уже существует.", 409)
         if not hub.tunnel_address:
-            return JSONResponse({"error": "L'interfaccia non ha un indirizzo tunnel valido"},
-                                status_code=400)
+            return _error(request, user, "У интерфейса нет корректного туннельного адреса.", 400)
         taken_addresses = [p.get("allowed-address", "") for p in peers]
         taken_addresses.extend(clients.interface_host_addresses(state["addresses"], interface_name))
         assigned_ip = wg.next_free_tunnel_ip(
@@ -237,15 +462,14 @@ def create_peer_client(request: Request, payload: dict = Body(default={}),
             taken_addresses,
         )
         if not assigned_ip:
-            return JSONResponse({"error": "Non ci sono IP liberi nella subnet WireGuard"},
-                                status_code=409)
+            return _error(request, user, "В подсети WireGuard нет свободных IP-адресов.", 409)
         private, public = wg.generate_keypair()
         # Verifica prerequisiti prima della mutazione: non lasciare un peer
         # creato quando non è possibile consegnare una configurazione valida.
         try:
             exports = _config_payload(name, assigned_ip, private, hub, allowed_ips)
         except (ValueError, TypeError) as exc:
-            return JSONResponse({"error": str(exc)}, status_code=400)
+            return _error(request, user, str(exc), 400)
         mt.cmd("/interface/wireguard/peers/add", **{
             "interface": interface_name,
             "name": name,
@@ -267,21 +491,20 @@ def rename_peer_client(request: Request, payload: dict = Body(default={}),
     peer_id = str(payload.get("id") or "").strip()
     name = str(payload.get("name") or "").strip()
     if not name or len(name) > 128:
-        return JSONResponse({"error": "Il nome è obbligatorio e non può superare 128 caratteri"},
-                            status_code=400)
+        return _error(request, user, "Имя обязательно; максимум 128 символов.", 400)
     from ..sessions import pool
 
     with pool.borrow(device) as mt:
         state = _read_state(mt)
         if _interface(state, interface) is None:
-            return JSONResponse({"error": "Interfaccia WireGuard non attiva"}, status_code=400)
+            return _error(request, user, "Интерфейс WireGuard не активен.", 400)
         peer = _find_peer(state["peers"], peer_id, interface)
         if peer is None:
-            return JSONResponse({"error": "Peer non trovato"}, status_code=404)
+            return _error(request, user, "Peer не найден.", 404)
         if any(str(row.get("name") or "").casefold() == name.casefold()
                and str(row.get(".id") or "") != peer_id
                for row in state["peers"] if row.get("interface") == interface):
-            return JSONResponse({"error": "Esiste già un peer con questo nome"}, status_code=409)
+            return _error(request, user, "Peer с таким именем уже существует.", 409)
         mt.cmd("/interface/wireguard/peers/set", **{".id": peer_id, "name": name})
     log_audit(user["username"], "Rinominato peer client WireGuard", name,
               f"{device['name']} · {interface}", ip=client_ip(request))
@@ -295,15 +518,15 @@ def toggle_peer_client(request: Request, payload: dict = Body(default={}),
     interface = str(payload.get("interface") or "").strip()
     peer_id = str(payload.get("id") or "").strip()
     if not isinstance(payload.get("disabled"), bool):
-        return JSONResponse({"error": "Stato disabled non valido"}, status_code=400)
+        return _error(request, user, "Некорректное значение disabled.", 400)
     from ..sessions import pool
 
     with pool.borrow(device) as mt:
         state = _read_state(mt)
         if _interface(state, interface) is None:
-            return JSONResponse({"error": "Interfaccia WireGuard non attiva"}, status_code=400)
+            return _error(request, user, "Интерфейс WireGuard не активен.", 400)
         if _find_peer(state["peers"], peer_id, interface) is None:
-            return JSONResponse({"error": "Peer non trovato"}, status_code=404)
+            return _error(request, user, "Peer не найден.", 404)
         mt.cmd("/interface/wireguard/peers/set", **{
             ".id": peer_id, "disabled": "yes" if payload["disabled"] else "no",
         })
@@ -324,10 +547,10 @@ def delete_peer_client(request: Request, payload: dict = Body(default={}),
     with pool.borrow(device) as mt:
         state = _read_state(mt)
         if _interface(state, interface) is None:
-            return JSONResponse({"error": "Interfaccia WireGuard non attiva"}, status_code=400)
+            return _error(request, user, "Интерфейс WireGuard не активен.", 400)
         peer = _find_peer(state["peers"], peer_id, interface)
         if peer is None:
-            return JSONResponse({"error": "Peer non trovato"}, status_code=404)
+            return _error(request, user, "Peer не найден.", 404)
         name = str(peer.get("name") or peer_id)
         mt.cmd("/interface/wireguard/peers/remove", **{".id": peer_id})
     log_audit(user["username"], "Eliminato peer client WireGuard", name,
@@ -347,13 +570,13 @@ def regenerate_peer_client(request: Request, payload: dict = Body(default={}),
         state = _read_state(mt)
         interface = _interface(state, interface_name)
         if interface is None:
-            return JSONResponse({"error": "Interfaccia WireGuard non attiva"}, status_code=400)
+            return _error(request, user, "Интерфейс WireGuard не активен.", 400)
         peer = _find_peer(state["peers"], peer_id, interface_name)
         if peer is None:
-            return JSONResponse({"error": "Peer non trovato"}, status_code=404)
+            return _error(request, user, "Peer не найден.", 404)
         assigned_ip = clients.peer_ip(peer)
         if not assigned_ip:
-            return JSONResponse({"error": "Il peer non ha un IP host assegnato"}, status_code=400)
+            return _error(request, user, "У peer не назначен IP-адрес хоста.", 400)
         hub, allowed_ips, _ = _hub(device, state, interface)
         private, public = wg.generate_keypair()
         try:
@@ -362,7 +585,7 @@ def regenerate_peer_client(request: Request, payload: dict = Body(default={}),
                 str(peer.get("preshared-key") or ""),
             )
         except (ValueError, TypeError) as exc:
-            return JSONResponse({"error": str(exc)}, status_code=400)
+            return _error(request, user, str(exc), 400)
         mt.cmd("/interface/wireguard/peers/set", **{".id": peer_id, "public-key": public})
 
     name = str(peer.get("name") or peer_id)

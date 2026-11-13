@@ -113,6 +113,8 @@ async def devices_page(
     q: str = "",
     group_id: str = "",
     status: str = "",
+    add_name: str = "",
+    add_host: str = "",
     user=Depends(current_user),
 ):
     """Основная страница со списком устройств."""
@@ -129,6 +131,11 @@ async def devices_page(
         f_q=q,
         f_group=group_id,
         f_status=status,
+        device_prefill=(
+            {"name": add_name, "host": add_host}
+            if permissions.has(user, "devices.edit") and (add_name or add_host)
+            else None
+        ),
     )
 
 

@@ -50,6 +50,17 @@ def peer_ip(peer: dict) -> str:
     return ""
 
 
+def normalize_ip(value: str) -> str:
+    """Return a canonical literal IP, or an empty string for hostnames/invalid input."""
+    raw = str(value or "").strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
+    try:
+        return str(ipaddress.ip_address(raw))
+    except ValueError:
+        return ""
+
+
 def is_connected(handshake: str, disabled: bool = False) -> bool:
     """A recent handshake, not the enabled flag, marks a client as connected."""
     age = wg.duration_seconds(handshake)
@@ -81,6 +92,72 @@ def endpoint(host: str, port: int) -> str:
     return f"{address}:{port}"
 
 
+def resolve_public_endpoint(value: str, listen_port: int) -> str:
+    """Validate an IP/hostname with an optional port, defaulting to RouterOS."""
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("Публичный endpoint не указан.")
+
+    host = raw
+    port: int | None = None
+    if raw.startswith("["):
+        closing = raw.find("]")
+        if closing < 0:
+            raise ValueError("Некорректный формат IPv6.")
+        host = raw[1:closing]
+        suffix = raw[closing + 1:]
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError as exc:
+            raise ValueError("Квадратные скобки допустимы только для адреса IPv6.") from exc
+        if address.version != 6:
+            raise ValueError("Квадратные скобки допустимы только для адреса IPv6.")
+        if suffix:
+            if not suffix.startswith(":") or not suffix[1:].isdigit():
+                raise ValueError("Некорректный порт endpoint.")
+            port = int(suffix[1:])
+    else:
+        try:
+            address = ipaddress.ip_address(raw)
+        except ValueError:
+            if raw.count(":") == 1:
+                host, raw_port = raw.rsplit(":", 1)
+                if not raw_port.isdigit():
+                    raise ValueError("Некорректный порт endpoint.")
+                port = int(raw_port)
+            elif ":" in raw:
+                raise ValueError("Для IPv6 с портом используйте формат [адрес]:порт.")
+
+    if port is None:
+        try:
+            port = int(listen_port)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Порт WireGuard роутера недоступен.") from exc
+
+    formatted = endpoint(host, port)
+    if not formatted:
+        raise ValueError("Неверный публичный endpoint или порт.")
+    return formatted
+
+
+def dnat_port(address: str, base: int | None,
+              multiplier: int | None) -> int | None:
+    """Calculate the Peer Manager's DNAT port for a configured IPv4 peer."""
+    if base is None or multiplier is None:
+        return None
+    try:
+        ip = ipaddress.ip_address(str(address or "").strip())
+        base = int(base)
+        multiplier = int(multiplier)
+    except (ValueError, TypeError):
+        return None
+    if ip.version != 4 or not 1 <= base <= 65535 or multiplier < 256:
+        return None
+    octets = ip.packed
+    port = base + octets[2] * multiplier + octets[3]
+    return port if port <= 65535 else None
+
+
 def routeros_quote(value: str) -> str:
     """Quote una stringa per gli attributi testuali dello script RouterOS."""
     escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
@@ -103,19 +180,19 @@ def build_routeros_script(*, client_ip: str, prefix: int, server_ip: str,
                           preshared_key: str = "") -> str:
     """Create a minimal client setup and mark the server IP as MANAGEMENT."""
     if not private_key or not server_public_key or not server_endpoint or not allowed_ips:
-        raise ValueError("Dati WireGuard insufficienti per generare lo script")
+        raise ValueError("Недостаточно данных WireGuard для создания скрипта.")
     if not 0 <= int(prefix) <= 128:
-        raise ValueError("Prefisso tunnel non valido")
+        raise ValueError("Некорректный префикс туннеля.")
     try:
         server_address = ipaddress.ip_address(server_ip)
     except ValueError as exc:
-        raise ValueError("Indirizzo tunnel del server non valido") from exc
+        raise ValueError("Некорректный адрес туннеля сервера.") from exc
     try:
         client_address = ipaddress.ip_address(client_ip)
     except ValueError as exc:
-        raise ValueError("Indirizzo client non valido") from exc
+        raise ValueError("Некорректный адрес клиента.") from exc
     if client_address.version != server_address.version:
-        raise ValueError("Indirizzo client e server devono usare la stessa famiglia IP")
+        raise ValueError("Адреса клиента и сервера должны принадлежать одной IP-семье.")
 
     interface = client_interface_name(client_ip)
     address = routeros_quote(f"{client_ip}/{prefix}")

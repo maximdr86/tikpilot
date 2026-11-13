@@ -425,9 +425,9 @@ class TranslateExtension(Extension):
         raise NotImplementedError
 
 
-#: Строки, зашитые в static/app.js. Браузер берёт их из `window.I18N`,
-#: который отдаёт сервер уже переведённым. Список собирается из самого файла,
-#: чтобы не разъезжался при правках JS.
+#: Строки, зашитые в browser JavaScript. Браузер берёт их из `window.I18N`,
+#: который отдаёт сервер уже переведённым. Список собирается из самих файлов,
+#: чтобы каталог не разъезжался при правках JS.
 _JS_CALL = re.compile(r"T\('([^']*)'\)")
 
 
@@ -439,7 +439,13 @@ def js_strings() -> list[str]:
     например подмена браузерных подсказок о незаполненных полях.
     """
     found: set[str] = set()
-    for path in [BASE_DIR / "static" / "app.js", *sorted((BASE_DIR / "templates").rglob("*.html"))]:
+    static_dir = BASE_DIR / "static"
+    sources = [
+        static_dir / "app.js",
+        *sorted(static_dir.glob("wireguard_*.js")),
+        *sorted((BASE_DIR / "templates").rglob("*.html")),
+    ]
+    for path in sources:
         try:
             found.update(_JS_CALL.findall(path.read_text(encoding="utf-8")))
         except OSError:
