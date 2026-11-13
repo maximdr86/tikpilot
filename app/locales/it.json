@@ -575,6 +575,22 @@
       "\\1 h"
     ],
     [
+      "^(\\d+) мин$",
+      "\\1 min"
+    ],
+    [
+      "^(\\d+) с$",
+      "\\1 s"
+    ],
+    [
+      "^(\\d+) ч (\\d+) мин$",
+      "\\1 h \\2 min"
+    ],
+    [
+      "^(\\d+) дн (\\d+) ч$",
+      "\\1 g \\2 h"
+    ],
+    [
       "^точек: (\\d+)$",
       "punti: \\1"
     ],
@@ -753,6 +769,354 @@
     [
       "^за сутки задач: (\\d+), точек с ошибкой: (\\d+)$",
       "attività nelle ultime 24 ore: \\1, punti con errori: \\2"
+    ],
+    [
+      "^Фоновый воркер запущен \\(потоков: (\\d+)\\)$",
+      "Worker in background avviato (thread: \\1)"
+    ],
+    [
+      "^Задача (\\d+) «(.+?)»: начата, устройств (\\d+) \\(запустил (.+)\\)$",
+      "Attività \\1 «\\2»: avviata, dispositivi \\3 (avviata da \\4)"
+    ],
+    [
+      "^Задача (\\d+): пачка (\\d+)/(\\d+) готова, пауза (\\d+) с$",
+      "Attività \\1: lotto \\2/\\3 completato, pausa di \\4 s"
+    ],
+    [
+      "^Задача (\\d+) «(.+?)»: завершена, успешно (\\d+), с ошибкой (\\d+)$",
+      "Attività \\1 «\\2»: completata, \\3 riuscite, \\4 con errore"
+    ],
+    [
+      "^Задача (\\d+) «(.+?)»: отменена, успешно (\\d+), с ошибкой (\\d+)$",
+      "Attività \\1 «\\2»: annullata, \\3 riuscite, \\4 con errore"
+    ],
+    [
+      "^(.+): готово$",
+      "\\1: completato"
+    ],
+    [
+      "^(.+): готово: (.*)$",
+      "\\1: completato: \\2"
+    ],
+    [
+      "^(.+): ошибка, (.*)$",
+      "\\1: errore, \\2"
+    ],
+    [
+      "^Устройство недоступно: (.+?) \\((.+?)\\), причина: (.*)$",
+      "Dispositivo non raggiungibile: \\1 (\\2), motivo: \\3"
+    ],
+    [
+      "^Устройство вернулось: (.+?) \\((.+?)\\), лежало (.*)$",
+      "Dispositivo tornato online: \\1 (\\2), inattivo per \\3"
+    ],
+    [
+      "^Устройство вернулось: (.+?) \\((.+?)\\)$",
+      "Dispositivo tornato online: \\1 (\\2)"
+    ],
+    [
+      "^Вход в систему: (.+?) \\((.+?)\\)$",
+      "Accesso al dispositivo: \\1 (\\2)"
+    ],
+    [
+      "^Вход в систему:$",
+      "Accesso al dispositivo:"
+    ],
+    [
+      "^Закрыто сессий: (\\d+)$",
+      "Sessioni chiuse: \\1"
+    ],
+    [
+      "^Диск панели: свободно (.+?) из (.+?) \\(([\\d.,]+)%\\), база (.+?), бэкапы (.+)$",
+      "Disco del pannello: liberi \\1 su \\2 (\\3%), database \\4, backup \\5"
+    ],
+    [
+      "^Мониторинг отключён \\(MONITOR_ENABLED=0\\)$",
+      "Monitoraggio disattivato (MONITOR_ENABLED=0)"
+    ],
+    [
+      "^Ошибка цикла мониторинга$",
+      "Errore nel ciclo di monitoraggio"
+    ],
+    [
+      "^Мониторинг запущен: проба каждые (.+?) с, полный опрос каждые (.+?) с, порог недоступности (.+?) промаха\\(ов\\)$",
+      "Monitoraggio avviato: verifica ogni \\1 s, controllo completo ogni \\2 s, soglia di indisponibilità \\3 tentativi"
+    ],
+    [
+      "^(.+): устройств (\\d+), недоступно (\\d+), за (.+?) с$",
+      "\\1: dispositivi \\2, non raggiungibili \\3, in \\4 s"
+    ],
+    [
+      "^(.+): клиентов (\\d+)$",
+      "\\1: client connessi: \\2"
+    ],
+    [
+      "^Моргание: (.+?) \\((.+?)\\), (.*)$",
+      "Connessione instabile: \\1 (\\2), \\3"
+    ],
+    [
+      "^Ошибка проверки устройства (.+)$",
+      "Errore durante il controllo del dispositivo \\1"
+    ],
+    [
+      "^Клиенты не прочитаны для (.+?): (.*)$",
+      "Impossibile leggere i client di \\1: \\2"
+    ],
+    [
+      "^Паспорт не прочитан для (.+?): (.*)$",
+      "Impossibile leggere l'anagrafica di \\1: \\2"
+    ],
+    [
+      "^Трафик не прочитан для (.+?): (.*)$",
+      "Impossibile leggere il traffico di \\1: \\2"
+    ],
+    [
+      "^Оператор не определён для (.+?): (.*)$",
+      "Operatore non identificato per \\1: \\2"
+    ],
+    [
+      "^Проверка задержки не удалась для (.+?): (.*)$",
+      "Misurazione della latenza non riuscita per \\1: \\2"
+    ],
+    [
+      "^Пороги: сработало (\\d+), погасло (\\d+)$",
+      "Soglie: attivate \\1, rientrate \\2"
+    ],
+    [
+      "^Мало места на диске панели: свободно ([\\d.,]+)%$",
+      "Spazio su disco del pannello insufficiente: \\1% libero"
+    ],
+    [
+      "^Место на диске панели вернулось в норму: свободно ([\\d.,]+)%$",
+      "Spazio su disco del pannello tornato nella norma: \\1% libero"
+    ],
+    [
+      "^Проверка здоровья не прошла: (.*)$",
+      "Controllo di integrità non riuscito: \\1"
+    ],
+    [
+      "^Терминал с недоверенного адреса: (.*)$",
+      "Richiesta del terminale da un indirizzo non attendibile: \\1"
+    ],
+    [
+      "^Терминал не открылся$",
+      "Impossibile aprire il terminale"
+    ],
+    [
+      "^Ошибка в сессии терминала$",
+      "Errore nella sessione del terminale"
+    ],
+    [
+      "^Приём журнала отключён \\(SYSLOG_ENABLED=0\\)$",
+      "Ricezione dei log disattivata (SYSLOG_ENABLED=0)"
+    ],
+    [
+      "^Приём журнала запущен: (.*)$",
+      "Ricezione dei log avviata: \\1"
+    ],
+    [
+      "^Приём журнала по UDP не поднялся: (.*)$",
+      "Impossibile avviare la ricezione dei log UDP: \\1"
+    ],
+    [
+      "^Приём журнала по TCP не поднялся: (.*)$",
+      "Impossibile avviare la ricezione dei log TCP: \\1"
+    ],
+    [
+      "^Приём журнала: поток остановился \\((.*)\\)\\. Поднимаю заново$",
+      "Ricezione dei log: thread arrestato (\\1). Riavvio in corso"
+    ],
+    [
+      "^Строка журнала не разобралась: (.*)$",
+      "Impossibile analizzare una riga di log: \\1"
+    ],
+    [
+      "^Пачка строк журнала не записалась: (.*)$",
+      "Impossibile salvare un gruppo di righe di log: \\1"
+    ],
+    [
+      "^Уведомление не ушло в (.+?): (.*)$",
+      "Notifica non inviata a \\1: \\2"
+    ],
+    [
+      "^Попытка отправки не записалась в журнал: (.*)$",
+      "Impossibile registrare un tentativo di invio: \\1"
+    ],
+    [
+      "^База вендоров обновлена сама: записей (\\d+)$",
+      "Database dei produttori aggiornato automaticamente: \\1 record"
+    ],
+    [
+      "^Реестр (.+?) не скачался: (.*)$",
+      "Impossibile scaricare il registro \\1: \\2"
+    ],
+    [
+      "^Не удалось узнать свободное место: (.*)$",
+      "Impossibile determinare lo spazio libero: \\1"
+    ],
+    [
+      "^Файлы с (.+?) забираем по (.+)$",
+      "Download dei file da \\1 tramite \\2"
+    ],
+    [
+      "^Не удалось забрать (.+?) с (.+?): (.*)$",
+      "Impossibile scaricare \\1 da \\2: \\3"
+    ],
+    [
+      "^Сигнал живости не ушёл: (.*)$",
+      "Segnale di attività non inviato: \\1"
+    ],
+    [
+      "^Доступ к панели с недоверенного адреса: (.*)$",
+      "Accesso al pannello da un indirizzo non attendibile: \\1"
+    ],
+    [
+      "^Расписание (.+?): удалено старых копий (\\d+)$",
+      "Pianificazione \\1: vecchie copie eliminate \\2"
+    ],
+    [
+      "^Ошибка диспетчера задач$",
+      "Errore nel gestore delle attività"
+    ],
+    [
+      "^Ошибка очистки истории$",
+      "Errore durante la pulizia della cronologia"
+    ],
+    [
+      "^Ошибка обновления базы вендоров$",
+      "Errore durante l'aggiornamento del database dei produttori"
+    ],
+    [
+      "^Ошибка проверки порогов$",
+      "Errore durante il controllo delle soglie"
+    ],
+    [
+      "^Ошибка проверки места на диске$",
+      "Errore durante il controllo dello spazio su disco"
+    ],
+    [
+      "^Ошибка отправки уведомлений$",
+      "Errore durante l'invio delle notifiche"
+    ],
+    [
+      "^Ошибка сигнала живости$",
+      "Errore del segnale di attività"
+    ],
+    [
+      "^Ошибка обхода страховок$",
+      "Errore durante il controllo dei ripristini automatici"
+    ],
+    [
+      "^Ошибка расписания бэкапов$",
+      "Errore nella pianificazione dei backup"
+    ],
+    [
+      "^Проверка (.+) не отработала$",
+      "Controllo non eseguito: \\1"
+    ],
+    [
+      "^База от прежнего имени проекта перенесена: (.+?) -> (.+)$",
+      "Database trasferito dal nome precedente del progetto: \\1 -> \\2"
+    ],
+    [
+      "^Убрано строк от удалённых устройств: (\\d+)$",
+      "Righe rimosse per dispositivi eliminati: \\1"
+    ],
+    [
+      "^Режим витрины: не удалось прочитать данные: (.*)$",
+      "Modalità demo: impossibile leggere i dati: \\1"
+    ],
+    [
+      "^Не удалось прочитать перевод (.+?): (.*)$",
+      "Impossibile leggere la traduzione \\1: \\2"
+    ],
+    [
+      "^Плохое правило в переводе (.+?): (.*)$",
+      "Regola di traduzione non valida in \\1: \\2"
+    ],
+    [
+      "^Загружен перевод (.+?): (\\d+) строк, (\\d+) правил$",
+      "Traduzione \\1 caricata: \\2 stringhe, \\3 regole"
+    ],
+    [
+      "^Плохая подстановка в переводе: (.*)$",
+      "Segnaposto non valido nella traduzione: \\1"
+    ],
+    [
+      "^Команда ping не найдена, проверка ICMP выключена$",
+      "Comando ping non trovato, controllo ICMP disattivato"
+    ],
+    [
+      "^ВНИМАНИЕ: загружен устаревший код \\(нет методов: (.*)\\)$",
+      "ATTENZIONE: è stato caricato codice obsoleto (metodi mancanti: \\1)"
+    ],
+    [
+      "^Каталог программы: (.*) \\| база: (.*)$",
+      "Directory del programma: \\1 | database: \\2"
+    ],
+    [
+      "^Каталог программы: (.*)$",
+      "Directory del programma: \\1"
+    ],
+    [
+      "^Похоже, сервер запущен не из той папки\\. Обновление RouterOS работать не будет\\.$",
+      "Il server sembra avviato dalla directory sbagliata. L'aggiornamento di RouterOS non funzionerà."
+    ],
+    [
+      "^Настройки из панели применены: (.*)$",
+      "Impostazioni del pannello applicate: \\1"
+    ],
+    [
+      "^Библиотека: уточнены имена у записей: (.*)$",
+      "Libreria: nomi completati per le voci: \\1"
+    ],
+    [
+      "^Операторы: приведены к человеческим именам: (.*)$",
+      "Operatori: nomi leggibili assegnati: \\1"
+    ],
+    [
+      "^Tikpilot (.+) готов: http://(.+):(.+)$",
+      "Tikpilot \\1 pronto: http://\\2:\\3"
+    ],
+    [
+      "^ADMIN_NETWORKS=(.+): с этой машины \\(127\\.0\\.0\\.1\\) панель откажет\\. Добавьте 127\\.0\\.0\\.1 в список или очистите настройку в \\.env$",
+      "ADMIN_NETWORKS=\\1: il pannello rifiuterà le connessioni da questo computer (127.0.0.1). Aggiungere 127.0.0.1 all'elenco o svuotare l'impostazione in .env"
+    ],
+    [
+      "^Непонятная запись в списке сетей: (.*)$",
+      "Voce non riconosciuta nell'elenco delle reti: \\1"
+    ],
+    [
+      "^Не удалось прочитать (.+?), имена операторов останутся как в реестре$",
+      "Impossibile leggere \\1; verranno mantenuti i nomi degli operatori presenti nel registro"
+    ],
+    [
+      "^В архив не войдёт restore\\.sh: (.+?) нет в установке\\. Пояснение внутри архива описывает разворачивание руками\\.$",
+      "restore.sh non sarà incluso nell'archivio: \\1 non è presente nell'installazione. Le istruzioni nell'archivio descrivono il ripristino manuale."
+    ],
+    [
+      "^SYSLOG_NETWORKS: не разобрать «(.+)», пропускаю$",
+      "SYSLOG_NETWORKS: impossibile analizzare «\\1», voce ignorata"
+    ],
+    [
+      "^Строки журнала от удалённых точек \\((.+)\\): ссылка снята, текст сохранён$",
+      "Righe di log da dispositivi eliminati (\\1): riferimento rimosso, testo conservato"
+    ],
+    [
+      "^Не удалось прочитать (.+?), останутся только скачанные имена$",
+      "Impossibile leggere \\1; verranno mantenuti solo i nomi scaricati"
+    ],
+    [
+      "^Не удалось прочитать базу вендоров: (.*)$",
+      "Impossibile leggere il database dei produttori: \\1"
+    ],
+    [
+      "^Несогласованный код при работе с (.+?): (.*)$",
+      "Codice non coerente durante l'elaborazione di \\1: \\2"
+    ],
+    [
+      "^Необработанная ошибка на устройстве (.+)$",
+      "Errore non gestito sul dispositivo \\1"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "La versione long-term è consigliata per i siti di produzione.",
@@ -2321,5 +2685,8 @@
   "Площадка под наблюдением с %(p0)s, это %(p1)s процентов периода. Доступность, простой и падения посчитаны за это время: до него панель сюда не смотрела.": "Il sito è monitorato dal %(p0)s, pari al %(p1)s percento del periodo. Disponibilità, inattività e interruzioni sono calcolate su questo intervallo: prima il pannello non monitorava il sito.",
   "Прервано при перезапуске сервиса": "Interrotto a causa del riavvio del servizio",
   "Реестр адресов отдаёт служебные строки вроде <span class=\"mono\">RU-DANCER-20120101</span>. Знакомые панель называет сама, а вот эти не узнала. Впишите имя один раз, и все точки этого провайдера будут подписаны им. Правило хранится в данных панели, обновление его не затирает.": "Il registro degli indirizzi restituisce stringhe di servizio come <span class=\"mono\">RU-DANCER-20120101</span>. Il pannello assegna automaticamente un nome alle voci riconosciute, ma non a queste. Inserisci un nome una sola volta e tutti i siti di questo provider verranno identificati di conseguenza. La regola è salvata nei dati del pannello e non viene sovrascritta dagli aggiornamenti.",
-  "Управлять клиентами WireGuard": "Gestire i peer client WireGuard"
+  "Управлять клиентами WireGuard": "Gestire i peer client WireGuard",
+  "действия": "azioni",
+  "полный опрос": "controllo completo",
+  "проверка": "verifica"
 }

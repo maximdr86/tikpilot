@@ -214,6 +214,20 @@ def translate_text(value: str, lang: str = SOURCE_LANG) -> str:
             piece = translate_text(group, lang) if group else (group or "")
             result = result.replace("\\%d" % index, piece)
         return result
+
+    # Audit-log lines start with the username, while the action itself is a
+    # catalog entry: "admin: Вход в систему · 10.0.0.1". Translate only that
+    # action and leave the username, target, details and address untouched.
+    audit = re.match(r"^([^:]+): (.+)$", value)
+    if audit:
+        body = audit.group(2)
+        boundary = re.search(r" · | \(| \[", body)
+        action = body[:boundary.start()] if boundary else body
+        translated_action = translate_text(action, lang)
+        if translated_action != action:
+            suffix = body[len(action):]
+            return f"{audit.group(1)}: {translated_action}{suffix}"
+
     return value
 
 

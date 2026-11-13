@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse
 from ..auth import client_ip, current_user, require
 from ..config import settings
 from ..database import log_audit, query, query_one, utcnow
-from .. import permissions
+from .. import i18n, permissions
 from .deps import pager, render, render_partial, resolve_lang
 
 router = APIRouter()
@@ -177,17 +177,25 @@ async def console_page(request: Request, user=Depends(require("console.view"))):
 
 
 @router.get("/api/console")
-async def console_feed(after: int = 0, level: str = "", q: str = "",
+async def console_feed(request: Request, after: int = 0, level: str = "", q: str = "",
                        user=Depends(require("console.view"))):
     """Строки новее уже показанных. Опрашивается страницей раз в две секунды."""
     from .. import activity
 
-    rows = activity.tail(after=after, level=level, needle=q)
+    lang = resolve_lang(request, user)
+    rows = [
+        {
+            **row,
+            "source": i18n.translate_text(row["source"], lang),
+            "text": i18n.translate_text(row["text"], lang),
+        }
+        for row in activity.tail(after=after, level=level, needle=q)
+    ]
     return {"rows": rows, "last": rows[-1]["id"] if rows else after}
 
 
 @router.get("/api/console/now")
-async def console_now(user=Depends(require("console.view"))):
+async def console_now(request: Request, user=Depends(require("console.view"))):
     """
     Что происходит прямо сейчас.
 
@@ -208,8 +216,15 @@ async def console_now(user=Depends(require("console.view"))):
         "WHERE enabled = 1 AND next_run_at IS NOT NULL ORDER BY next_run_at LIMIT 1"
     )
 
+    lang = resolve_lang(request, user)
     return {
-        "jobs": [dict(j) for j in jobs],
+        "jobs": [
+            {
+                **dict(job),
+                "action_label": i18n.translate_text(job["action_label"], lang),
+            }
+            for job in jobs
+        ],
         "pending": pending["c"],
         "monitor": {
             "enabled": monitor.state["enabled"],
@@ -220,8 +235,12 @@ async def console_now(user=Depends(require("console.view"))):
         },
         "schedule": {
             "at": rule["next_run_at"] if rule else "",
-            "what": (rule["name"] or schedules.TARGET_LABELS.get(rule["target"], ""))
-            if rule else "",
+            "what": (
+                rule["name"]
+                or i18n.translate_text(
+                    schedules.TARGET_LABELS.get(rule["target"], ""), lang
+                )
+            ) if rule else "",
         },
     }
 

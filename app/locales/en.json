@@ -575,6 +575,22 @@
       "\\1 h"
     ],
     [
+      "^(\\d+) мин$",
+      "\\1 min"
+    ],
+    [
+      "^(\\d+) с$",
+      "\\1 s"
+    ],
+    [
+      "^(\\d+) ч (\\d+) мин$",
+      "\\1 h \\2 min"
+    ],
+    [
+      "^(\\d+) дн (\\d+) ч$",
+      "\\1 d \\2 h"
+    ],
+    [
       "^точек: (\\d+)$",
       "sites: \\1"
     ],
@@ -753,6 +769,354 @@
     [
       "^за сутки задач: (\\d+), точек с ошибкой: (\\d+)$",
       "jobs in the last day: \\1, sites with errors: \\2"
+    ],
+    [
+      "^Фоновый воркер запущен \\(потоков: (\\d+)\\)$",
+      "Background worker started (threads: \\1)"
+    ],
+    [
+      "^Задача (\\d+) «(.+?)»: начата, устройств (\\d+) \\(запустил (.+)\\)$",
+      "Job \\1 “\\2”: started, \\3 devices (started by \\4)"
+    ],
+    [
+      "^Задача (\\d+): пачка (\\d+)/(\\d+) готова, пауза (\\d+) с$",
+      "Job \\1: batch \\2/\\3 complete, pausing for \\4 s"
+    ],
+    [
+      "^Задача (\\d+) «(.+?)»: завершена, успешно (\\d+), с ошибкой (\\d+)$",
+      "Job \\1 “\\2”: completed, \\3 succeeded, \\4 failed"
+    ],
+    [
+      "^Задача (\\d+) «(.+?)»: отменена, успешно (\\d+), с ошибкой (\\d+)$",
+      "Job \\1 “\\2”: cancelled, \\3 succeeded, \\4 failed"
+    ],
+    [
+      "^(.+): готово$",
+      "\\1: done"
+    ],
+    [
+      "^(.+): готово: (.*)$",
+      "\\1: done: \\2"
+    ],
+    [
+      "^(.+): ошибка, (.*)$",
+      "\\1: error, \\2"
+    ],
+    [
+      "^Устройство недоступно: (.+?) \\((.+?)\\), причина: (.*)$",
+      "Device unreachable: \\1 (\\2), reason: \\3"
+    ],
+    [
+      "^Устройство вернулось: (.+?) \\((.+?)\\), лежало (.*)$",
+      "Device back online: \\1 (\\2), was down for \\3"
+    ],
+    [
+      "^Устройство вернулось: (.+?) \\((.+?)\\)$",
+      "Device back online: \\1 (\\2)"
+    ],
+    [
+      "^Вход в систему: (.+?) \\((.+?)\\)$",
+      "Device login: \\1 (\\2)"
+    ],
+    [
+      "^Вход в систему:$",
+      "Device login:"
+    ],
+    [
+      "^Закрыто сессий: (\\d+)$",
+      "Sessions closed: \\1"
+    ],
+    [
+      "^Диск панели: свободно (.+?) из (.+?) \\(([\\d.,]+)%\\), база (.+?), бэкапы (.+)$",
+      "Panel disk: \\1 free of \\2 (\\3%), database \\4, backups \\5"
+    ],
+    [
+      "^Мониторинг отключён \\(MONITOR_ENABLED=0\\)$",
+      "Monitoring disabled (MONITOR_ENABLED=0)"
+    ],
+    [
+      "^Ошибка цикла мониторинга$",
+      "Monitoring cycle error"
+    ],
+    [
+      "^Мониторинг запущен: проба каждые (.+?) с, полный опрос каждые (.+?) с, порог недоступности (.+?) промаха\\(ов\\)$",
+      "Monitoring started: probe every \\1 s, full poll every \\2 s, unreachable threshold \\3 misses"
+    ],
+    [
+      "^(.+): устройств (\\d+), недоступно (\\d+), за (.+?) с$",
+      "\\1: devices \\2, unreachable \\3, in \\4 s"
+    ],
+    [
+      "^(.+): клиентов (\\d+)$",
+      "\\1: connected clients: \\2"
+    ],
+    [
+      "^Моргание: (.+?) \\((.+?)\\), (.*)$",
+      "Flapping: \\1 (\\2), \\3"
+    ],
+    [
+      "^Ошибка проверки устройства (.+)$",
+      "Device check failed: \\1"
+    ],
+    [
+      "^Клиенты не прочитаны для (.+?): (.*)$",
+      "Could not read clients for \\1: \\2"
+    ],
+    [
+      "^Паспорт не прочитан для (.+?): (.*)$",
+      "Could not read inventory for \\1: \\2"
+    ],
+    [
+      "^Трафик не прочитан для (.+?): (.*)$",
+      "Could not read traffic for \\1: \\2"
+    ],
+    [
+      "^Оператор не определён для (.+?): (.*)$",
+      "Operator not identified for \\1: \\2"
+    ],
+    [
+      "^Проверка задержки не удалась для (.+?): (.*)$",
+      "Latency check failed for \\1: \\2"
+    ],
+    [
+      "^Пороги: сработало (\\d+), погасло (\\d+)$",
+      "Thresholds: fired \\1, cleared \\2"
+    ],
+    [
+      "^Мало места на диске панели: свободно ([\\d.,]+)%$",
+      "Low panel disk space: \\1% free"
+    ],
+    [
+      "^Место на диске панели вернулось в норму: свободно ([\\d.,]+)%$",
+      "Panel disk space back to normal: \\1% free"
+    ],
+    [
+      "^Проверка здоровья не прошла: (.*)$",
+      "Health check failed: \\1"
+    ],
+    [
+      "^Терминал с недоверенного адреса: (.*)$",
+      "Terminal request from an untrusted address: \\1"
+    ],
+    [
+      "^Терминал не открылся$",
+      "Could not open the terminal"
+    ],
+    [
+      "^Ошибка в сессии терминала$",
+      "Terminal session error"
+    ],
+    [
+      "^Приём журнала отключён \\(SYSLOG_ENABLED=0\\)$",
+      "Syslog receiver disabled (SYSLOG_ENABLED=0)"
+    ],
+    [
+      "^Приём журнала запущен: (.*)$",
+      "Syslog receiver started: \\1"
+    ],
+    [
+      "^Приём журнала по UDP не поднялся: (.*)$",
+      "Could not start the UDP syslog receiver: \\1"
+    ],
+    [
+      "^Приём журнала по TCP не поднялся: (.*)$",
+      "Could not start the TCP syslog receiver: \\1"
+    ],
+    [
+      "^Приём журнала: поток остановился \\((.*)\\)\\. Поднимаю заново$",
+      "Syslog receiver: thread stopped (\\1). Restarting"
+    ],
+    [
+      "^Строка журнала не разобралась: (.*)$",
+      "Could not parse a syslog line: \\1"
+    ],
+    [
+      "^Пачка строк журнала не записалась: (.*)$",
+      "Could not save a batch of syslog lines: \\1"
+    ],
+    [
+      "^Уведомление не ушло в (.+?): (.*)$",
+      "Notification to \\1 was not sent: \\2"
+    ],
+    [
+      "^Попытка отправки не записалась в журнал: (.*)$",
+      "Could not log a send attempt: \\1"
+    ],
+    [
+      "^База вендоров обновлена сама: записей (\\d+)$",
+      "Vendor database updated automatically: \\1 records"
+    ],
+    [
+      "^Реестр (.+?) не скачался: (.*)$",
+      "Could not download registry \\1: \\2"
+    ],
+    [
+      "^Не удалось узнать свободное место: (.*)$",
+      "Could not determine free disk space: \\1"
+    ],
+    [
+      "^Файлы с (.+?) забираем по (.+)$",
+      "Downloading files from \\1 over \\2"
+    ],
+    [
+      "^Не удалось забрать (.+?) с (.+?): (.*)$",
+      "Could not download \\1 from \\2: \\3"
+    ],
+    [
+      "^Сигнал живости не ушёл: (.*)$",
+      "Heartbeat was not sent: \\1"
+    ],
+    [
+      "^Доступ к панели с недоверенного адреса: (.*)$",
+      "Panel access from an untrusted address: \\1"
+    ],
+    [
+      "^Расписание (.+?): удалено старых копий (\\d+)$",
+      "Schedule \\1: old copies removed \\2"
+    ],
+    [
+      "^Ошибка диспетчера задач$",
+      "Job dispatcher error"
+    ],
+    [
+      "^Ошибка очистки истории$",
+      "History cleanup error"
+    ],
+    [
+      "^Ошибка обновления базы вендоров$",
+      "Vendor database update error"
+    ],
+    [
+      "^Ошибка проверки порогов$",
+      "Threshold check error"
+    ],
+    [
+      "^Ошибка проверки места на диске$",
+      "Disk space check error"
+    ],
+    [
+      "^Ошибка отправки уведомлений$",
+      "Notification delivery error"
+    ],
+    [
+      "^Ошибка сигнала живости$",
+      "Heartbeat error"
+    ],
+    [
+      "^Ошибка обхода страховок$",
+      "Rollback guard error"
+    ],
+    [
+      "^Ошибка расписания бэкапов$",
+      "Backup scheduler error"
+    ],
+    [
+      "^Проверка (.+) не отработала$",
+      "Check did not run: \\1"
+    ],
+    [
+      "^База от прежнего имени проекта перенесена: (.+?) -> (.+)$",
+      "Database migrated from the previous project name: \\1 -> \\2"
+    ],
+    [
+      "^Убрано строк от удалённых устройств: (\\d+)$",
+      "Rows removed for deleted devices: \\1"
+    ],
+    [
+      "^Режим витрины: не удалось прочитать данные: (.*)$",
+      "Demo mode: could not read data: \\1"
+    ],
+    [
+      "^Не удалось прочитать перевод (.+?): (.*)$",
+      "Could not read translation \\1: \\2"
+    ],
+    [
+      "^Плохое правило в переводе (.+?): (.*)$",
+      "Bad translation rule in \\1: \\2"
+    ],
+    [
+      "^Загружен перевод (.+?): (\\d+) строк, (\\d+) правил$",
+      "Loaded translation \\1: \\2 strings, \\3 rules"
+    ],
+    [
+      "^Плохая подстановка в переводе: (.*)$",
+      "Bad placeholder in translation: \\1"
+    ],
+    [
+      "^Команда ping не найдена, проверка ICMP выключена$",
+      "ping command not found, ICMP checks disabled"
+    ],
+    [
+      "^ВНИМАНИЕ: загружен устаревший код \\(нет методов: (.*)\\)$",
+      "WARNING: stale code loaded (missing methods: \\1)"
+    ],
+    [
+      "^Каталог программы: (.*) \\| база: (.*)$",
+      "Program directory: \\1 | database: \\2"
+    ],
+    [
+      "^Каталог программы: (.*)$",
+      "Program directory: \\1"
+    ],
+    [
+      "^Похоже, сервер запущен не из той папки\\. Обновление RouterOS работать не будет\\.$",
+      "The server appears to be running from the wrong directory. RouterOS upgrades will not work."
+    ],
+    [
+      "^Настройки из панели применены: (.*)$",
+      "Panel settings applied: \\1"
+    ],
+    [
+      "^Библиотека: уточнены имена у записей: (.*)$",
+      "Library: names filled in for entries: \\1"
+    ],
+    [
+      "^Операторы: приведены к человеческим именам: (.*)$",
+      "Operators: converted to readable names: \\1"
+    ],
+    [
+      "^Tikpilot (.+) готов: http://(.+):(.+)$",
+      "Tikpilot \\1 ready: http://\\2:\\3"
+    ],
+    [
+      "^ADMIN_NETWORKS=(.+): с этой машины \\(127\\.0\\.0\\.1\\) панель откажет\\. Добавьте 127\\.0\\.0\\.1 в список или очистите настройку в \\.env$",
+      "ADMIN_NETWORKS=\\1: the panel will reject connections from this machine (127.0.0.1). Add 127.0.0.1 to the list or clear the setting in .env"
+    ],
+    [
+      "^Непонятная запись в списке сетей: (.*)$",
+      "Unrecognised entry in the network list: \\1"
+    ],
+    [
+      "^Не удалось прочитать (.+?), имена операторов останутся как в реестре$",
+      "Could not read \\1; operator names from the registry will be kept"
+    ],
+    [
+      "^В архив не войдёт restore\\.sh: (.+?) нет в установке\\. Пояснение внутри архива описывает разворачивание руками\\.$",
+      "restore.sh will not be included in the archive: \\1 is not present in the installation. The note in the archive explains how to restore it manually."
+    ],
+    [
+      "^SYSLOG_NETWORKS: не разобрать «(.+)», пропускаю$",
+      "SYSLOG_NETWORKS: could not parse «\\1», skipping"
+    ],
+    [
+      "^Строки журнала от удалённых точек \\((.+)\\): ссылка снята, текст сохранён$",
+      "Log lines from deleted devices (\\1): source detached, text retained"
+    ],
+    [
+      "^Не удалось прочитать (.+?), останутся только скачанные имена$",
+      "Could not read \\1; only downloaded names will remain"
+    ],
+    [
+      "^Не удалось прочитать базу вендоров: (.*)$",
+      "Could not read the vendor database: \\1"
+    ],
+    [
+      "^Несогласованный код при работе с (.+?): (.*)$",
+      "Code mismatch while working with \\1: \\2"
+    ],
+    [
+      "^Необработанная ошибка на устройстве (.+)$",
+      "Unhandled error on device \\1"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
@@ -2313,5 +2677,8 @@
   "Первая строка файла это заголовки. Распознаются колонки: <span class=\"mono\">name, host, username, password, api_port, use_ssl, ftp_port, ssh_port, group, comment</span>. Разделитель (<span class=\"mono\">,</span> или <span class=\"mono\">;</span>) определяется автоматически. Значение <span class=\"mono\">use_ssl</span> (1/0) имеет приоритет; если ячейка пуста или колонки нет, порт 8729 включает API-SSL автоматически. Несуществующие группы создаются на лету.": "The first row contains the headers. Recognised columns: <span class=\"mono\">name, host, username, password, api_port, use_ssl, ftp_port, ssh_port, group, comment</span>. The delimiter (<span class=\"mono\">,</span> or <span class=\"mono\">;</span>) is detected automatically. An explicit <span class=\"mono\">use_ssl</span> value (1/0) takes precedence; if the cell is empty or the column is absent, port 8729 enables API-SSL automatically. Groups that do not exist yet are created on the fly.",
   "Скачать файлом": "Download as file",
   "Файл сохранён: %s": "Saved as %s",
-  "Мало места на роутерах": "Low disk space on routers"
+  "Мало места на роутерах": "Low disk space on routers",
+  "действия": "actions",
+  "полный опрос": "full poll",
+  "проверка": "check"
 }

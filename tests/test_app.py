@@ -9322,6 +9322,93 @@ def test_console_shows_what_people_do(client, router):
     assert "10.0.0.1" in bad["text"]
 
 
+def test_console_translates_live_rows_and_status_into_italian(client):
+    """I log arrivati via polling e le etichette dinamiche seguono la lingua."""
+    from app import activity
+    from app.database import execute, utcnow
+
+    activity.install()
+    activity.clear()
+    activity.add(
+        "INFO",
+        "Задача 123 «Проверить статус»: начата, устройств 1 (запустил admin)",
+        "tikpilot.worker",
+    )
+    activity.add("INFO", "router-1: готово", "tikpilot.worker")
+    activity.add(
+        "WARNING",
+        "Устройство недоступно: router-1 (10.0.0.1), причина: Таймаут подключения",
+        "tikpilot.monitor",
+    )
+    activity.add("INFO", "admin: Вход в систему · 10.0.0.1", "tikpilot.audit")
+    activity.add(
+        "INFO",
+        "Вход в систему: Albergo dente del gigante (3.0.0.120)",
+        "tikpilot.sessions",
+    )
+    activity.add("INFO", "Вход в систему:", "tikpilot.sessions")
+    activity.add("INFO", "Albergo dente del gigante: клиентов 22", "tikpilot.monitor")
+    activity.add(
+        "INFO",
+        "полный опрос: устройств 362, недоступно 110, за 187.4 с",
+        "tikpilot.monitor",
+    )
+    activity.add(
+        "INFO",
+        "проверка: устройств 362, недоступно 110, за 30.1 с",
+        "tikpilot.monitor",
+    )
+    activity.add("INFO", "Studio Chinaglia: клиентов 20", "tikpilot.monitor")
+    activity.add(
+        "INFO",
+        "Диск панели: свободно 542,1 ГиБ из 1,5 ТиБ (34.4%), база 51,3 МиБ, бэкапы 7,8 МиБ",
+        "tikpilot.audit",
+    )
+    activity.add(
+        "INFO",
+        "Устройство вернулось: Thomain Lucrezia - SXT (3.0.0.100), лежало 1 мин",
+        "tikpilot.monitor",
+    )
+    job_id = execute(
+        "INSERT INTO jobs (action, action_label, params_json, username, status, total,"
+        " created_at) VALUES (?,?,?,?,?,?,?)",
+        ("check", "Проверить статус", "{}", "admin", "running", 1, utcnow()),
+    )
+
+    client.get("/lang/it?next=/console", follow_redirects=False)
+    try:
+        page = client.get("/console").text
+        assert "Log del pannello" in page
+        assert "Последние" not in page
+        assert "Attività 123 «Verifica stato»: avviata" in page
+
+        feed = client.get("/api/console?after=0").json()
+        translated = "\n".join(row["source"] + ": " + row["text"] for row in feed["rows"])
+        assert "attività: Attività 123 «Verifica stato»: avviata, dispositivi 1 (avviata da admin)" in translated
+        assert "attività: router-1: completato" in translated
+        assert "monitoraggio: Dispositivo non raggiungibile: router-1 (10.0.0.1), motivo: Timeout di connessione" in translated
+        assert "azioni: admin: Accesso effettuato · 10.0.0.1" in translated
+        assert "sessioni: Accesso al dispositivo: Albergo dente del gigante (3.0.0.120)" in translated
+        assert any(
+            row["source"] == "sessioni" and row["text"] == "Accesso al dispositivo:"
+            for row in feed["rows"]
+        )
+        assert "monitoraggio: Albergo dente del gigante: client connessi: 22" in translated
+        assert "monitoraggio: controllo completo: dispositivi 362, non raggiungibili 110, in 187.4 s" in translated
+        assert "monitoraggio: verifica: dispositivi 362, non raggiungibili 110, in 30.1 s" in translated
+        assert "monitoraggio: Studio Chinaglia: client connessi: 20" in translated
+        assert "azioni: Disco del pannello: liberi 542,1 GiB su 1,5 TiB (34.4%), database 51,3 MiB, backup 7,8 MiB" in translated
+        assert "monitoraggio: Dispositivo tornato online: Thomain Lucrezia - SXT (3.0.0.100), inattivo per 1 min" in translated
+
+        now = client.get("/api/console/now").json()
+        job = next(row for row in now["jobs"] if row["id"] == job_id)
+        assert job["action_label"] == "Verifica stato"
+    finally:
+        execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        activity.clear()
+        client.get("/lang/ru?next=/console", follow_redirects=False)
+
+
 @pytest.mark.slow
 def test_login_pauses_after_several_misses(client, router):
     """
