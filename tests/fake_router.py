@@ -783,6 +783,13 @@ class FakeRouter:
             self.wg_peers.append(peer)
             return []
 
+        if cmd == "/interface/wireguard/peers/set":
+            for peer in self.wg_peers:
+                if peer[".id"] == attrs.get(".id"):
+                    peer.update({k: v for k, v in attrs.items() if k != ".id"})
+                    break
+            return []
+
         if cmd == "/interface/wireguard/peers/remove":
             self.wg_peers = [p for p in self.wg_peers if p[".id"] != attrs.get(".id")]
             return []

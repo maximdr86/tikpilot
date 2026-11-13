@@ -1,0 +1,14 @@
+services:
+  tikpilot:
+    volumes:
+      - ./app:/app/app
+      - ./templates:/app/templates
+      - ./static:/app/static
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --reload

@@ -355,10 +355,7 @@ def _run_schedule(rule: dict[str, Any]) -> None:
             {
                 "do_binary": "1" if rule["do_binary"] else "",
                 "do_export": "1" if rule["do_export"] else "",
-                # Пароли в текстовый export по расписанию не кладём: такой
-                # файл лежит на диске месяцами, и решение о нём должно
-                # приниматься осознанно, руками
-                "show_sensitive": "",
+                "show_sensitive": "1" if rule["do_export"] and rule["show_sensitive"] else "",
             },
             "расписание",
             schedule_id=int(rule["id"]),

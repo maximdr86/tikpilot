@@ -133,6 +133,27 @@ CREATE TABLE IF NOT EXISTS wg_hubs (
     updated_at  TEXT NOT NULL
 );
 
+-- Peer-client exports need an endpoint per WireGuard interface. Optional DNAT
+-- values are configuration only; RouterOS remains the source of peer state.
+CREATE TABLE IF NOT EXISTS wg_peer_settings (
+    device_id       INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    interface       TEXT NOT NULL,
+    public_endpoint TEXT NOT NULL DEFAULT '',
+    dnat_base       INTEGER,
+    dnat_multiplier INTEGER,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY (device_id, interface),
+    CHECK (dnat_base IS NULL OR dnat_base BETWEEN 1 AND 65535),
+    CHECK (dnat_multiplier IS NULL OR dnat_multiplier BETWEEN 256 AND 65535)
+);
+
+CREATE TABLE IF NOT EXISTS wg_peer_user_preferences (
+    user_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    device_id      INTEGER REFERENCES devices(id) ON DELETE SET NULL,
+    interface_name TEXT NOT NULL DEFAULT '',
+    updated_at     TEXT NOT NULL
+);
+
 -- Обращения к публичной ссылке, по одной строке на группу и день.
 -- Хранить каждое открытие отдельно незачем: нужен не журнал посещений,
 -- а ответ на вопрос «этой ссылкой вообще пользуются и не выросло ли вдруг».
@@ -725,6 +746,7 @@ CREATE TABLE IF NOT EXISTS backup_schedules (
     keep         INTEGER NOT NULL DEFAULT 14,   -- сколько последних копий оставлять
     do_binary    INTEGER NOT NULL DEFAULT 1,
     do_export    INTEGER NOT NULL DEFAULT 1,
+    show_sensitive INTEGER NOT NULL DEFAULT 0,
     enabled      INTEGER NOT NULL DEFAULT 1,
     next_run_at  TEXT,                          -- UTC
     last_run_at  TEXT,                          -- UTC
@@ -822,6 +844,10 @@ MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         # чистятся лишние копии.
         ("schedule_id", "INTEGER"),
     ],
+    "backup_schedules": [
+        # Пароли в текстовом export не включаются, пока это явно не разрешили
+        ("show_sensitive", "INTEGER NOT NULL DEFAULT 0"),
+    ],
     "groups": [
         # Публичная ссылка на лист состояния. Пусто — ссылки нет.
         ("public_token", "TEXT NOT NULL DEFAULT ''"),
@@ -850,6 +876,9 @@ MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         # этого не подходят. Ноль у всех существующих — это правильно,
         # ровно такое же значение кладётся в свежие cookie
         ("session_epoch", "INTEGER NOT NULL DEFAULT 0"),
+    ],
+    "wg_peer_user_preferences": [
+        ("interface_name", "TEXT NOT NULL DEFAULT ''"),
     ],
 }
 
