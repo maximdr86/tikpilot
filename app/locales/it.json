@@ -231,6 +231,14 @@
       "e altri \\1"
     ],
     [
+      "^(.*) и ещё 1(?!\\d)(.*)$",
+      "\\1 e un altro\\2"
+    ],
+    [
+      "^(.*) и ещё (\\d+)(.*)$",
+      "\\1 e altri \\2\\3"
+    ],
+    [
       "^(.*) · меньше всех у (.+?), ([\\d.,]+) МиБ, это ([\\d.,]+)% от диска\\. Обновление RouterOS на такой точке может не встать$",
       "\\1 · valore minimo su \\2, \\3 MiB, pari al \\4% del disco. L'aggiornamento di RouterOS potrebbe non trovare spazio su questo punto"
     ],

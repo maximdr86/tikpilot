@@ -2257,7 +2257,13 @@ def test_attention_device_overflow_is_translated_into_italian():
     i18n.load_catalogs()
     for count in (98, 104, 247):
         assert i18n.translate_text(f"и ещё {count}", "it") == f"e altri {count}"
+        assert i18n.translate_text(f"Outlet и ещё {count}", "it") == f"Outlet e altri {count}"
+        assert (
+            i18n.translate_text(f"A, B, C и ещё {count} · dettaglio", "it")
+            == f"A, B, C e altri {count} · dettaglio"
+        )
     assert i18n.translate_text("и ещё 1", "it") == "e un altro"
+    assert i18n.translate_text("Outlet и ещё 1", "it") == "Outlet e un altro"
 
 
 def test_browser_strings_are_translated_into_italian():
