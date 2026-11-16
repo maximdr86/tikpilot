@@ -281,8 +281,8 @@ async def create_schedule(request: Request,
 
     execute(
         "INSERT INTO backup_schedules (name, target, group_id, at_time, days, keep, "
-        "do_binary, do_export, enabled, next_run_at, created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,1,?,?)",
+        "do_binary, do_export, show_sensitive, enabled, next_run_at, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,1,?,?)",
         (
             str(payload.get("name") or "").strip()[:100],
             target,
@@ -292,6 +292,7 @@ async def create_schedule(request: Request,
             keep,
             1 if payload.get("do_binary", True) else 0,
             1 if payload.get("do_export", True) else 0,
+            1 if payload.get("show_sensitive", False) else 0,
             schedules.next_run(at_time, days),
             utcnow(),
         ),

@@ -137,6 +137,15 @@ def test_pages_render(client):
         assert client.get(path).status_code == 200, path
 
 
+def test_backup_schedule_sensitive_option_is_unchecked_and_warned(client):
+    page = client.get("/backups").text
+
+    assert '<input type="checkbox" id="r-sensitive">' in page
+    assert "show_sensitive: document.getElementById('r-sensitive').checked" in page
+    assert 'class="alert warn"' in page
+    assert "пароли и другие чувствительные значения" in page
+
+
 # ----------------------------------------------------------- RouterOS API
 def test_connect_and_read_system_info(router):
     with MikroTik(_device(router), "s3cret") as mt:
@@ -2239,6 +2248,51 @@ def test_browser_strings_are_translated():
     assert not untranslated, "нет перевода для строк JS:\n  " + "\n  ".join(untranslated)
 
 
+def test_every_interface_string_is_translated_into_italian():
+    """В итальянском каталоге есть все строки шаблонов."""
+    from pathlib import Path
+
+    from app import i18n
+
+    i18n.load_catalogs()
+    missing = i18n.missing_translations("it", Path("templates"))
+    assert not missing, "нет итальянского перевода для строк:\n  " + "\n  ".join(missing)
+
+
+def test_attention_device_overflow_is_translated_into_italian():
+    """Динамическое «и ещё N» в сводке внимания тоже переводится."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    for count in (98, 104, 247):
+        assert i18n.translate_text(f"и ещё {count}", "it") == f"e altri {count}"
+        assert i18n.translate_text(f"Outlet и ещё {count}", "it") == f"Outlet e altri {count}"
+        assert (
+            i18n.translate_text(f"A, B, C и ещё {count} · dettaglio", "it")
+            == f"A, B, C e altri {count} · dettaglio"
+        )
+    assert i18n.translate_text("и ещё 1", "it") == "e un altro"
+    assert i18n.translate_text("Outlet и ещё 1", "it") == "Outlet e un altro"
+
+
+def test_browser_strings_are_translated_into_italian():
+    """Строки JavaScript тоже должны иметь итальянский перевод."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    catalog = i18n.js_catalog("it")
+    untranslated = [text for text in i18n.js_strings() if catalog.get(text) == text]
+    assert not untranslated, "нет итальянского перевода для строк JS:\n  " + "\n  ".join(untranslated)
+
+
+def test_italian_language_has_a_native_name():
+    """В переключателе языков итальянский называется Italiano."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    assert ("it", "Italiano") in i18n.available_languages()
+
+
 def test_interface_switches_to_english(client):
     """Переключение языка меняет надписи, а не только код в <html lang>."""
     client.get("/lang/ru", follow_redirects=False)
@@ -2253,6 +2307,16 @@ def test_interface_switches_to_english(client):
 
     client.get("/lang/ru", follow_redirects=False)
     assert "Устройства" in client.get("/devices").text
+
+
+def test_interface_switches_to_italian(client):
+    """Переключение на итальянский переводит страницу устройств."""
+    client.get("/lang/it", follow_redirects=False)
+    page = client.get("/devices").text
+    assert 'lang="it"' in page
+    assert "Dispositivi" in page
+    assert "Устройства" not in page
+    client.get("/lang/ru", follow_redirects=False)
 
 
 def test_language_choice_survives_relogin(client):
@@ -2295,7 +2359,7 @@ def test_unknown_language_falls_back(client):
 
 
 def test_plural_forms_follow_language():
-    """В русском три формы, в английском две."""
+    """Формы множественного числа соответствуют правилам выбранного языка."""
     from app import i18n
 
     i18n.load_catalogs()
@@ -2305,6 +2369,9 @@ def test_plural_forms_follow_language():
     assert i18n.plural(5, ru, "ru") == "устройств"
     assert i18n.plural(1, ru, "en") == "device"
     assert i18n.plural(5, ru, "en") == "devices"
+    assert i18n.plural(1, ru, "it") == "dispositivo"
+    assert i18n.plural(2, ru, "it") == "dispositivi"
+    assert i18n.plural(21, ru, "it") == "dispositivi"
 
 
 def test_ui_texts_have_no_em_dash():
@@ -2689,6 +2756,30 @@ def test_old_database_gets_every_column_the_code_reads():
     # поколение сессий совпадает с тем, что кладётся в свежие cookie
     assert row["permissions"] == "full"
     assert row["session_epoch"] == 0
+
+
+def test_old_backup_schedule_gets_sensitive_export_disabled():
+    """Existing scheduled backups must not start exporting passwords after upgrade."""
+    import sqlite3
+
+    from app import database
+
+    old = sqlite3.connect(":memory:")
+    old.row_factory = sqlite3.Row
+    old.executescript(
+        "CREATE TABLE backup_schedules ("
+        " id INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT '',"
+        " do_binary INTEGER NOT NULL DEFAULT 1, do_export INTEGER NOT NULL DEFAULT 1);"
+        "INSERT INTO backup_schedules (name) VALUES ('старое правило');"
+    )
+
+    for name, definition in database.MIGRATIONS["backup_schedules"]:
+        existing = {row["name"] for row in old.execute("PRAGMA table_info(backup_schedules)")}
+        if name not in existing:
+            old.execute(f"ALTER TABLE backup_schedules ADD COLUMN {name} {definition}")
+
+    row = old.execute("SELECT show_sensitive FROM backup_schedules").fetchone()
+    assert row["show_sensitive"] == 0
 
 
 def test_password_button_has_a_working_handler(client, router):
@@ -7809,11 +7900,38 @@ def test_schedule_creates_a_backup_job(client, router):
     params = json.loads(job["params_json"])
     assert params["do_binary"] == "1" and params["do_export"] == "1"
     assert params["show_sensitive"] == ""
+    assert rule["show_sensitive"] == 0
 
     assert device_id in [
         int(i["device_id"]) for i in query(
             "SELECT device_id FROM job_items WHERE job_id = ?", (job["id"],))
     ]
+
+
+def test_schedule_can_include_sensitive_export(client, router):
+    """An explicitly opted-in scheduled rule passes show-sensitive to export."""
+    import json
+
+    from app.database import execute, query_one
+
+    device_id = _add_device(client, router, "sched-sensitive")
+    response = client.post("/api/backup-schedules", json={
+        "target": "all", "at_time": "03:00", "keep": 3,
+        "show_sensitive": True,
+    })
+    assert response.status_code == 200, response.text
+
+    rule = query_one("SELECT * FROM backup_schedules ORDER BY id DESC LIMIT 1")
+    assert rule["show_sensitive"] == 1
+    execute("UPDATE backup_schedules SET next_run_at = datetime('now','-1 minute') "
+            "WHERE id = ?", (rule["id"],))
+
+    from app import worker
+
+    assert worker.run_due_schedules() == [rule["id"]]
+    job = query_one("SELECT * FROM jobs WHERE schedule_id = ?", (rule["id"],))
+    params = json.loads(job["params_json"])
+    assert params["show_sensitive"] == "1"
 
 
 def test_only_last_copies_are_kept(client, router):
