@@ -71,12 +71,12 @@
             .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const src = document.createElement('span');
         src.className = 'c-src';
-        src.textContent = T(row.source);
+        src.textContent = row.source;
         const text = document.createElement('span');
         text.className = 'c-text';
         // Именно textContent: строка приходит от устройств и в разметку
         // попадать не должна ни при каких обстоятельствах
-        text.textContent = T(row.text);
+        text.textContent = row.text;
         line.append(ts, src, text);
         return line;
     }
@@ -98,7 +98,7 @@
             if (data.jobs.length) {
                 data.jobs.forEach((job) => {
                     const percent = job.total ? Math.round(100 * job.done / job.total) : 0;
-                    item(`${T(job.action_label)}: ${job.done}/${job.total} (${percent}%)`, 'busy');
+                    item(`${job.action_label}: ${job.done}/${job.total} (${percent}%)`, 'busy');
                 });
             } else {
                 item(T('Задач нет'), 'calm');
@@ -124,7 +124,7 @@
             if (data.schedule.at) {
                 const when = new Date(data.schedule.at.replace(' ', 'T') + 'Z');
                 item(T('бэкап: %s в %s')
-                    .replace('%s', T(data.schedule.what))
+                    .replace('%s', data.schedule.what)
                     .replace('%s', when.toLocaleString([], {
                         day: '2-digit', month: '2-digit',
                         hour: '2-digit', minute: '2-digit' })));

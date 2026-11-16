@@ -2239,6 +2239,51 @@ def test_browser_strings_are_translated():
     assert not untranslated, "нет перевода для строк JS:\n  " + "\n  ".join(untranslated)
 
 
+def test_every_interface_string_is_translated_into_italian():
+    """В итальянском каталоге есть все строки шаблонов."""
+    from pathlib import Path
+
+    from app import i18n
+
+    i18n.load_catalogs()
+    missing = i18n.missing_translations("it", Path("templates"))
+    assert not missing, "нет итальянского перевода для строк:\n  " + "\n  ".join(missing)
+
+
+def test_attention_device_overflow_is_translated_into_italian():
+    """Динамическое «и ещё N» в сводке внимания тоже переводится."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    for count in (98, 104, 247):
+        assert i18n.translate_text(f"и ещё {count}", "it") == f"e altri {count}"
+        assert i18n.translate_text(f"Outlet и ещё {count}", "it") == f"Outlet e altri {count}"
+        assert (
+            i18n.translate_text(f"A, B, C и ещё {count} · dettaglio", "it")
+            == f"A, B, C e altri {count} · dettaglio"
+        )
+    assert i18n.translate_text("и ещё 1", "it") == "e un altro"
+    assert i18n.translate_text("Outlet и ещё 1", "it") == "Outlet e un altro"
+
+
+def test_browser_strings_are_translated_into_italian():
+    """Строки JavaScript тоже должны иметь итальянский перевод."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    catalog = i18n.js_catalog("it")
+    untranslated = [text for text in i18n.js_strings() if catalog.get(text) == text]
+    assert not untranslated, "нет итальянского перевода для строк JS:\n  " + "\n  ".join(untranslated)
+
+
+def test_italian_language_has_a_native_name():
+    """В переключателе языков итальянский называется Italiano."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    assert ("it", "Italiano") in i18n.available_languages()
+
+
 def test_interface_switches_to_english(client):
     """Переключение языка меняет надписи, а не только код в <html lang>."""
     client.get("/lang/ru", follow_redirects=False)
@@ -2253,6 +2298,16 @@ def test_interface_switches_to_english(client):
 
     client.get("/lang/ru", follow_redirects=False)
     assert "Устройства" in client.get("/devices").text
+
+
+def test_interface_switches_to_italian(client):
+    """Переключение на итальянский переводит страницу устройств."""
+    client.get("/lang/it", follow_redirects=False)
+    page = client.get("/devices").text
+    assert 'lang="it"' in page
+    assert "Dispositivi" in page
+    assert "Устройства" not in page
+    client.get("/lang/ru", follow_redirects=False)
 
 
 def test_language_choice_survives_relogin(client):
@@ -2295,7 +2350,7 @@ def test_unknown_language_falls_back(client):
 
 
 def test_plural_forms_follow_language():
-    """В русском три формы, в английском две."""
+    """Формы множественного числа соответствуют правилам выбранного языка."""
     from app import i18n
 
     i18n.load_catalogs()
@@ -2305,6 +2360,9 @@ def test_plural_forms_follow_language():
     assert i18n.plural(5, ru, "ru") == "устройств"
     assert i18n.plural(1, ru, "en") == "device"
     assert i18n.plural(5, ru, "en") == "devices"
+    assert i18n.plural(1, ru, "it") == "dispositivo"
+    assert i18n.plural(2, ru, "it") == "dispositivi"
+    assert i18n.plural(21, ru, "it") == "dispositivi"
 
 
 def test_ui_texts_have_no_em_dash():
@@ -8546,6 +8604,93 @@ def test_console_shows_what_people_do(client, router):
     bad = [r for r in activity.tail() if "Неудачный вход" in r["text"]][0]
     assert bad["level"] == "warning"
     assert "10.0.0.1" in bad["text"]
+
+
+def test_console_translates_live_rows_and_status_into_italian(client):
+    """I log arrivati via polling e le etichette dinamiche seguono la lingua."""
+    from app import activity
+    from app.database import execute, utcnow
+
+    activity.install()
+    activity.clear()
+    activity.add(
+        "INFO",
+        "Задача 123 «Проверить статус»: начата, устройств 1 (запустил admin)",
+        "tikpilot.worker",
+    )
+    activity.add("INFO", "router-1: готово", "tikpilot.worker")
+    activity.add(
+        "WARNING",
+        "Устройство недоступно: router-1 (10.0.0.1), причина: Таймаут подключения",
+        "tikpilot.monitor",
+    )
+    activity.add("INFO", "admin: Вход в систему · 10.0.0.1", "tikpilot.audit")
+    activity.add(
+        "INFO",
+        "Вход в систему: Albergo dente del gigante (3.0.0.120)",
+        "tikpilot.sessions",
+    )
+    activity.add("INFO", "Вход в систему:", "tikpilot.sessions")
+    activity.add("INFO", "Albergo dente del gigante: клиентов 22", "tikpilot.monitor")
+    activity.add(
+        "INFO",
+        "полный опрос: устройств 362, недоступно 110, за 187.4 с",
+        "tikpilot.monitor",
+    )
+    activity.add(
+        "INFO",
+        "проверка: устройств 362, недоступно 110, за 30.1 с",
+        "tikpilot.monitor",
+    )
+    activity.add("INFO", "Studio Chinaglia: клиентов 20", "tikpilot.monitor")
+    activity.add(
+        "INFO",
+        "Диск панели: свободно 542,1 ГиБ из 1,5 ТиБ (34.4%), база 51,3 МиБ, бэкапы 7,8 МиБ",
+        "tikpilot.audit",
+    )
+    activity.add(
+        "INFO",
+        "Устройство вернулось: Thomain Lucrezia - SXT (3.0.0.100), лежало 1 мин",
+        "tikpilot.monitor",
+    )
+    job_id = execute(
+        "INSERT INTO jobs (action, action_label, params_json, username, status, total,"
+        " created_at) VALUES (?,?,?,?,?,?,?)",
+        ("check", "Проверить статус", "{}", "admin", "running", 1, utcnow()),
+    )
+
+    client.get("/lang/it?next=/console", follow_redirects=False)
+    try:
+        page = client.get("/console").text
+        assert "Log del pannello" in page
+        assert "Последние" not in page
+        assert "Attività 123 «Verifica stato»: avviata" in page
+
+        feed = client.get("/api/console?after=0").json()
+        translated = "\n".join(row["source"] + ": " + row["text"] for row in feed["rows"])
+        assert "attività: Attività 123 «Verifica stato»: avviata, dispositivi 1 (avviata da admin)" in translated
+        assert "attività: router-1: completato" in translated
+        assert "monitoraggio: Dispositivo non raggiungibile: router-1 (10.0.0.1), motivo: Timeout di connessione" in translated
+        assert "azioni: admin: Accesso effettuato · 10.0.0.1" in translated
+        assert "sessioni: Accesso al dispositivo: Albergo dente del gigante (3.0.0.120)" in translated
+        assert any(
+            row["source"] == "sessioni" and row["text"] == "Accesso al dispositivo:"
+            for row in feed["rows"]
+        )
+        assert "monitoraggio: Albergo dente del gigante: client connessi: 22" in translated
+        assert "monitoraggio: controllo completo: dispositivi 362, non raggiungibili 110, in 187.4 s" in translated
+        assert "monitoraggio: verifica: dispositivi 362, non raggiungibili 110, in 30.1 s" in translated
+        assert "monitoraggio: Studio Chinaglia: client connessi: 20" in translated
+        assert "azioni: Disco del pannello: liberi 542,1 GiB su 1,5 TiB (34.4%), database 51,3 MiB, backup 7,8 MiB" in translated
+        assert "monitoraggio: Dispositivo tornato online: Thomain Lucrezia - SXT (3.0.0.100), inattivo per 1 min" in translated
+
+        now = client.get("/api/console/now").json()
+        job = next(row for row in now["jobs"] if row["id"] == job_id)
+        assert job["action_label"] == "Verifica stato"
+    finally:
+        execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        activity.clear()
+        client.get("/lang/ru?next=/console", follow_redirects=False)
 
 
 @pytest.mark.slow
