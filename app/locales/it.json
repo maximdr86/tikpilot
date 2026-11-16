@@ -1191,6 +1191,7 @@
   "Пауза между пачками, секунд": "Pausa tra i batch, in secondi",
   "Первая копия": "Prima copia",
   "Первая строка файла это заголовки. Распознаются колонки: <span class=\"mono\">name, host, username, password, api_port, ftp_port, group, comment</span>. Разделитель (<span class=\"mono\">,</span> или <span class=\"mono\">;</span>) определяется автоматически. Несуществующие группы создаются на лету.": "La prima riga del file contiene le intestazioni. Colonne riconosciute: <span class=\"mono\">name, host, username, password, api_port, ftp_port, group, comment</span>. Il separatore (<span class=\"mono\">,</span> o <span class=\"mono\">;</span>) viene rilevato automaticamente. I gruppi inesistenti vengono creati al momento.",
+  "Первая строка файла это заголовки. Распознаются колонки: <span class=\"mono\">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>. Разделитель (<span class=\"mono\">,</span> или <span class=\"mono\">;</span>) определяется автоматически. Несуществующие группы создаются на лету.": "La prima riga del file contiene le intestazioni. Colonne riconosciute: <span class=\"mono\">name, host, username, password, api_port, ftp_port, ssh_port, group, comment</span>. Il separatore (<span class=\"mono\">,</span> o <span class=\"mono\">;</span>) viene rilevato automaticamente. I gruppi inesistenti vengono creati al momento.",
   "Перевести на туннельные адреса": "Passa a indirizzi di tunnel",
   "Перезагрузить": "Riavvia",
   "Перестать слать журнал": "Interrompi invio log",
