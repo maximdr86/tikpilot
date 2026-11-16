@@ -223,6 +223,14 @@
   "WireGuard · Tikpilot": "WireGuard · Tikpilot",
   "__patterns__": [
     [
+      "^и ещё 1$",
+      "e un altro"
+    ],
+    [
+      "^и ещё (\\d+)$",
+      "e altri \\1"
+    ],
+    [
       "^(.*) · меньше всех у (.+?), ([\\d.,]+) МиБ, это ([\\d.,]+)% от диска\\. Обновление RouterOS на такой точке может не встать$",
       "\\1 · valore minimo su \\2, \\3 MiB, pari al \\4% del disco. L'aggiornamento di RouterOS potrebbe non trovare spazio su questo punto"
     ],

@@ -2250,6 +2250,16 @@ def test_every_interface_string_is_translated_into_italian():
     assert not missing, "нет итальянского перевода для строк:\n  " + "\n  ".join(missing)
 
 
+def test_attention_device_overflow_is_translated_into_italian():
+    """Динамическое «и ещё N» в сводке внимания тоже переводится."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    for count in (98, 104, 247):
+        assert i18n.translate_text(f"и ещё {count}", "it") == f"e altri {count}"
+    assert i18n.translate_text("и ещё 1", "it") == "e un altro"
+
+
 def test_browser_strings_are_translated_into_italian():
     """Строки JavaScript тоже должны иметь итальянский перевод."""
     from app import i18n
