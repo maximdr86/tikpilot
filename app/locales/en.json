@@ -646,7 +646,7 @@
   "· <span class=\"badge pending\">ожидает %(p0)s</span>": "· <span class=\"badge pending\">waiting until %(p0)s</span>",
   "· <span class=\"badge unknown\">мониторинг выключен</span>": "· <span class=\"badge unknown\">monitoring is off</span>",
   "· <span style=\"color:var(--err)\">%(p0)s с ошибкой</span>": "· <span style=\"color:var(--err)\">%(p0)s failed</span>",
-  "· <span style=\"color:var(--err);font-weight:600\">не отвечает %(p0)s</span>": "· <span style=\"color:var(--err);font-weight:600\">unreachable for %(p0)s</span>",
+  "· <span style=\"color:var(--err);font-weight:600\">не отвечает %(p0)s</span>": "· <span style=\"color:var(--err);font-weight:600\">unreachable %(p0)s</span>",
   "· Ошибок:": "· Failed:",
   "· записи хранятся %(p0)s %(p1)s": "· records are kept for %(p0)s %(p1)s",
   "· ключ есть": "· has a key",
