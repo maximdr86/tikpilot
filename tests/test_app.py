@@ -1381,6 +1381,36 @@ def test_status_map_puts_problem_groups_first(client, router):
     assert names.index("Проблемная") < names.index("Всё хорошо")
 
 
+def test_status_map_count_labels_use_invariant_offline_word():
+    """Подписи карты статусов не зависят от формы слова после числа."""
+    from app import i18n
+    from app.routes.deps import templates
+
+    i18n.load_catalogs()
+    group = {
+        "name": "Test",
+        "color": "slate",
+        "devices": [],
+        "online": 224,
+        "offline": 15,
+    }
+    template = templates.env.get_template("partials/status_map.html")
+
+    english = template.render(groups=[group], lang="en")
+    assert "online 224" in english
+    assert "unreachable 15" in english
+    assert "unreachable for 15" not in english
+
+    italian = template.render(groups=[group], lang="it")
+    assert "online 224" in italian
+    assert "offline 15" in italian
+    assert "не отвечает 15" not in italian
+
+    group["offline"] = 1
+    italian = template.render(groups=[group], lang="it")
+    assert "offline 1" in italian
+
+
 # ------------------------------------------------------- проверки задержки
 def test_ping_parses_rtt_and_loss(router):
     """Ответ RouterOS на /ping разбирается в задержку и потери."""
