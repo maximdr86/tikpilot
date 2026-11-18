@@ -737,6 +737,8 @@
   "Все": "All",
   "Все %(p0)s %(p1)s были в сети без перерывов": "All %(p0)s %(p1)s stayed online without a break",
   "Все группы": "All groups",
+  "Все модели": "All models",
+  "Все операторы": "All operators",
   "Все ссылки": "All links",
   "Все точки": "All sites",
   "Все точки<span class=\"extra\">по возрастанию доступности</span>": "All sites<span class=\"extra\">worst availability first</span>",

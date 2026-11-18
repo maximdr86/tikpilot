@@ -3187,6 +3187,64 @@ def test_scope_hides_other_devices(client, router):
         assert {i["device_id"] for i in items} == {mine}
 
 
+def test_device_rows_can_be_filtered_by_operator_and_model(client, router):
+    """Оператор и модель фильтруют строки по отдельности и вместе."""
+    from app.database import execute
+
+    devices = {
+        "filter-device-a": ("filter-operator-a", "filter-model-a"),
+        "filter-device-b": ("filter-operator-a", "filter-model-b"),
+        "filter-device-c": ("filter-operator-b", "filter-model-a"),
+    }
+    for name in devices:
+        device_id = _add_device(client, router, name)
+        execute("UPDATE devices SET operator = ?, board_name = ? WHERE id = ?",
+                (*devices[name], device_id))
+
+    by_operator = client.get("/devices/rows?operator=filter-operator-a").text
+    assert "filter-device-a" in by_operator
+    assert "filter-device-b" in by_operator
+    assert "filter-device-c" not in by_operator
+
+    by_model = client.get("/devices/rows?model=filter-model-a").text
+    assert "filter-device-a" in by_model
+    assert "filter-device-c" in by_model
+    assert "filter-device-b" not in by_model
+
+    combined = client.get(
+        "/devices/rows?operator=filter-operator-a&model=filter-model-a").text
+    assert "filter-device-a" in combined
+    assert "filter-device-b" not in combined
+    assert "filter-device-c" not in combined
+
+    page = client.get(
+        "/devices?operator=filter-operator-a&model=filter-model-a").text
+    assert 'value="filter-operator-a"' in page
+    assert 'value="filter-model-a"' in page
+    assert re.search(r'<option value="filter-operator-a"\s+selected>', page)
+    assert re.search(r'<option value="filter-model-a"\s+selected>', page)
+
+
+def test_device_filter_options_respect_user_scope(client, router):
+    """В списках фильтров нет операторов и моделей скрытых устройств."""
+    from app.database import execute
+
+    mine = _add_device(client, router, "filter-scope-mine")
+    theirs = _add_device(client, router, "filter-scope-theirs")
+    execute("UPDATE devices SET operator = ?, board_name = ? WHERE id = ?",
+            ("scope-filter-visible-operator", "scope-filter-visible-model", mine))
+    execute("UPDATE devices SET operator = ?, board_name = ? WHERE id = ?",
+            ("scope-filter-hidden-operator", "scope-filter-hidden-model", theirs))
+    _make_user(client, "filter-scoped", ["action.check"], scope_all=False, devices=[mine])
+
+    with _as("filter-scoped") as limited:
+        page = limited.get("/devices").text
+        assert 'value="scope-filter-visible-operator"' in page
+        assert 'value="scope-filter-visible-model"' in page
+        assert 'value="scope-filter-hidden-operator"' not in page
+        assert 'value="scope-filter-hidden-model"' not in page
+
+
 def test_scope_by_group(client, router):
     """Область можно задать группой, а не перечислением устройств."""
     from app.database import execute, query_one, utcnow
