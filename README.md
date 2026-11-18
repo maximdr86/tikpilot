@@ -831,13 +831,15 @@ The sites need access to `upgrade.mikrotik.com`.
 
 The **"Upgrade RouterOS"** button. For each device:
 
-1. Updates are checked again. If the version is current, the device is not touched.
+1. Updates are checked again. If RouterOS is current, no packages are downloaded;
+   the device is otherwise left alone unless the RouterBOOT option is selected.
 2. A backup is taken and downloaded to the server. If that fails, the upgrade is aborted.
 3. The packages are downloaded to the device **without rebooting**. This is the
    longest step, and the device keeps working normally throughout.
 4. A reboot, and a wait until the link actually disappears.
 5. Waiting for it to come back, and checking that the version is the expected one.
-6. Optionally a RouterBOOT bootloader upgrade and one more reboot.
+6. Optionally check and upgrade RouterBOOT (including when RouterOS was already
+   current), followed by one more reboot if a firmware update is available.
 
 > **Why the download is separated from the install.** The `install` command does
 > both at once: it downloads the packages and immediately reboots. On a thin link
@@ -854,7 +856,7 @@ Options:
 | Take a backup | on | without a backup the install does not start |
 | Package download wait | 1800 s | set it higher on a thin link |
 | Return wait | 420 s | 0 means do not wait and do not verify |
-| Upgrade RouterBOOT | off | needs one more reboot |
+| Upgrade RouterBOOT | off | checks even when RouterOS is current; an available update needs one more reboot |
 | Batch size | 5 | 0 means all at once |
 | Pause between batches | 120 s | time to spot a problem and hit "Cancel" |
 

@@ -336,7 +336,9 @@ ol.steps li { padding: 7px 0; color: var(--muted); }
         together with RouterOS; it takes its own command and another reboot.
         Do it only where someone can reach the site if it goes wrong: a failed
         bootloader upgrade is fixed with netinstall, which means a cable and
-        hands. In the panel it is a separate checkbox, unticked by default.
+        hands. In the panel it is a separate checkbox, unticked by default. If
+        selected, the panel checks it even when RouterOS is already current and
+        reboots again only when a RouterBOOT update is available.
     </p>
 
     <h2>When a site does not come back</h2>

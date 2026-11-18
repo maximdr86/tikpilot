@@ -907,6 +907,47 @@ def test_routerboard_upgraded_after_ros(client, router):
     assert router.current_firmware == "7.20.1"
 
 
+def test_routerboard_upgraded_when_ros_already_current(client, router):
+    """RouterBOOT viene aggiornato anche senza un aggiornamento RouterOS."""
+    router.version = "7.25.1"
+    router.latest_version = router.version
+    router.current_firmware = "7.25"
+    router.upgrade_firmware = "7.25.1"
+    router.reboot_seconds = 1.0
+    device_id = _add_device(client, router, "up-rb-current-ros")
+
+    job = _run_and_wait(client, "upgrade_ros", [device_id],
+                        {"channel": "", "make_backup": "", "wait_back": "40",
+                         "upgrade_routerboard": "1", "batch_size": "0"})
+    item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job["id"],))
+
+    assert item["status"] == "ok", item["result"]
+    assert "RouterBOOT: 7.25 → 7.25.1" in item["result"]
+    assert router.current_firmware == "7.25.1"
+    assert router.download_count == 0
+    assert "/system/routerboard/upgrade" in router.executed
+    assert router.rebooted is True
+
+
+def test_routerboard_upgrade_with_zero_return_wait_does_not_fail(client, router):
+    """Con attesa zero il riavvio RouterBOOT viene inviato senza verificarne il ritorno."""
+    router.version = "7.25.1"
+    router.latest_version = router.version
+    router.current_firmware = "7.25"
+    router.upgrade_firmware = "7.25.1"
+    device_id = _add_device(client, router, "up-rb-no-wait")
+
+    job = _run_and_wait(client, "upgrade_ros", [device_id],
+                        {"channel": "", "make_backup": "", "wait_back": "0",
+                         "upgrade_routerboard": "1", "batch_size": "0"})
+    item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job["id"],))
+
+    assert item["status"] == "ok", item["result"]
+    assert "возврат не проверялся" in item["result"]
+    assert "/system/routerboard/upgrade" in router.executed
+    assert router.rebooted is True
+
+
 def test_update_badge_shown_in_device_list(client, router):
     """После проверки обновлений в списке появляется метка с новой версией."""
     router.latest_version = "7.20.1"
