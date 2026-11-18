@@ -1285,7 +1285,8 @@ def act_upgrade_ros(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]
        всё это время работает как обычно;
     4. перезагрузка и ожидание, пока связь действительно пропадёт;
     5. ожидание возврата и сверка фактической версии;
-    6. по желанию — RouterBOOT и ещё одна перезагрузка.
+    6. по желанию — RouterBOOT и ещё одна перезагрузка. Если RouterOS уже
+       актуальна, RouterBOOT всё равно проверяется и обновляется отдельно.
 
     Свободное место заранее не проверяется: сколько именно нужно, знает только
     RouterOS, и он сообщает это в ошибке загрузки. Любой наш порог был бы
@@ -1296,7 +1297,8 @@ def act_upgrade_ros(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]
     другое разом, из-за чего на медленном канале момент перезагрузки
     непредсказуем: устройство минутами качает пакеты и всё это время отвечает.
 
-    Если обновления нет — устройство не трогается вообще.
+    Если обновления RouterOS нет, устройство не скачивает пакеты и не
+    перезагружается, если только отдельно не запрошено обновление RouterBOOT.
     """
     channel = (params.get("channel") or "").strip()
     wait_back = _as_int(params.get("wait_back"), 420)
@@ -1320,7 +1322,10 @@ def act_upgrade_ros(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]
 
     channel_name = info.get("channel", "?")
     if _same_version(installed, latest):
-        return f"Пропущено: уже актуальная версия {installed} (канал {channel_name})"
+        result = f"Пропущено: уже актуальная версия {installed} (канал {channel_name})"
+        if _as_bool(params.get("upgrade_routerboard", False)):
+            return result + "; " + _upgrade_routerboard(mt, wait_back)
+        return result
 
     # Защита от отката. Если в выбранном канале версия старше установленной,
     # /system/package/update/install ничего не сделает: он умеет только вперёд.
@@ -1386,7 +1391,7 @@ def act_upgrade_ros(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]
 
 
 def _upgrade_routerboard(mt: MikroTik, wait_back: int) -> str:
-    """Обновить прошивку загрузчика, если она отстаёт от версии RouterOS."""
+    """Обновить RouterBOOT, если доступная версия отличается от текущей."""
     try:
         rb = mt.routerboard_info()
     except DeviceError:
@@ -1399,6 +1404,8 @@ def _upgrade_routerboard(mt: MikroTik, wait_back: int) -> str:
 
     mt.cmd("/system/routerboard/upgrade")
     mt.cmd_fire_and_forget("/system/reboot")
+    if wait_back <= 0:
+        return f"RouterBOOT: {current} → {available}, перезагрузка отправлена (возврат не проверялся)"
     seconds = mt.wait_until_back(timeout=wait_back)
     return f"RouterBOOT: {current} → {available}, вернулось за {seconds} с"
 
