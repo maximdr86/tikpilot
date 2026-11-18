@@ -1365,6 +1365,40 @@ def test_monitoring_page_renders(client, router):
     assert client.get("/monitoring/map").status_code == 200
 
 
+def test_monitoring_translates_dynamic_alert_rule_names(client, monkeypatch):
+    """Default-generated alert names are translated in the monitoring table."""
+    from app.routes import alerts as alerts_page
+
+    rule_name = "Точка не отвечает выше 15 мин"
+    monkeypatch.setattr(
+        alerts_page,
+        "live_context",
+        lambda _lang: {
+            "firing": [{
+                "device_id": 1,
+                "device_name": "test-site",
+                "rule_name": rule_name,
+                "value_text": "16 мин",
+                "fired_at": "",
+            }],
+            "pending": [],
+            "alert_events": [],
+        },
+    )
+
+    try:
+        for lang, expected in (
+            ("en", "Site unreachable for over 15 min"),
+            ("it", "Sito offline da oltre 15 min"),
+        ):
+            client.get(f"/lang/{lang}", follow_redirects=False)
+            page = client.get("/monitoring").text
+            assert expected in page
+            assert rule_name not in page
+    finally:
+        client.get("/lang/ru", follow_redirects=False)
+
+
 def test_status_map_puts_problem_groups_first(client, router):
     """Группы с недоступными точками показываются первыми."""
     from app import monitor

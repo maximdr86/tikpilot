@@ -649,6 +649,10 @@
     [
       "^за сутки задач: (\\d+), точек с ошибкой: (\\d+)$",
       "attività nelle ultime 24 ore: \\1, punti con errori: \\2"
+    ],
+    [
+      "^Точка не отвечает выше ([\\d.,]+) мин$",
+      "Sito offline da oltre \\1 min"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "La versione long-term è consigliata per i siti di produzione.",
