@@ -633,6 +633,10 @@
     [
       "^за сутки задач: (\\d+), точек с ошибкой: (\\d+)$",
       "jobs in the last day: \\1, sites with errors: \\2"
+    ],
+    [
+      "^Точка не отвечает выше ([\\d.,]+) мин$",
+      "Site unreachable for over \\1 min"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
