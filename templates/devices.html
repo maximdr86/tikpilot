@@ -42,6 +42,24 @@
         </select>
     </div>
     <div class="field">
+        <label for="f-operator">Оператор</label>
+        <select id="f-operator" onchange="reloadDeviceRows()">
+            <option value="">Все операторы</option>
+            {% for operator in operators %}
+                <option value="{{ operator }}" {% if f_operator == operator %}selected{% endif %}>{{ operator | t }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label for="f-model">Модель</label>
+        <select id="f-model" onchange="reloadDeviceRows()">
+            <option value="">Все модели</option>
+            {% for model in models %}
+                <option value="{{ model }}" {% if f_model == model %}selected{% endif %}>{{ model }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
         <label for="f-status">Статус</label>
         <select id="f-status" onchange="reloadDeviceRows()">
             <option value="">Любой</option>
