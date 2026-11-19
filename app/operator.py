@@ -159,6 +159,15 @@ def save_local(needle: str, name: str, color: str = "slate") -> None:
     forget_registry()
 
 
+def local_mappings() -> list[dict[str, str]]:
+    """Локальные соответствия, которые можно менять в настройках панели."""
+    return [
+        {"needle": needle, "name": name,
+         "color": color if color in COLORS else "slate"}
+        for needle, name, color in _read(LOCAL_PATH)
+    ]
+
+
 def unknown_names() -> list[dict[str, Any]]:
     """
     Строки реестра, для которых имени пока нет, и сколько точек за ними.

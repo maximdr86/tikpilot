@@ -335,6 +335,7 @@ def _render_tab(tab: str, request: Request, user: dict,
         context.update(config_context(resolve_lang(request, user)))
     elif current["key"] == "reference":
         context["vendors"] = vendors.state()
+        context["local_operators"] = operator.local_mappings()
         context["unknown_operators"] = operator.unknown_names()
         context["operator_colors"] = operator.COLORS
     elif current["key"] == "system":

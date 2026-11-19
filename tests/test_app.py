@@ -5371,6 +5371,36 @@ def test_unknown_operator_can_be_named_from_settings(client, router):
     operator.save_local("RU-XYZ", "")
 
 
+def test_local_operator_mapping_can_be_edited_from_settings(client, router):
+    """Уже заданные локальные имя и цвет доступны для изменения в справочниках."""
+    from app import operator
+
+    operator.save_local("RU-LOCAL", "Старое имя", "blue")
+    try:
+        page = client.get("/settings/reference").text
+        assert "RU-LOCAL" in page
+        assert 'value="Старое имя"' in page
+
+        response = client.post("/settings/operators", data={
+            "needle": "RU-LOCAL", "name": "Новое имя", "color": "pink"})
+
+        assert response.status_code == 200
+        operator.forget_registry()
+        assert operator.registry_name("RU-LOCAL-NET") == "Новое имя"
+        assert operator.color_of("Новое имя") == "pink"
+        assert 'value="Новое имя"' in response.text
+
+        client.get("/lang/en", follow_redirects=False)
+        english_page = client.get("/settings/reference").text
+        assert "Custom operators" in english_page
+        assert "Match pattern" in english_page
+        assert "Operator name: RU-LOCAL" in english_page
+        assert "Operator colour: RU-LOCAL" in english_page
+    finally:
+        client.get("/lang/ru", follow_redirects=False)
+        operator.save_local("RU-LOCAL", "")
+
+
 def test_naming_an_operator_needs_the_right(client, router):
     """Назвать оператора может тот, кому доверены устройства."""
     _add_device(client, router, "точка")
