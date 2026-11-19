@@ -28,6 +28,64 @@
 </div>
 {% endif %}
 
+{% if local_operators and can("devices.edit") %}
+<div class="panel" data-fold="local-operators">
+    <h2>Свои операторы
+        <span class="badge tag-slate">{{ local_operators | length }}</span>
+    </h2>
+    <div class="panel-body">
+        <div class="hint">
+            Изменения применяются к локальным соответствиям и сохраняются
+            отдельно от встроенного справочника.
+        </div>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col">Строка соответствия</th>
+                    <th scope="col">Имя</th>
+                    <th scope="col">Цвет</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in local_operators %}
+                {% set form_id = "local-operator-" ~ loop.index %}
+                <tr>
+                    <td class="mono">
+                        {{ row.needle }}
+                        <form id="{{ form_id }}" method="post" action="/settings/operators">
+                            <input type="hidden" name="needle" value="{{ row.needle }}">
+                        </form>
+                    </td>
+                    <td>
+                        <input form="{{ form_id }}" type="text" name="name"
+                               value="{{ row.name }}" maxlength="60" required
+                               aria-label="Имя оператора {{ row.needle }}">
+                    </td>
+                    <td>
+                        <select form="{{ form_id }}" name="color"
+                                aria-label="Цвет оператора {{ row.needle }}">
+                            {% for c in operator_colors %}
+                            <option value="{{ c }}" {% if c == row.color %}selected{% endif %}>
+                                {{ c }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </td>
+                    <td>
+                        <button form="{{ form_id }}" class="btn" type="submit"
+                                aria-label="Сохранить настройки оператора {{ row.name }}">
+                            Сохранить
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 {% if unknown_operators and can("devices.edit") %}
 <div class="panel" data-fold="operators">
     <h2>Имена операторов
