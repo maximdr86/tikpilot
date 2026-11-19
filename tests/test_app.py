@@ -1365,6 +1365,40 @@ def test_monitoring_page_renders(client, router):
     assert client.get("/monitoring/map").status_code == 200
 
 
+def test_monitoring_translates_dynamic_alert_rule_names(client, monkeypatch):
+    """Default-generated alert names are translated in the monitoring table."""
+    from app.routes import alerts as alerts_page
+
+    rule_name = "Точка не отвечает выше 15 мин"
+    monkeypatch.setattr(
+        alerts_page,
+        "live_context",
+        lambda _lang: {
+            "firing": [{
+                "device_id": 1,
+                "device_name": "test-site",
+                "rule_name": rule_name,
+                "value_text": "16 мин",
+                "fired_at": "",
+            }],
+            "pending": [],
+            "alert_events": [],
+        },
+    )
+
+    try:
+        for lang, expected in (
+            ("en", "Site unreachable for over 15 min"),
+            ("it", "Sito offline da oltre 15 min"),
+        ):
+            client.get(f"/lang/{lang}", follow_redirects=False)
+            page = client.get("/monitoring").text
+            assert expected in page
+            assert rule_name not in page
+    finally:
+        client.get("/lang/ru", follow_redirects=False)
+
+
 def test_status_map_puts_problem_groups_first(client, router):
     """Группы с недоступными точками показываются первыми."""
     from app import monitor
@@ -1379,6 +1413,36 @@ def test_status_map_puts_problem_groups_first(client, router):
 
     names = [g["name"] for g in monitor.status_map()]
     assert names.index("Проблемная") < names.index("Всё хорошо")
+
+
+def test_status_map_count_labels_use_invariant_offline_word():
+    """Подписи карты статусов не зависят от формы слова после числа."""
+    from app import i18n
+    from app.routes.deps import templates
+
+    i18n.load_catalogs()
+    group = {
+        "name": "Test",
+        "color": "slate",
+        "devices": [],
+        "online": 224,
+        "offline": 15,
+    }
+    template = templates.env.get_template("partials/status_map.html")
+
+    english = template.render(groups=[group], lang="en")
+    assert "online 224" in english
+    assert "unreachable 15" in english
+    assert "unreachable for 15" not in english
+
+    italian = template.render(groups=[group], lang="it")
+    assert "online 224" in italian
+    assert "offline 15" in italian
+    assert "не отвечает 15" not in italian
+
+    group["offline"] = 1
+    italian = template.render(groups=[group], lang="it")
+    assert "offline 1" in italian
 
 
 # ------------------------------------------------------- проверки задержки
@@ -2239,6 +2303,51 @@ def test_browser_strings_are_translated():
     assert not untranslated, "нет перевода для строк JS:\n  " + "\n  ".join(untranslated)
 
 
+def test_every_interface_string_is_translated_into_italian():
+    """В итальянском каталоге есть все строки шаблонов."""
+    from pathlib import Path
+
+    from app import i18n
+
+    i18n.load_catalogs()
+    missing = i18n.missing_translations("it", Path("templates"))
+    assert not missing, "нет итальянского перевода для строк:\n  " + "\n  ".join(missing)
+
+
+def test_attention_device_overflow_is_translated_into_italian():
+    """Динамическое «и ещё N» в сводке внимания тоже переводится."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    for count in (98, 104, 247):
+        assert i18n.translate_text(f"и ещё {count}", "it") == f"e altri {count}"
+        assert i18n.translate_text(f"Outlet и ещё {count}", "it") == f"Outlet e altri {count}"
+        assert (
+            i18n.translate_text(f"A, B, C и ещё {count} · dettaglio", "it")
+            == f"A, B, C e altri {count} · dettaglio"
+        )
+    assert i18n.translate_text("и ещё 1", "it") == "e un altro"
+    assert i18n.translate_text("Outlet и ещё 1", "it") == "Outlet e un altro"
+
+
+def test_browser_strings_are_translated_into_italian():
+    """Строки JavaScript тоже должны иметь итальянский перевод."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    catalog = i18n.js_catalog("it")
+    untranslated = [text for text in i18n.js_strings() if catalog.get(text) == text]
+    assert not untranslated, "нет итальянского перевода для строк JS:\n  " + "\n  ".join(untranslated)
+
+
+def test_italian_language_has_a_native_name():
+    """В переключателе языков итальянский называется Italiano."""
+    from app import i18n
+
+    i18n.load_catalogs()
+    assert ("it", "Italiano") in i18n.available_languages()
+
+
 def test_interface_switches_to_english(client):
     """Переключение языка меняет надписи, а не только код в <html lang>."""
     client.get("/lang/ru", follow_redirects=False)
@@ -2253,6 +2362,16 @@ def test_interface_switches_to_english(client):
 
     client.get("/lang/ru", follow_redirects=False)
     assert "Устройства" in client.get("/devices").text
+
+
+def test_interface_switches_to_italian(client):
+    """Переключение на итальянский переводит страницу устройств."""
+    client.get("/lang/it", follow_redirects=False)
+    page = client.get("/devices").text
+    assert 'lang="it"' in page
+    assert "Dispositivi" in page
+    assert "Устройства" not in page
+    client.get("/lang/ru", follow_redirects=False)
 
 
 def test_language_choice_survives_relogin(client):
@@ -2295,7 +2414,7 @@ def test_unknown_language_falls_back(client):
 
 
 def test_plural_forms_follow_language():
-    """В русском три формы, в английском две."""
+    """Формы множественного числа соответствуют правилам выбранного языка."""
     from app import i18n
 
     i18n.load_catalogs()
@@ -2305,6 +2424,9 @@ def test_plural_forms_follow_language():
     assert i18n.plural(5, ru, "ru") == "устройств"
     assert i18n.plural(1, ru, "en") == "device"
     assert i18n.plural(5, ru, "en") == "devices"
+    assert i18n.plural(1, ru, "it") == "dispositivo"
+    assert i18n.plural(2, ru, "it") == "dispositivi"
+    assert i18n.plural(21, ru, "it") == "dispositivi"
 
 
 def test_ui_texts_have_no_em_dash():
