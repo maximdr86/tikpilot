@@ -908,3 +908,34 @@ async def export_devices(user=Depends(current_user)):
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="devices.csv"'},
     )
+
+
+@router.post("/api/devices/export/winbox")
+async def export_winbox(request: Request, include_password: str = Form(""),
+                        user=Depends(current_user)):
+    """Export visible devices; passwords require a separate permission."""
+    from fastapi.responses import Response
+    from .. import i18n
+    from ..crypto import decrypt_strict
+    from ..winbox import export_cdb
+
+    with_passwords = bool(form_bool(include_password))
+    if with_passwords and not permissions.has(user, "devices.export_secrets"):
+        raise Forbidden()
+    rows = _fetch_devices(user=user)
+    try:
+        if with_passwords:
+            for row in rows:
+                row["password"] = decrypt_strict(row["password_enc"])
+        content = export_cdb(rows)
+    except ValueError as exc:
+        return JSONResponse({"error": i18n.translate(str(exc), resolve_lang(request, user))}, status_code=422,
+                            headers={"Cache-Control": "no-store"})
+
+    log_audit(user["username"], "Экспорт Winbox", str(len(rows)),
+              "с паролями" if with_passwords else "без паролей", client_ip(request))
+    return Response(
+        content, media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="Addresses.cdb"',
+                 "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )

@@ -341,6 +341,112 @@ def test_csv_import(client):
     assert query_one("SELECT id FROM groups WHERE name = 'ИмпортТест'") is not None
 
 
+def _winbox_records(content):
+    import struct
+
+    assert content[:4] == bytes.fromhex("0df01dc0")
+    records, pos = [], 4
+    while pos < len(content):
+        length = struct.unpack_from("<I", content, pos)[0]
+        pos += 4
+        record = content[pos:pos + length]
+        assert len(record) == length and record.startswith(b"M2")
+        records.append(record)
+        pos += length
+    assert pos == len(content)
+    return records
+
+
+def test_winbox_export_default_excludes_password_and_respects_scope(client, router):
+    mine = _add_device(client, router, "winbox-visibile-è")
+    _add_device(client, router, "winbox-non-visibile")
+    _make_user(client, "winbox-viewer", [], scope_all=False, devices=[mine])
+    with _as("winbox-viewer") as limited:
+        page = limited.get("/devices").text
+        assert "Экспорт Winbox" in page
+        assert 'name="include_password"' not in page
+        response = limited.post("/api/devices/export/winbox")
+        assert response.status_code == 200
+        assert response.headers["content-disposition"].endswith('filename="Addresses.cdb"')
+        assert "no-store" in response.headers["cache-control"]
+        records = _winbox_records(response.content)
+        assert len(records) == 1
+        name = "winbox-visibile-è".encode()
+        assert bytes.fromhex("04000021") + bytes([len(name)]) + name in records[0]
+        assert b"winbox-non-visibile" not in response.content
+        assert b"s3cret" not in response.content
+        assert bytes.fromhex("0300002100") in records[0]
+
+
+def test_winbox_export_password_requires_specific_permission(client, router):
+    mine = _add_device(client, router, "winbox-password")
+    _make_user(client, "winbox-denied", ["devices.edit"], scope_all=False, devices=[mine])
+    _make_user(client, "winbox-allowed", ["devices.export_secrets"], scope_all=False, devices=[mine])
+    with _as("winbox-denied") as limited:
+        assert limited.post("/api/devices/export/winbox", data={"include_password": "1"}).status_code == 403
+    with _as("winbox-allowed") as allowed:
+        page = allowed.get("/devices").text
+        assert 'name="include_password"' in page
+        assert "открытом виде" in page
+        response = allowed.post("/api/devices/export/winbox", data={"include_password": "1"})
+        assert response.status_code == 200
+        records = _winbox_records(response.content)
+        assert len(records) == 1 and b"s3cret" in records[0]
+        assert "no-store" in response.headers["cache-control"]
+        audit = query_one("SELECT * FROM audit_log WHERE username = ? AND action = ? ORDER BY id DESC",
+                          ("winbox-allowed", "Экспорт Winbox"))
+        assert audit is not None and "s3cret" not in str(dict(audit))
+        allowed.get("/lang/en", follow_redirects=False)
+        page = allowed.get("/devices").text
+        assert "Export Winbox" in page
+        assert "Include device passwords" in page
+        assert "Passwords are stored in the file in plain text." in page
+
+
+def test_winbox_export_refuses_undecipherable_password(client, router):
+    from app.database import execute
+
+    mine = _add_device(client, router, "winbox-corrupt")
+    execute("UPDATE devices SET password_enc = ? WHERE id = ?", ("invalid", mine))
+    _make_user(client, "winbox-corrupt-user", ["devices.export_secrets"], scope_all=False, devices=[mine])
+    with _as("winbox-corrupt-user") as allowed:
+        assert allowed.post("/api/devices/export/winbox").status_code == 200
+        response = allowed.post("/api/devices/export/winbox", data={"include_password": "1"})
+        assert response.status_code == 422
+        assert not response.content.startswith(bytes.fromhex("0df01dc0"))
+        allowed.get("/lang/en", follow_redirects=False)
+        translated = allowed.post("/api/devices/export/winbox", data={"include_password": "1"})
+        assert translated.json()["error"] == "Could not decrypt a device password."
+
+
+def test_winbox_export_anonymous_is_denied():
+    with _anon() as anon:
+        assert anon.post("/api/devices/export/winbox").status_code == 401
+
+
+def test_winbox_export_serializes_id_above_255():
+    from app.winbox import export_cdb
+
+    devices = [{"name": f"router-{i}", "host": "192.0.2.1", "username": "admin"}
+               for i in range(256)]
+    records = _winbox_records(export_cdb(devices))
+    assert len(records) == 256
+    assert bytes.fromhex("0100fe09ff") in records[254]
+    assert bytes.fromhex("0100fe0800010000") in records[255]
+
+
+def test_winbox_export_rejects_long_utf8_values(client, router):
+    from app.database import execute
+
+    mine = _add_device(client, router, "winbox-long")
+    execute("UPDATE devices SET name = ? WHERE id = ?", ("è" * 128, mine))
+    _make_user(client, "winbox-long-user", [], scope_all=False, devices=[mine])
+    with _as("winbox-long-user") as limited:
+        response = limited.post("/api/devices/export/winbox")
+        assert response.status_code == 422
+        assert not response.content.startswith(bytes.fromhex("0df01dc0"))
+
+
 def test_backup_downloaded_over_ftp(client, router, monkeypatch):
     """Полный цикл действия «Снять бэкап»: создание файлов, FTP-скачивание, запись в БД."""
     payload_backup = b"\x88\xac\x00\x00FAKE-BINARY-BACKUP" * 16

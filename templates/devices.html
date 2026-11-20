@@ -13,6 +13,7 @@
         <button class="btn" onclick="openModal('import-modal')">Импорт CSV</button>
         {% endif %}
         <a class="btn" href="/api/devices/export/csv">Экспорт CSV</a>
+        <button class="btn" type="button" onclick="document.getElementById('winbox-export-modal').showModal()">Экспорт Winbox</button>
         {% if can("action.check") %}
         <button class="btn" onclick="openActionModal({all:true}, '{{ _("ВСЕ устройства") }}', 'check')">Проверить все</button>
         {% endif %}
@@ -135,6 +136,29 @@
 
 {% include "partials/device_modal.html" %}
 {% include "partials/import_modal.html" %}
+<dialog class="modal" id="winbox-export-modal" aria-labelledby="winbox-export-title"
+        onclose="this.querySelector('form').reset()">
+    <form method="post" action="/api/devices/export/winbox">
+        <header>
+            <h3 id="winbox-export-title">Экспорт Winbox</h3>
+            <button type="button" class="close-x" aria-label="{{ _('Закрыть') }}" onclick="document.getElementById('winbox-export-modal').close()">&times;</button>
+        </header>
+        <div class="body">
+            <p>В файл попадут все доступные вам устройства, независимо от фильтров.</p>
+            {% if can("devices.export_secrets") %}
+            <label class="check">
+                <input type="checkbox" name="include_password" value="1">
+                <span>Включить пароли устройств</span>
+            </label>
+            <div class="alert warn">Пароли сохраняются в файле в открытом виде. Храните его в безопасном месте.</div>
+            {% endif %}
+        </div>
+        <footer>
+            <button type="button" class="btn" onclick="document.getElementById('winbox-export-modal').close()">Отмена</button>
+            <button type="submit" class="btn primary">Скачать</button>
+        </footer>
+    </form>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
