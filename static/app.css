@@ -627,6 +627,8 @@ textarea { min-height: 110px; resize: vertical; font-family: Consolas, Menlo, mo
     box-shadow: var(--shadow-lg);
 }
 .modal.wide { max-width: 860px; }
+dialog.modal { width: min(600px, calc(100% - 32px)); padding: 0; }
+dialog.modal::backdrop { background: rgba(20, 28, 36, .55); }
 .modal header {
     padding: 10px 14px;
     background: var(--accent); color: #fff;

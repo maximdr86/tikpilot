@@ -61,6 +61,13 @@ itself. Addresses come from the ranges reserved for documentation.*
 the last check. Filters, search, sorting by any column. Add devices by hand or
 load a CSV file.
 
+**Winbox export.** Devices → Export Winbox downloads a Winbox 4 `.cdb` with
+all devices visible to the user, regardless of filters. Passwords are omitted
+unless explicitly selected by a user with the `devices.export_secrets`
+permission; the resulting file contains them in plain text. Groups and
+custom Winbox ports are not exported. Names, addresses, usernames and passwords
+must each fit within 255 UTF-8 bytes.
+
 **Bulk operations.** Pick devices or a whole group and run:
 
 * a status check;

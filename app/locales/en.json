@@ -1,4 +1,13 @@
 {
+  "Экспорт Winbox": "Export Winbox",
+  "Скачать": "Download",
+  "В файл попадут все доступные вам устройства, независимо от фильтров.": "The file will contain all devices available to you, regardless of filters.",
+  "<span>Включить пароли устройств</span>": "<span>Include device passwords</span>",
+  "Пароли сохраняются в файле в открытом виде. Храните его в безопасном месте.": "Passwords are stored in the file in plain text. Keep it in a safe place.",
+  "Экспортировать пароли устройств": "Export device passwords",
+  "Выгрузка паролей устройств в открытом виде для Winbox.": "Export device passwords in plain text for Winbox.",
+  "Не удалось расшифровать пароль устройства": "Could not decrypt a device password.",
+  "Winbox: значение поля превышает 255 байт UTF-8": "Winbox: a field exceeds 255 UTF-8 bytes.",
   "Нужен на случай гибели сервера: бэкапы роутеров лежат на нём же, и вместе с ним пропадёт ровно то, ради чего они снимались. <br> Внутри копия данных и код этой же версии. Если панель ставили установщиком, туда попадает и скрипт разворачивания: тогда на чистой Ubuntu хватит <span class=\"mono\">tar xzf tikpilot-panel-*.tar.gz</span> и <span class=\"mono\">sudo bash restore.sh</span>. При установке копированием установщика в каталоге нет, и разворачивать надо руками: порядок расписан в пояснении внутри архива.": "You need it if the server dies: the router backups live on it too, and they go with it, which is exactly what they were taken for. <br> Inside are a copy of the data and the code of this same version. If the panel was set up with the installer, the restore script goes in as well, and then on a clean Ubuntu <span class=\"mono\">tar xzf tikpilot-panel-*.tar.gz</span> and <span class=\"mono\">sudo bash restore.sh</span> are enough. When the panel is installed by copying files, the installer is not in the directory, and the restore is done by hand: the steps are written out in the note inside the archive.",
   "Что вошло на самом деле, видно в <span class=\"mono\">manifest.json</span> внутри архива.": "What actually went in is listed in <span class=\"mono\">manifest.json</span> inside the archive.",
   "Вышла новая версия панели": "A new panel version is out",

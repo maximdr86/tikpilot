@@ -23,6 +23,16 @@ def encrypt(plain: str) -> str:
     return _fernet.encrypt((plain or "").encode("utf-8")).decode("ascii")
 
 
+def decrypt_strict(token: str) -> str:
+    """Decrypt without silently substituting an empty password on failure."""
+    if not token:
+        return ""
+    try:
+        return _fernet.decrypt(token.encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError, UnicodeError) as exc:
+        raise ValueError("Не удалось расшифровать пароль устройства") from exc
+
+
 def decrypt(token: str) -> str:
     """
     Расшифровать пароль устройства.
