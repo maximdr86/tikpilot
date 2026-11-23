@@ -1240,10 +1240,26 @@ ADMIN_NETWORKS=10.0.0.0/8,192.168.0.0/16
 answers 403 for requests from other addresses. An empty value means no
 restriction.
 
-Behind a reverse proxy the real address arrives in `X-Forwarded-For`, which
-anyone can forge with a single curl flag. The header is therefore trusted only
-when the request came from a proxy listed in `TRUSTED_PROXIES` (localhost by
-default), and the address taken from the chain is the one closest to us.
+The login limit, audit log, public visits and network restriction use the same
+client address. `X-Forwarded-For` is ignored unless the transport peer is in
+`TRUSTED_PROXIES` (localhost by default). For trusted proxies, all header fields
+are read as one chain, validated, and walked from right to left, skipping trusted
+proxies to find the first untrusted address. With multiple proxies this may
+change which address is recorded or admitted compared with older releases.
+Malformed chains and chains containing only trusted proxies have no client
+identity: network restrictions reject them and login returns 400.
+
+List only proxies you control in `TRUSTED_PROXIES`; every trusted proxy must
+forward a correct chain and prevent direct clients from impersonating an
+upstream proxy. The final proxy must always supply `X-Forwarded-For`. Without
+the header the peer itself is used to preserve direct local access: the app
+cannot distinguish that from a misconfigured proxy, so never allow a proxy
+address in `ADMIN_NETWORKS` unless this behavior is acceptable. Restrict backend
+access to trusted proxies and administrators at the network layer.
+
+The login limit is local to each process, resets at restart and is not a
+distributed brute-force defense. Use a shared edge limiter if running multiple
+workers or instances.
 
 ---
 
@@ -1264,14 +1280,23 @@ server {
         proxy_pass         http://127.0.0.1:8080;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-For   $remote_addr;
         proxy_set_header   X-Forwarded-Proto $scheme;
         proxy_read_timeout 300s;
     }
 }
 ```
 
-And set `COOKIE_SECURE=1` in `.env`.
+This example assumes nginx is the public-facing proxy. With upstream proxies,
+configure nginx to identify their real client addresses securely, and configure
+the trust chain deliberately instead of accepting untrusted headers. Set
+`COOKIE_SECURE=1` in `.env`. `X-Forwarded-Proto` is accepted only from a
+trusted peer with a valid client chain; it preserves HTTPS redirects.
+
+Uvicorn must run with `--no-proxy-headers`, so it does not rewrite the peer
+before Tikpilot checks it. The supplied launchers use this option. Add it to
+custom commands and existing systemd/launchd services, then reload and restart
+the service. Do not enable Uvicorn's proxy-header rewriting separately.
 
 ---
 

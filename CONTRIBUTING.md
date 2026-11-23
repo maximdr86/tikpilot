@@ -36,7 +36,7 @@ and can serve files over FTP.
 Run the app:
 
 ```bash
-uvicorn app.main:app --reload --port 8080
+uvicorn app.main:app --no-proxy-headers --reload --port 8080
 ```
 
 Check your change with one command:

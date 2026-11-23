@@ -39,6 +39,7 @@
         <string>-m</string>
         <string>uvicorn</string>
         <string>app.main:app</string>
+        <string>--no-proxy-headers</string>
         <string>--host</string>
         <string>0.0.0.0</string>
         <string>--port</string>

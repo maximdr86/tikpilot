@@ -7170,6 +7170,205 @@ def test_forwarded_header_is_ignored_from_untrusted_peer():
     assert not allowed("192.0.2.1", "10.0.0.1, 203.0.113.7", admin, proxies)
 
 
+def test_client_ip_follows_all_trusted_proxies_and_rejects_invalid_chains():
+    from app.netguard import parse_networks, real_client_ip
+
+    proxies = parse_networks("192.0.2.1,192.0.2.2,2001:db8::1")
+    assert real_client_ip("203.0.113.7", "10.0.0.1", proxies) == "203.0.113.7"
+    assert real_client_ip("192.0.2.1", "10.0.0.1, 203.0.113.7, 192.0.2.2",
+                          proxies) == "203.0.113.7"
+    assert real_client_ip("192.0.2.1", "2001:0db8:0000::2, 2001:db8::1",
+                          proxies) == "2001:db8::2"
+    assert real_client_ip("192.0.2.1", "::ffff:203.0.113.7", proxies) == "203.0.113.7"
+    for value in ("192.0.2.2", "bad, 10.0.0.1", "10.0.0.1,,192.0.2.2",
+                  "10.0.0.1, "):
+        assert real_client_ip("192.0.2.1", value, proxies) == ""
+    assert real_client_ip("127.0.0.1", "", proxies) == "127.0.0.1"
+
+
+def _client_at(address):
+    """Override the ASGI transport peer without relying on a Starlette version."""
+    async def asgi(scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            scope = {**scope, "client": (address, 1000)}
+        await app(scope, receive, send)
+
+    return TestClient(asgi)
+
+
+def test_login_rate_limit_and_audit_ignore_forged_forwarding(client, monkeypatch):
+    from app import loginguard
+    from app.config import settings
+    from app.netguard import parse_networks
+
+    monkeypatch.setattr(settings, "trusted_proxies", parse_networks("192.0.2.1"))
+    monkeypatch.setattr(settings, "login_max_attempts", 2)
+    loginguard.reset()
+    try:
+        guest = _client_at("203.0.113.7")
+        for prefix in ("10.0.0.1", "10.0.0.2"):
+            response = guest.post("/login", data={"username": "spoof-test", "password": "bad"},
+                                  headers={"X-Forwarded-For": prefix}, follow_redirects=False)
+            assert response.status_code == 401
+        response = guest.post("/login", data={"username": "spoof-test", "password": "bad"},
+                              headers={"X-Forwarded-For": "10.0.0.3"}, follow_redirects=False)
+        assert response.status_code == 429
+        rows = query("SELECT ip FROM audit_log WHERE username = ? ORDER BY id DESC LIMIT 2",
+                     ("spoof-test",))
+        assert [row["ip"] for row in rows] == ["203.0.113.7"] * 2
+    finally:
+        loginguard.reset()
+
+
+def test_repeated_forwarded_headers_and_network_controls(client, monkeypatch):
+    import httpx
+    from app.config import settings
+    from app.netguard import parse_networks
+
+    monkeypatch.setattr(settings, "trusted_proxies", parse_networks("192.0.2.1,192.0.2.2"))
+    monkeypatch.setattr(settings, "admin_networks", parse_networks("10.0.0.0/8"))
+    monkeypatch.setattr(settings, "terminal_enabled", True)
+    guest = _client_at("192.0.2.1")
+    headers = [("X-Forwarded-For", "10.0.0.1"),
+               ("X-Forwarded-For", "203.0.113.7, 192.0.2.2")]
+    assert guest.get("/login", headers=headers).status_code == 403
+    with guest.websocket_connect("/ws/terminal/1", headers=httpx.Headers(headers)) as ws:
+        assert "доверенной сети" in ws.receive_json()["text"]
+    assert guest.get("/login", headers={"X-Forwarded-For": "bad,10.0.0.1"}).status_code == 403
+    with guest.websocket_connect("/ws/terminal/1",
+                                 headers={"X-Forwarded-For": "10.0.0.5,192.0.2.2"}) as ws:
+        assert "Нужен вход" in ws.receive_json()["text"]
+    monkeypatch.setattr(settings, "admin_networks", parse_networks("192.0.2.0/24"))
+    assert guest.get("/login", headers={"X-Forwarded-For": "192.0.2.2"}).status_code == 403
+    with guest.websocket_connect("/ws/terminal/1",
+                                 headers={"X-Forwarded-For": "192.0.2.2"}) as ws:
+        assert "доверенной сети" in ws.receive_json()["text"]
+    # A genuinely direct local request without forwarding remains usable.
+    local = _client_at("127.0.0.1")
+    monkeypatch.setattr(settings, "trusted_proxies", parse_networks("127.0.0.1"))
+    monkeypatch.setattr(settings, "admin_networks", parse_networks("127.0.0.1"))
+    assert local.get("/login").status_code == 200
+
+
+def test_proxy_identity_is_shared_by_login_audit_and_visits(client, monkeypatch):
+    from app import loginguard
+    from app.config import settings
+    from app.netguard import parse_networks
+
+    monkeypatch.setattr(settings, "trusted_proxies", parse_networks("192.0.2.1,192.0.2.2"))
+    monkeypatch.setattr(settings, "admin_networks", [])
+    monkeypatch.setattr(settings, "login_max_attempts", 2)
+    loginguard.reset()
+    try:
+        guest = _client_at("192.0.2.1")
+        for spoof in ("10.0.0.1", "10.0.0.2"):
+            headers = {"X-Forwarded-For": f"{spoof}, 2001:0db8::2, 192.0.2.2"}
+            assert guest.post("/login", data={"username": "proxy-test", "password": "bad"},
+                              headers=headers).status_code == 401
+        headers = {"X-Forwarded-For": "10.0.0.3, 2001:db8::2, 192.0.2.2"}
+        assert guest.post("/login", data={"username": "proxy-test", "password": "bad"},
+                          headers=headers).status_code == 429
+        assert query_one("SELECT ip FROM audit_log WHERE username = ? ORDER BY id DESC",
+                         ("proxy-test",))["ip"] == "2001:db8::2"
+        guest.get("/status/no-such-link", headers=headers)
+        assert query_one("SELECT ip FROM public_views WHERE ok = 0 AND ip = ?",
+                         ("2001:db8::2",))["ip"] == "2001:db8::2"
+        for bad in ("", "bad,10.0.0.1", "192.0.2.2", "10.0.0.1,"):
+            assert guest.post("/login", headers={"X-Forwarded-For": bad}).status_code == 400
+    finally:
+        loginguard.reset()
+
+
+def test_trusted_proxy_https_scheme_for_redirects(client, monkeypatch):
+    from app.config import settings
+    from app.netguard import parse_networks
+
+    monkeypatch.setattr(settings, "trusted_proxies", parse_networks("192.0.2.1"))
+    guest = _client_at("192.0.2.1")
+    response = guest.get("/login/", headers={"X-Forwarded-For": "203.0.113.7",
+                                             "X-Forwarded-Proto": "https"},
+                         follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"].startswith("https://")
+    untrusted = _client_at("203.0.113.7")
+    response = untrusted.get("/login/", headers={"X-Forwarded-Proto": "https",
+                                                 "X-Forwarded-For": "10.0.0.1"},
+                             follow_redirects=False)
+    assert response.headers["location"].startswith("http://")
+    response = guest.get("/login/", headers=[("X-Forwarded-For", "203.0.113.7"),
+                                              ("X-Forwarded-Proto", "https"),
+                                              ("X-Forwarded-Proto", "http")],
+                         follow_redirects=False)
+    assert response.headers["location"].startswith("http://")
+
+
+def test_rate_limit_through_uvicorn_without_peer_rewriting(client, monkeypatch):
+    import socket
+    import threading
+    import httpx
+    import uvicorn
+    from app import loginguard
+    from app.config import settings
+    from app.netguard import parse_networks
+
+    monkeypatch.setattr(settings, "trusted_proxies", parse_networks("127.0.0.1"))
+    monkeypatch.setattr(settings, "admin_networks", [])
+    monkeypatch.setattr(settings, "login_max_attempts", 2)
+    loginguard.reset()
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    port = listener.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, proxy_headers=False, lifespan="off", log_level="error"))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 10
+        while not server.started and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert server.started
+        with httpx.Client(base_url=f"http://127.0.0.1:{port}", trust_env=False) as guest:
+            for index in range(3):
+                response = guest.post("/login",
+                                      data={"username": "uvicorn-test", "password": "bad"},
+                                      headers={"X-Forwarded-For":
+                                               f"10.0.0.{index + 1}, 203.0.113.7"})
+                assert response.status_code == (401 if index < 2 else 429)
+        assert query_one("SELECT ip FROM audit_log WHERE username = ? ORDER BY id DESC",
+                         ("uvicorn-test",))["ip"] == "203.0.113.7"
+        loginguard.reset()
+        monkeypatch.setattr(settings, "trusted_proxies", [])
+        with httpx.Client(base_url=f"http://127.0.0.1:{port}", trust_env=False) as guest:
+            for index in range(3):
+                response = guest.post("/login",
+                                      data={"username": "direct-test", "password": "bad"},
+                                      headers={"X-Forwarded-For": f"10.0.0.{index + 1}"})
+                assert response.status_code == (401 if index < 2 else 429)
+        assert query_one("SELECT ip FROM audit_log WHERE username = ? ORDER BY id DESC",
+                         ("direct-test",))["ip"] == "127.0.0.1"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+        listener.close()
+        loginguard.reset()
+    assert not thread.is_alive()
+
+
+def test_supported_uvicorn_launchers_disable_proxy_peer_rewriting(monkeypatch):
+    from pathlib import Path
+    import uvicorn
+    from app.main import main
+
+    root = Path(__file__).resolve().parent.parent
+    for name in ("run.sh", "run.bat", "Dockerfile", "install-ubuntu.sh",
+                 "ru.tikpilot.panel.plist"):
+        assert "--no-proxy-headers" in (root / name).read_text()
+    calls = []
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: calls.append(kwargs))
+    main()
+    assert calls[0]["proxy_headers"] is False
+
+
 def test_public_status_path_is_always_open():
     """Публичная страница и её оформление не подпадают под ограничение."""
     from app.netguard import is_public_path
