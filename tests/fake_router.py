@@ -1,8 +1,8 @@
 """
 Заглушка устройства MikroTik для автотестов.
 
-Реализует протокол RouterOS API поверх обычного TCP-сокета и минимальный
-FTP-сервер, чтобы можно было проверить весь путь целиком:
+Реализует протокол RouterOS API поверх TCP, при необходимости с API-SSL,
+и минимальный FTP-сервер, чтобы можно было проверить весь путь целиком:
 подключение → команда → создание бэкапа → скачивание файла.
 
 Запускается прямо в процессе теста, никакого реального роутера не нужно.
@@ -10,10 +10,19 @@ FTP-сервер, чтобы можно было проверить весь п�
 
 from __future__ import annotations
 
+import os
 import socket
+import ssl
+import tempfile
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 
 import librouteros.protocol as _proto
 
@@ -44,12 +53,15 @@ class FakeRouter:
     """
     Простейшая эмуляция RouterOS API.
 
-    Поддерживает: /login, /system/resource/print, /system/identity/print,
+    Поддерживает обычное API и отдельный TLS-порт API-SSL. Команды:
+    /login, /system/resource/print, /system/identity/print,
     /system/script/{print,add,set,run,remove}, /file/{print,remove},
-    /system/backup/save, /export, /system/reboot, /system/identity/set.
+    /system/backup/save, /export, /system/reboot, /system/identity/set,
+    /ip/service/{print,set}.
     """
 
-    def __init__(self, username: str = "admin", password: str = "test", host: str = "127.0.0.1") -> None:
+    def __init__(self, username: str = "admin", password: str = "test",
+                 host: str = "127.0.0.1", api_ssl: bool = False) -> None:
         self.username = username
         self.password = password
         self.host = host
@@ -75,9 +87,11 @@ class FakeRouter:
         self.schedulers: list[dict[str, Any]] = []
         self.restored = False           # выполняли ли backup load
         self.executed: list[str] = []   # журнал вызванных команд — для проверок в тестах
+        self.events: list[tuple[str, str]] = []
         self.connections = 0            # принято TCP-подключений (важно для теста сессий)
         self.logins = 0                 # успешных входов в систему
         self.script_run_seconds = 0.0   # сколько «выполняется» скрипт
+        self.reject_api_ssl_connections = False
 
         # --- проверка канала ---
         # --- тест скорости ---
@@ -281,12 +295,70 @@ class FakeRouter:
         self.server.bind((host, 0))
         self.server.listen(16)
         self.port: int = self.server.getsockname()[1]
+        self.ssl_server: socket.socket | None = None
+        self.ssl_port: int | None = None
+        self.ssl_context: ssl.SSLContext | None = None
+        self._tls_tempdir: tempfile.TemporaryDirectory | None = None
+        self._ssl_thread: threading.Thread | None = None
+        if api_ssl:
+            self.ssl_server, self.ssl_port = self._new_listener(host)
+            self.ssl_context = self._make_ssl_context()
+            self.services.append({
+                ".id": "*8", "name": "api-ssl", "port": str(self.ssl_port),
+                "disabled": False, "address": "",
+            })
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._accept_loop, daemon=True)
+        if api_ssl:
+            self._ssl_thread = threading.Thread(
+                target=self._ssl_accept_loop, daemon=True,
+            )
+
+    @staticmethod
+    def _new_listener(host: str) -> tuple[socket.socket, int]:
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((host, 0))
+        server.listen(16)
+        return server, int(server.getsockname()[1])
+
+    def _make_ssl_context(self) -> ssl.SSLContext:
+        self._tls_tempdir = tempfile.TemporaryDirectory(prefix="fake-router-tls-")
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, self.host)])
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        certificate = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(subject)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - timedelta(minutes=1))
+            .not_valid_after(now + timedelta(days=1))
+            .sign(key, hashes.SHA256())
+        )
+        key_path = f"{self._tls_tempdir.name}/key.pem"
+        cert_path = f"{self._tls_tempdir.name}/cert.pem"
+        with open(key_path, "wb") as key_file:
+            key_file.write(key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.TraditionalOpenSSL,
+                serialization.NoEncryption(),
+            ))
+        os.chmod(key_path, 0o600)
+        with open(cert_path, "wb") as cert_file:
+            cert_file.write(certificate.public_bytes(serialization.Encoding.PEM))
+
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.set_ciphers("ADH:@SECLEVEL=0")
+        context.load_cert_chain(certfile=cert_path, keyfile=key_path)
+        return context
 
     # ------------------------------------------------------------- запуск
     def start(self) -> "FakeRouter":
         self._thread.start()
+        if self._ssl_thread is not None:
+            self._ssl_thread.start()
         return self
 
     def stop(self) -> None:
@@ -295,6 +367,13 @@ class FakeRouter:
             self.server.close()
         except OSError:
             pass
+        if self.ssl_server is not None:
+            try:
+                self.ssl_server.close()
+            except OSError:
+                pass
+        if self._tls_tempdir is not None:
+            self._tls_tempdir.cleanup()
 
     def __enter__(self) -> "FakeRouter":
         return self.start()
@@ -337,6 +416,31 @@ class FakeRouter:
             self.connections += 1
             threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
 
+    def _ssl_accept_loop(self) -> None:
+        server = self.ssl_server
+        if server is None:
+            return
+        server.settimeout(0.2)
+        while not self._stop.is_set():
+            try:
+                conn, _ = server.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+
+            if self.reject_api_ssl_connections:
+                conn.close()
+                continue
+            now = time.monotonic()
+            if self._unavailable_from <= now < self._unavailable_until:
+                conn.close()
+                continue
+            self.connections += 1
+            threading.Thread(
+                target=self._serve, args=(conn, self.ssl_context), daemon=True,
+            ).start()
+
     def _close_listener(self) -> None:
         """Закрыть слушающий сокет (устройство «ушло в перезагрузку»)."""
         try:
@@ -352,8 +456,12 @@ class FakeRouter:
         self.server.listen(16)
         self.server.settimeout(0.2)
 
-    def _serve(self, conn: socket.socket) -> None:
+    def _serve(self, conn: socket.socket,
+               ssl_context: ssl.SSLContext | None = None) -> None:
         try:
+            if ssl_context is not None:
+                conn = ssl_context.wrap_socket(conn, server_side=True)
+                self.events.append(("api-ssl-connect", ""))
             while not self._stop.is_set():
                 sentence = self._read_sentence(conn)
                 if not sentence:
@@ -731,6 +839,22 @@ class FakeRouter:
 
         if cmd == "/ip/service/print":
             return list(self.services)
+
+        if cmd == "/ip/service/set":
+            if set(attrs) != {".id", "disabled"}:
+                raise _Trap("unknown parameter")
+            service = next(
+                (row for row in self.services if row.get(".id") == attrs[".id"]),
+                None,
+            )
+            if service is None:
+                raise _Trap("no such item")
+            value = str(attrs["disabled"]).lower()
+            if value not in ("yes", "no", "true", "false"):
+                raise _Trap("invalid value for argument disabled")
+            service["disabled"] = value in ("yes", "true")
+            self.events.append(("service", str(service.get("name", ""))))
+            return []
 
         if cmd == "/ip/neighbor/print":
             return list(self.neighbors)

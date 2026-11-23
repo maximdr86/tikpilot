@@ -187,6 +187,176 @@ def act_check(mt: MikroTik, device: dict[str, Any], params: dict[str, Any]) -> s
     )
 
 
+SERVICE_HARDENING_TARGETS = ("ftp", "telnet", "www", "api")
+
+
+def _service_rows(rows: list[dict[str, Any]], name: str) -> list[dict[str, Any]]:
+    """Настроенные службы без динамики и записей текущих соединений."""
+    return [
+        row for row in rows
+        if str(row.get("name", "")) == name
+        and str(row.get("dynamic", "")).strip().lower() not in ("true", "yes", "1")
+        and not str(row.get("remote", "") or "").strip()
+    ]
+
+
+def _service_enabled(row: dict[str, Any]) -> bool:
+    """Отсутствие флага disabled означает включённую службу."""
+    truthy = ("true", "yes", "1")
+    return (
+        str(row.get("disabled", "")).strip().lower() not in truthy
+        and str(row.get("invalid", "")).strip().lower() not in truthy
+    )
+
+
+def _require_api_ssl(rows: list[dict[str, Any]], port: int) -> None:
+    services = _service_rows(rows, "api-ssl")
+    if len(services) != 1 or not _service_enabled(services[0]):
+        raise DeviceError("Служба api-ssl отсутствует или выключена")
+    try:
+        service_port = int(services[0].get("port") or 0)
+    except (TypeError, ValueError):
+        service_port = 0
+    if service_port != port:
+        raise DeviceError("Порт API-SSL в карточке устройства не совпадает с роутером")
+
+
+def _verify_sftp_for_backups(device: dict[str, Any]) -> None:
+    """Убедиться, что отключение FTP не лишит Tikpilot возможности снять бэкап."""
+    from .terminal import connect
+
+    client = None
+    sftp = None
+    try:
+        client = connect(device)
+        sftp = client.open_sftp()
+        sftp.listdir(".")
+    except Exception as exc:  # noqa: BLE001 — SSH-библиотека имеет несколько типов ошибок
+        log.warning("SFTP preflight for %s failed: %s", device.get("host"), exc)
+        raise DeviceError(
+            "Не удалось проверить SFTP. Проверьте доступ по SSH и повторите"
+        ) from exc
+    finally:
+        if sftp is not None:
+            try:
+                sftp.close()
+            except Exception:  # noqa: BLE001 — уборка не должна подменять результат
+                pass
+        if client is not None:
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _verify_hardened_services(mt: MikroTik, port: int,
+                               require_api_disabled: bool = True) -> None:
+    rows = mt.cmd("/ip/service/print")
+    _require_api_ssl(rows, port)
+    targets = SERVICE_HARDENING_TARGETS
+    if not require_api_disabled:
+        targets = tuple(name for name in targets if name != "api")
+    enabled_targets = [
+        name for name in targets
+        if any(_service_enabled(row) for row in _service_rows(rows, name))
+    ]
+    if enabled_targets:
+        raise DeviceError("RouterOS не подтвердил отключение всех выбранных служб")
+
+
+@register(
+    name="secure_services",
+    label="Отключить небезопасные службы",
+    description=(
+        "Выключить FTP, Telnet, WWW и обычный API после проверки API-SSL и SFTP. "
+        "Сертификат роутера не проверяется"
+    ),
+    icon="shield-check",
+    dangerous=True,
+    serial=True,
+)
+def act_secure_services(mt: MikroTik, device: dict[str, Any],
+                        params: dict[str, Any]) -> str:
+    """Безопасное отключение служб RouterOS с проверкой API-SSL."""
+    if not mt.use_ssl or not device.get("use_ssl"):
+        raise DeviceError(
+            "Сначала включите API-SSL в карточке устройства и проверьте подключение"
+        )
+    if settings.backup_transport == "ftp":
+        raise DeviceError(
+            "В Tikpilot для бэкапов выбран только FTP. Сначала переключите "
+            "BACKUP_TRANSPORT на auto или sftp"
+        )
+
+    from .crypto import decrypt
+
+    port = int(device.get("api_port") or 8728)
+    password = decrypt(device.get("password_enc", ""))
+    if not password:
+        raise DeviceError("В карточке устройства нет пароля для проверки API-SSL")
+
+    api_row = None
+    with MikroTik(device, password, timeout=settings.api_timeout) as secure:
+        # Новая авторизация важна: соединение в пуле могло быть открыто давно.
+        secure.cmd("/system/identity/print")
+        rows = secure.cmd("/ip/service/print")
+        _require_api_ssl(rows, port)
+        _verify_sftp_for_backups(device)
+
+        api_row = next(iter(_service_rows(rows, "api")), None)
+        for name in ("ftp", "telnet", "www"):
+            for row in _service_rows(rows, name):
+                if _service_enabled(row):
+                    secure.cmd(
+                        "/ip/service/set", **{".id": row[".id"], "disabled": "yes"},
+                    )
+
+    api_changed = False
+    try:
+        # Новое подключение доказывает, что API-SSL продолжает принимать
+        # входы после отключения остальных служб.
+        with MikroTik(device, password, timeout=settings.api_timeout) as before_api:
+            before_api.cmd("/system/identity/print")
+            _verify_hardened_services(before_api, port, require_api_disabled=False)
+            if api_row and _service_enabled(api_row):
+                api_changed = True
+                before_api.cmd(
+                    "/ip/service/set", **{".id": api_row[".id"], "disabled": "yes"},
+                )
+
+        # Закрываем предыдущее TLS-соединение до проверки, чтобы не держать
+        # на слабых устройствах несколько одновременных API-сессий.
+        with MikroTik(device, password, timeout=settings.api_timeout) as verify:
+            verify.cmd("/system/identity/print")
+            _verify_hardened_services(verify, port)
+    except DeviceError as exc:
+        restored = False
+        if api_changed and api_row:
+            try:
+                mt.cmd("/ip/service/set", **{".id": api_row[".id"], "disabled": "no"})
+                restored = any(
+                    _service_enabled(row)
+                    for row in _service_rows(mt.cmd("/ip/service/print"), "api")
+                )
+            except DeviceError:
+                pass
+        if api_changed:
+            message = (
+                "Проверка после отключения служб не прошла. Обычный API включён обратно"
+                if restored
+                else "Проверка после отключения служб не прошла. "
+                     "Состояние обычного API не проверено"
+            )
+        else:
+            message = (
+                "После отключения FTP, Telnet и WWW не удалось подтвердить "
+                "состояние служб. Обычный API не изменялся"
+            )
+        raise DeviceError(message) from exc
+
+    return "Подключение через API-SSL проверено. FTP, Telnet, WWW и API без шифрования отключены"
+
+
 @register(
     name="reboot",
     label="Перезагрузить",

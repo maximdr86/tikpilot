@@ -146,6 +146,33 @@ def test_connect_and_read_system_info(router):
     assert info["uptime"] == "3w2d10:15:42"
 
 
+def test_connect_to_fake_router_over_api_ssl():
+    with FakeRouter(username="tikpilot", password="s3cret", api_ssl=True) as router:
+        device = _device(router)
+        device.update(api_port=router.ssl_port, use_ssl=1)
+
+        with MikroTik(device, "s3cret") as mt:
+            identity = mt.cmd("/system/identity/print")
+            services = mt.cmd("/ip/service/print")
+
+    api_ssl = next(row for row in services if row["name"] == "api-ssl")
+    assert identity[0]["name"] == "MikroTik"
+    assert int(api_ssl["port"]) == router.ssl_port
+
+
+def test_fake_router_accepts_ip_service_disable_over_api_ssl():
+    with FakeRouter(username="tikpilot", password="s3cret", api_ssl=True) as router:
+        device = _device(router)
+        device.update(api_port=router.ssl_port, use_ssl=1)
+        with MikroTik(device, "s3cret") as mt:
+            ftp = next(row for row in mt.cmd("/ip/service/print") if row["name"] == "ftp")
+            mt.cmd("/ip/service/set", **{".id": ftp[".id"], "disabled": "yes"})
+            services = mt.cmd("/ip/service/print")
+
+        ftp = next(row for row in services if row["name"] == "ftp")
+        assert str(ftp["disabled"]).lower() == "true"
+
+
 def test_wrong_password_gives_clear_message(router):
     with pytest.raises(DeviceError) as exc:
         with MikroTik(_device(router), "wrong-password"):
@@ -319,6 +346,213 @@ def test_required_params_validated(client, router):
     })
     assert r.status_code == 400
     assert "Имя скрипта" in r.json()["error"]
+
+
+def test_service_hardening_refuses_plain_api_without_changes(client, router):
+    """Незащищённые службы нельзя выключить через обычный API."""
+    device_id = _add_device(client, router, "service-hardening-plain")
+    before = [dict(service) for service in router.services]
+
+    job = _run_and_wait(client, "secure_services", [device_id], {})
+    item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job["id"],))
+
+    assert job["fail_count"] == 1
+    assert item["status"] == "error"
+    assert "API-SSL" in item["result"]
+    assert router.services == before
+    assert "/ip/service/set" not in router.executed
+
+
+def test_service_hardening_disables_only_selected_services_over_api_ssl(
+    client, monkeypatch,
+):
+    import tempfile
+
+    from app.actions import get_action
+    from app.config import settings
+    from tests.fake_ssh import FakeSSH
+
+    assert get_action("secure_services").untested is False
+    monkeypatch.setattr(settings, "backup_transport", "auto")
+    with FakeRouter(username="tikpilot", password="s3cret", api_ssl=True) as router:
+        router.services.extend([
+            {".id": "*9", "name": "www-ssl", "port": "443", "disabled": False},
+            {".id": "*10", "name": "winbox", "port": "8291", "disabled": False},
+        ])
+        ssh = FakeSSH(root=tempfile.mkdtemp(prefix="service-hardening-sftp-"))
+        try:
+            device_id = _add_device(
+                client, router, "service-hardening-ssl",
+                api_port=router.ssl_port, use_ssl=True, ssh_port=ssh.port,
+            )
+            router.events.clear()
+
+            job = _run_and_wait(client, "secure_services", [device_id], {})
+            item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job["id"],))
+
+            assert job["ok_count"] == 1
+            assert item["status"] == "ok"
+            states = {
+                row["name"]: str(row.get("disabled", "")).lower()
+                for row in router.services if not row.get("remote")
+            }
+            assert all(
+                states[name] == "true" for name in ("ftp", "telnet", "www", "api")
+            ), states
+            assert states["api-ssl"] == "false"
+            assert states["ssh"] == "false"
+            assert states["www-ssl"] == "false"
+            assert states["winbox"] == "false"
+            assert int(next(row["port"] for row in router.services
+                            if row["name"] == "api-ssl")) == router.ssl_port
+            changes = [name for kind, name in router.events if kind == "service"]
+            assert changes == ["telnet", "www", "api"]
+            api_change = router.events.index(("service", "api"))
+            ssl_checks_before_api = sum(
+                kind == "api-ssl-connect" for kind, _ in router.events[:api_change]
+            )
+            assert ssl_checks_before_api >= 2
+
+            router.events.clear()
+            repeated = _run_and_wait(client, "secure_services", [device_id], {})
+            assert repeated["ok_count"] == 1
+            assert not [event for event in router.events if event[0] == "service"]
+        finally:
+            ssh.stop()
+
+
+def test_service_hardening_restores_plain_api_if_final_ssl_check_fails(
+    client, monkeypatch,
+):
+    import tempfile
+
+    from app.config import settings
+    from tests.fake_ssh import FakeSSH
+
+    monkeypatch.setattr(settings, "backup_transport", "auto")
+    with FakeRouter(username="tikpilot", password="s3cret", api_ssl=True) as router:
+        ssh = FakeSSH(root=tempfile.mkdtemp(prefix="service-hardening-rollback-"))
+        original = router._handle
+
+        def handle(cmd, attrs):  # noqa: ANN001
+            result = original(cmd, attrs)
+            if cmd == "/ip/service/set":
+                service = next(row for row in router.services
+                               if row[".id"] == attrs[".id"])
+                if service["name"] == "api" and str(attrs["disabled"]).lower() == "yes":
+                    router.reject_api_ssl_connections = True
+            return result
+
+        router._handle = handle  # type: ignore[method-assign]
+        try:
+            device_id = _add_device(
+                client, router, "service-hardening-rollback",
+                api_port=router.ssl_port, use_ssl=True, ssh_port=ssh.port,
+            )
+
+            job = _run_and_wait(client, "secure_services", [device_id], {})
+            item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job["id"],))
+
+            assert job["fail_count"] == 1
+            assert "Обычный API включён обратно" in item["result"]
+            api = next(row for row in router.services if row["name"] == "api")
+            assert api["disabled"] is False
+        finally:
+            ssh.stop()
+
+
+def test_service_hardening_refuses_when_api_ssl_is_disabled(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "backup_transport", "auto")
+    with FakeRouter(username="tikpilot", password="s3cret", api_ssl=True) as router:
+        device_id = _add_device(
+            client, router, "service-hardening-no-ssl",
+            api_port=router.ssl_port, use_ssl=True,
+        )
+        next(row for row in router.services if row["name"] == "api-ssl")["disabled"] = True
+        before = [dict(service) for service in router.services]
+
+        # TLS принимает сессию, чтобы действие могло прочитать состояние
+        # выключенной службы и отказаться до первой записи.
+        job = _run_and_wait(client, "secure_services", [device_id], {})
+        item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job["id"],))
+
+        assert job["fail_count"] == 1
+        assert "api-ssl" in item["result"]
+        assert router.services == before
+        assert "/ip/service/set" not in router.executed
+
+
+def test_service_hardening_refuses_when_api_ssl_port_does_not_match(
+    client, monkeypatch,
+):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "backup_transport", "auto")
+    with FakeRouter(username="tikpilot", password="s3cret", api_ssl=True) as router:
+        device_id = _add_device(
+            client, router, "service-hardening-port",
+            api_port=router.ssl_port, use_ssl=True,
+        )
+        ssl_service = next(row for row in router.services if row["name"] == "api-ssl")
+        ssl_service["port"] = str(router.ssl_port + 1)
+        before = [dict(service) for service in router.services]
+
+        job = _run_and_wait(client, "secure_services", [device_id], {})
+        item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job["id"],))
+
+        assert job["fail_count"] == 1
+        assert "Порт API-SSL" in item["result"]
+        assert router.services == before
+        assert "/ip/service/set" not in router.executed
+
+
+def test_service_hardening_refuses_when_sftp_is_unavailable(client, monkeypatch):
+    import tempfile
+
+    from app.config import settings
+    from tests.fake_ssh import FakeSSH
+
+    monkeypatch.setattr(settings, "backup_transport", "auto")
+    with FakeRouter(username="tikpilot", password="s3cret", api_ssl=True) as router:
+        ssh = FakeSSH(password="wrong", root=tempfile.mkdtemp(prefix="service-hardening-sftp-"))
+        try:
+            device_id = _add_device(
+                client, router, "service-hardening-no-sftp",
+                api_port=router.ssl_port, use_ssl=True, ssh_port=ssh.port,
+            )
+            before = [dict(service) for service in router.services]
+
+            job = _run_and_wait(client, "secure_services", [device_id], {})
+            item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job["id"],))
+
+            assert job["fail_count"] == 1
+            assert "SFTP" in item["result"]
+            assert router.services == before
+            assert "/ip/service/set" not in router.executed
+        finally:
+            ssh.stop()
+
+
+def test_service_hardening_refuses_ftp_only_backup_transport(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "backup_transport", "ftp")
+    with FakeRouter(username="tikpilot", password="s3cret", api_ssl=True) as router:
+        device_id = _add_device(
+            client, router, "service-hardening-ftp-backups",
+            api_port=router.ssl_port, use_ssl=True,
+        )
+        before = [dict(service) for service in router.services]
+
+        job = _run_and_wait(client, "secure_services", [device_id], {})
+        item = query_one("SELECT * FROM job_items WHERE job_id = ?", (job["id"],))
+
+        assert job["fail_count"] == 1
+        assert "BACKUP_TRANSPORT" in item["result"]
+        assert router.services == before
+        assert "/ip/service/set" not in router.executed
 
 
 def test_unknown_action_rejected(client):
@@ -923,7 +1157,8 @@ def test_update_badge_shown_in_device_list(client, router):
 
 # ------------------------------------------------------------- помощники
 def _add_device(client, router: FakeRouter, name: str, ftp_port: int = 21,
-                known_for_days: int = 400) -> int:
+                known_for_days: int = 400, *, api_port: int | None = None,
+                use_ssl: bool = False, ssh_port: int = 22) -> int:
     """
     Добавить устройство, указывающее на заглушку.
 
@@ -937,8 +1172,11 @@ def _add_device(client, router: FakeRouter, name: str, ftp_port: int = 21,
     про него просят его явно.
     """
     r = client.post("/api/devices", data={
-        "name": name, "host": "127.0.0.1", "api_port": str(router.port),
-        "ftp_port": str(ftp_port), "username": "tikpilot", "password": "s3cret", "enabled": "1",
+        "name": name, "host": "127.0.0.1",
+        "api_port": str(api_port if api_port is not None else router.port),
+        "ftp_port": str(ftp_port), "ssh_port": str(ssh_port),
+        "use_ssl": "1" if use_ssl else "",
+        "username": "tikpilot", "password": "s3cret", "enabled": "1",
     })
     device_id = r.json()["id"]
     if known_for_days:
