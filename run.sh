@@ -65,5 +65,5 @@ echo "==> $(t "Tikpilot is starting at" "Tikpilot запускается на") 
 # который до сих пор стоит в macOS, пустой массив под `set -u` считается
 # неинициализированным, и запуск падает с «EXTRA[@]: unbound variable».
 # В bash 4.4 и новее этого нет, поэтому на Linux мы ошибку не видели.
-exec "$VENV/bin/python" -m uvicorn app.main:app --host "$HOST" --port "$PORT" \
+exec "$VENV/bin/python" -m uvicorn app.main:app --no-proxy-headers --host "$HOST" --port "$PORT" \
      ${EXTRA[@]+"${EXTRA[@]}"}

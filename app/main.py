@@ -2,7 +2,7 @@
 Точка входа приложения Tikpilot.
 
 Запуск:
-    uvicorn app.main:app --host 0.0.0.0 --port 8080
+    uvicorn app.main:app --no-proxy-headers --host 0.0.0.0 --port 8080
 или просто:
     python -m app.main
 """
@@ -21,6 +21,7 @@ from .auth import Forbidden, RedirectException, read_session, redirect_exception
 from .config import BASE_DIR, settings
 from . import activity
 from .database import init_db
+from .netguard import TrustedProxyScheme
 from .routes.deps import LANG_COOKIE
 from .routes import (
     alerts as alert_routes,
@@ -121,6 +122,8 @@ app = FastAPI(
     openapi_url=None,
 )
 
+app.add_middleware(TrustedProxyScheme)
+
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 @app.middleware("http")
@@ -138,7 +141,7 @@ async def restrict_to_admin_networks(request: Request, call_next):
 
     if settings.admin_networks and not is_public_path(request.url.path):
         peer = request.client.host if request.client else ""
-        forwarded = request.headers.get("x-forwarded-for", "")
+        forwarded = request.headers.getlist("x-forwarded-for")
         if not allowed(peer, forwarded, settings.admin_networks, settings.trusted_proxies):
             log.warning("Доступ к панели с недоверенного адреса: %s %s",
                         peer, request.url.path)
@@ -146,7 +149,7 @@ async def restrict_to_admin_networks(request: Request, call_next):
             # в настройке, а не в поломке, из прежнего текста понять
             # было нельзя. Список сетей при этом не показываем: страницу
             # видит кто угодно, включая того, от кого и закрывались
-            shown = real_client_ip(peer, forwarded, settings.trusted_proxies) or peer
+            shown = real_client_ip(peer, forwarded, settings.trusted_proxies) or "unknown"
             return PlainTextResponse(
                 "Панель доступна только из доверенной сети.\n"
                 f"Ваш адрес: {shown}\n"
@@ -253,6 +256,7 @@ def main() -> None:
         host=settings.host,
         port=settings.port,
         log_level="info",
+        proxy_headers=False,
     )
 
 

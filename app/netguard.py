@@ -67,26 +67,75 @@ def is_public_path(path: str) -> bool:
     return path.startswith(PUBLIC_PREFIXES)
 
 
-def real_client_ip(peer: str, forwarded: str, trusted_proxies: Iterable) -> str:
-    """
-    Определить адрес клиента.
+def _canonical_ip(value: str) -> str:
+    """Normalize literal IP addresses, including IPv4-mapped IPv6."""
+    if "%" in value:
+        return ""
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return ""
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        return str(address.ipv4_mapped)
+    return str(address)
 
-    `peer` — тот, кто реально установил соединение. Если это доверенный
-    прокси, берём последний адрес из `X-Forwarded-For`: он ближе всего
-    к нам и подделать его сложнее всего. Иначе заголовок игнорируем.
-    """
-    if not forwarded or not _in_networks(peer, trusted_proxies):
+
+def real_client_ip(peer: str, forwarded: str | list[str], trusted_proxies: Iterable) -> str:
+    """Resolve the first untrusted hop; an invalid forwarded chain has no identity."""
+    trusted_proxies = tuple(trusted_proxies)
+    peer = _canonical_ip(peer) or peer
+    if not _in_networks(peer, trusted_proxies):
         return peer
+    # A missing header also permits direct local access. A trusted proxy must
+    # always supply it; the application cannot distinguish the two cases.
+    if forwarded == "" or forwarded == []:
+        return peer
+    headers = [forwarded] if isinstance(forwarded, str) else forwarded
+    chain = [_canonical_ip(part.strip()) for header in headers for part in header.split(",")]
+    if not chain or any(not address for address in chain):
+        return ""
+    for address in reversed(chain):
+        if not _in_networks(address, trusted_proxies):
+            return address
+    return ""
 
-    chain = [part.strip() for part in forwarded.split(",") if part.strip()]
-    return chain[-1] if chain else peer
+
+def request_client_ip(request, trusted_proxies: Iterable) -> str:
+    """Use the transport peer and all X-Forwarded-For header fields."""
+    peer = request.client.host if request.client else ""
+    return real_client_ip(peer, request.headers.getlist("x-forwarded-for"), trusted_proxies)
 
 
-def allowed(peer: str, forwarded: str, networks: Iterable, trusted_proxies: Iterable) -> bool:
+def allowed(peer: str, forwarded: str | list[str], networks: Iterable, trusted_proxies: Iterable) -> bool:
     """Разрешён ли доступ к панели с этого адреса."""
     if not networks:
         return True
     return _in_networks(real_client_ip(peer, forwarded, trusted_proxies), networks)
+
+
+class TrustedProxyScheme:
+    """Apply only a trusted proxy's protocol, without changing the ASGI peer."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            from starlette.requests import HTTPConnection
+            from .config import settings
+
+            connection = HTTPConnection(scope)
+            peer = connection.client.host if connection.client else ""
+            forwarded = connection.headers.getlist("x-forwarded-for")
+            proto = connection.headers.getlist("x-forwarded-proto")
+            if (_in_networks(peer, settings.trusted_proxies) and forwarded
+                    and real_client_ip(peer, forwarded, settings.trusted_proxies)
+                    and len(proto) == 1 and proto[0].strip().lower() in ("http", "https")):
+                scheme = proto[0].strip().lower()
+                scope = dict(scope)
+                scope["scheme"] = ({"http": "ws", "https": "wss"}[scheme]
+                                   if scope["type"] == "websocket" else scheme)
+        await self.app(scope, receive, send)
 
 
 def _in_networks(address: str, networks: Iterable) -> bool:
@@ -94,7 +143,7 @@ def _in_networks(address: str, networks: Iterable) -> bool:
     if not address:
         return False
     try:
-        ip = ipaddress.ip_address(address)
+        ip = ipaddress.ip_address(_canonical_ip(address))
     except ValueError:
         # Не адрес вовсе. При включённой проверке это отказ: пропускать
         # непонятное значение опаснее, чем отклонить.

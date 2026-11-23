@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from ..auth import (
     Forbidden,
@@ -66,6 +66,8 @@ async def login_submit(
     проверка хеша.
     """
     address = client_ip(request)
+    if not address:
+        return JSONResponse({"error": "Invalid client address"}, status_code=400)
 
     waiting = loginguard.wait_seconds(address)
     if waiting:

@@ -161,7 +161,7 @@ Group=$APP_USER
 WorkingDirectory=$APP_DIR
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=$APP_DIR/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port $PORT
+ExecStart=$APP_DIR/.venv/bin/uvicorn app.main:app --no-proxy-headers --host 0.0.0.0 --port $PORT
 Restart=always
 RestartSec=5
 

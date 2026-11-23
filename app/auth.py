@@ -159,11 +159,10 @@ async def redirect_exception_handler(_request: Request, exc: RedirectException):
 
 
 def client_ip(request: Request) -> str:
-    """IP клиента с учётом обратного прокси."""
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else ""
+    """Client identity, derived only from the transport peer and trusted proxies."""
+    from .netguard import request_client_ip
+
+    return request_client_ip(request, settings.trusted_proxies)
 
 
 class Forbidden(Exception):

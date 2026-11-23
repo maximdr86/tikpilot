@@ -74,7 +74,7 @@ start "" /b powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Sec
 
 REM python -m, not uvicorn.exe: the .exe carries a hardcoded path to the
 REM interpreter it was installed with, and that path is wrong after a copy.
-".venv\Scripts\python.exe" -m uvicorn app.main:app --host 0.0.0.0 --port %PORT%
+".venv\Scripts\python.exe" -m uvicorn app.main:app --no-proxy-headers --host 0.0.0.0 --port %PORT%
 
 echo.
 echo  Server stopped.

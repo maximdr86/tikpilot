@@ -105,7 +105,7 @@ async def terminal_socket(socket: WebSocket, device_id: int):
 
     # 1. Тот же круг доверенных сетей, что и у страниц
     peer = socket.client.host if socket.client else ""
-    forwarded = socket.headers.get("x-forwarded-for", "")
+    forwarded = socket.headers.getlist("x-forwarded-for")
     if settings.admin_networks and not allowed(
             peer, forwarded, settings.admin_networks, settings.trusted_proxies):
         log.warning("Терминал с недоверенного адреса: %s", peer)
