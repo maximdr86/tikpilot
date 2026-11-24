@@ -82,7 +82,7 @@
             {% for row in firing %}
                 <tr>
                     <td><a href="/devices/{{ row.device_id }}">{{ row.device_name }}</a></td>
-                    <td>{{ row.rule_name }}</td>
+                    <td>{{ row.rule_name | t }}</td>
                     <td class="mono">{{ row.value_text }}</td>
                     <td class="nowrap">{{ row.fired_at | dt }}</td>
                 </tr>
@@ -110,7 +110,7 @@
             {% for row in pending %}
                 <tr>
                     <td><a href="/devices/{{ row.device_id }}">{{ row.device_name }}</a></td>
-                    <td>{{ row.rule_name }}</td>
+                    <td>{{ row.rule_name | t }}</td>
                     <td class="mono">{{ row.value_text }}</td>
                     <td class="nowrap">{{ row.since | dt }}</td>
                     <td class="nowrap mono">{{ row.hold_minutes }}</td>
@@ -309,7 +309,7 @@
                        подписано «Панель», и на английской странице оно
                        должно быть по-английски. #}
                     <td>{% if e.device_id %}<a href="/devices/{{ e.device_id }}">{{ e.device_name }}</a>{% else %}{{ e.device_name | t }}{% endif %}</td>
-                    <td>{{ e.rule_name }}</td>
+                    <td>{{ e.rule_name | t }}</td>
                     <td class="nowrap">
                         {% if e.kind == 'fired' %}
                             <span class="badge offline">вышло за порог</span>

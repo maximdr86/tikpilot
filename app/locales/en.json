@@ -351,6 +351,34 @@
       "Upgraded: \\1"
     ],
     [
+      "^(.+? → .+?); (бэкап: .+?); (пакеты загружены за \\d+ с); (ушло в перезагрузку через \\d+ с); (вернулось за \\d+ с, версия .+?); (RouterBOOT: .+?)$",
+      "\\1; \\2; \\3; \\4; \\5; \\6"
+    ],
+    [
+      "^(.+? → .+?); (бэкап: .+?); (пакеты загружены за \\d+ с); (ушло в перезагрузку через \\d+ с); (вернулось за \\d+ с, версия .+?)$",
+      "\\1; \\2; \\3; \\4; \\5"
+    ],
+    [
+      "^бэкап: (.+?) \\(([\\d.,]+) КиБ\\), (.+?) \\(([\\d.,]+) КиБ\\)$",
+      "backup: \\1 (\\2 KiB), \\3 (\\4 KiB)"
+    ],
+    [
+      "^пакеты загружены за (\\d+) с$",
+      "packages downloaded in \\1 s"
+    ],
+    [
+      "^ушло в перезагрузку через (\\d+) с$",
+      "reboot started after \\1 s"
+    ],
+    [
+      "^вернулось за (\\d+) с, версия (.+?)$",
+      "back online after \\1 s, version \\2"
+    ],
+    [
+      "^RouterBOOT: (.+?) → (.+?), вернулось за (\\d+) с$",
+      "RouterBOOT: \\1 → \\2, back online after \\3 s"
+    ],
+    [
       "^Обновление отменено: не удалось снять бэкап \\((.*)\\)$",
       "Upgrade aborted: the backup failed (\\1)"
     ],
@@ -633,6 +661,10 @@
     [
       "^за сутки задач: (\\d+), точек с ошибкой: (\\d+)$",
       "jobs in the last day: \\1, sites with errors: \\2"
+    ],
+    [
+      "^Точка не отвечает выше ([\\d.,]+) мин$",
+      "Site unreachable for over \\1 min"
     ]
   ],
   "long-term рекомендуется для рабочих точек.": "long-term is recommended for production sites.",
@@ -646,7 +678,7 @@
   "· <span class=\"badge pending\">ожидает %(p0)s</span>": "· <span class=\"badge pending\">waiting until %(p0)s</span>",
   "· <span class=\"badge unknown\">мониторинг выключен</span>": "· <span class=\"badge unknown\">monitoring is off</span>",
   "· <span style=\"color:var(--err)\">%(p0)s с ошибкой</span>": "· <span style=\"color:var(--err)\">%(p0)s failed</span>",
-  "· <span style=\"color:var(--err);font-weight:600\">не отвечает %(p0)s</span>": "· <span style=\"color:var(--err);font-weight:600\">unreachable for %(p0)s</span>",
+  "· <span style=\"color:var(--err);font-weight:600\">не отвечает %(p0)s</span>": "· <span style=\"color:var(--err);font-weight:600\">unreachable %(p0)s</span>",
   "· Ошибок:": "· Failed:",
   "· записи хранятся %(p0)s %(p1)s": "· records are kept for %(p0)s %(p1)s",
   "· ключ есть": "· has a key",
