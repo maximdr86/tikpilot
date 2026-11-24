@@ -60,6 +60,15 @@
         </select>
     </div>
     <div class="field">
+        <label for="f-ros-version">Версия RouterOS</label>
+        <select id="f-ros-version" onchange="reloadDeviceRows()">
+            <option value="">Все версии</option>
+            {% for version in ros_versions %}
+                <option value="{{ version }}" {% if f_ros_version == version %}selected{% endif %}>{{ version }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
         <label for="f-status">Статус</label>
         <select id="f-status" onchange="reloadDeviceRows()">
             <option value="">Любой</option>
