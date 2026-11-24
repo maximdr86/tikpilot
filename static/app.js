@@ -365,6 +365,9 @@ async function reloadDeviceRows(options = {}) {
         q: ($('#f-q') || {}).value || '',
         group_id: ($('#f-group') || {}).value || '',
         status: ($('#f-status') || {}).value || '',
+        operator: ($('#f-operator') || {}).value || '',
+        model: ($('#f-model') || {}).value || '',
+        ros_version: ($('#f-ros-version') || {}).value || '',
     });
     const tbody = $('#device-rows');
     if (!tbody) { return; }

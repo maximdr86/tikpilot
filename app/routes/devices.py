@@ -17,20 +17,23 @@ from ..database import (execute, forget_device_traces, log_audit, query,
 from ..mikrotik import is_newer
 from .. import permissions
 from ..auth import Forbidden, require
-from .deps import form_bool, render, render_partial, resolve_lang, templates
+from .deps import (form_bool, render, render_partial, resolve_lang, sort_version,
+                   templates)
 
 router = APIRouter()
 
 
 # ------------------------------------------------------------------ выборка
 def _fetch_devices(q: str = "", group_id: str = "", status: str = "",
-                   user: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+                   user: dict[str, Any] | None = None, operator: str = "",
+                   model: str = "", ros_version: str = "") -> list[dict[str, Any]]:
     """
     Список устройств с учётом фильтров.
 
-    Пустые значения фильтров игнорируются, поиск идёт по имени, адресу,
-    комментарию и identity. Дополнительно к полям таблицы возвращается
-    признак update_available — доступно ли обновление RouterOS.
+    Пустые значения фильтров игнорируются; оператор, модель и версия RouterOS
+    выбираются точно, а поиск идёт по имени, адресу, комментарию и identity.
+    Дополнительно к полям таблицы возвращается признак update_available —
+    доступно ли обновление RouterOS.
 
     Значение status='update' — особый фильтр: только устройства с обновлением.
     """
@@ -66,6 +69,15 @@ def _fetch_devices(q: str = "", group_id: str = "", status: str = "",
     elif group_id:
         sql.append("AND d.group_id = ?")
         params.append(group_id)
+    if operator:
+        sql.append("AND d.operator = ?")
+        params.append(operator)
+    if model:
+        sql.append("AND d.board_name = ?")
+        params.append(model)
+    if ros_version:
+        sql.append("AND d.ros_version = ?")
+        params.append(ros_version)
     if status == "disabled":
         # Отдельно от статусов связи: выключенная точка сохраняет тот
         # статус, что застал последний опрос, и по нему её не найти
@@ -84,6 +96,35 @@ def _fetch_devices(q: str = "", group_id: str = "", status: str = "",
     if status == "update":
         rows = [r for r in rows if r["update_available"]]
     return rows
+
+
+def _device_filter_options(
+    user: dict[str, Any] | None,
+) -> tuple[list[str], list[str], list[str]]:
+    """Операторы, модели и версии RouterOS в области видимости пользователя."""
+    scope, params = permissions.scope_sql(user) if user is not None else ("", [])
+    operators = query(
+        "SELECT DISTINCT d.operator FROM devices d "
+        "WHERE d.operator <> ''" + scope + " ORDER BY d.operator COLLATE NOCASE",
+        tuple(params),
+    )
+    models = query(
+        "SELECT DISTINCT d.board_name FROM devices d "
+        "WHERE d.board_name <> ''" + scope + " ORDER BY d.board_name COLLATE NOCASE",
+        tuple(params),
+    )
+    ros_versions = query(
+        "SELECT DISTINCT d.ros_version FROM devices d "
+        "WHERE d.ros_version <> ''" + scope,
+        tuple(params),
+    )
+    versions = sorted(
+        (str(row["ros_version"]) for row in ros_versions),
+        key=lambda version: (sort_version(version), version.casefold()),
+    )
+    return ([str(row["operator"]) for row in operators],
+            [str(row["board_name"]) for row in models],
+            versions)
 
 
 def _update_available(row: dict[str, Any]) -> bool:
@@ -113,22 +154,33 @@ async def devices_page(
     q: str = "",
     group_id: str = "",
     status: str = "",
+    operator: str = "",
+    model: str = "",
+    ros_version: str = "",
     user=Depends(current_user),
 ):
     """Основная страница со списком устройств."""
     from ..actions import list_actions
 
+    operators, models, ros_versions = _device_filter_options(user)
     return render(
         "devices.html",
         request,
         user,
         active="devices",
-        devices=_fetch_devices(q, group_id, status, user),
+        devices=_fetch_devices(
+            q, group_id, status, user, operator, model, ros_version),
         groups=_groups(),
+        operators=operators,
+        models=models,
+        ros_versions=ros_versions,
         actions=permissions.allowed_actions(user),
         f_q=q,
         f_group=group_id,
         f_status=status,
+        f_operator=operator,
+        f_model=model,
+        f_ros_version=ros_version,
     )
 
 
@@ -138,6 +190,9 @@ async def devices_rows(
     q: str = "",
     group_id: str = "",
     status: str = "",
+    operator: str = "",
+    model: str = "",
+    ros_version: str = "",
     user=Depends(current_user),
 ):
     """HTML-фрагмент с телом таблицы — используется для живого обновления."""
@@ -145,7 +200,8 @@ async def devices_rows(
         "partials/device_rows.html",
         request,
         user,
-        devices=_fetch_devices(q, group_id, status, user),
+        devices=_fetch_devices(
+            q, group_id, status, user, operator, model, ros_version),
     )
 
 
