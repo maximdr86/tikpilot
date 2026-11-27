@@ -2,6 +2,7 @@
 {% block title %}{{ device.name }} · Tikpilot{% endblock %}
 
 {% block content %}
+{% set action_target_label = _("устройство «%(p0)s»", p0=(device.name)) %}
 <div class="page-head">
     <div>
         <h1>{{ device.name }}</h1>
@@ -13,18 +14,18 @@
     </div>
     <div class="btn-row">
         <button class="btn primary"
-                onclick="openActionModal({device_ids: [{{ device.id }}]}, '{{ _("устройство «%(p0)s»", p0=(device.name)) }}')">
+                onclick="openActionModal({device_ids: [{{ device.id }}]}, {{ action_target_label | tojson | forceescape }})">
             Выполнить действие
         </button>
         <button class="btn"
-                onclick="openActionModal({device_ids: [{{ device.id }}]}, '{{ _("устройство «%(p0)s»", p0=(device.name)) }}', 'check')">Проверить</button>
+                onclick="openActionModal({device_ids: [{{ device.id }}]}, {{ action_target_label | tojson | forceescape }}, 'check')">Проверить</button>
         <button class="btn"
-                onclick="openActionModal({device_ids: [{{ device.id }}]}, '{{ _("устройство «%(p0)s»", p0=(device.name)) }}', 'check_updates')">Обновления</button>
+                onclick="openActionModal({device_ids: [{{ device.id }}]}, {{ action_target_label | tojson | forceescape }}, 'check_updates')">Обновления</button>
         {# Замер полосы до другой точки парка. Кнопка здесь, а не в общем
            списке действий, потому что спрашивают про конкретную площадку:
            «почему у них тормозит». Дальше та же модалка, что и везде. #}
         <button class="btn"
-                onclick="openActionModal({device_ids: [{{ device.id }}]}, '{{ _("устройство «%(p0)s»", p0=(device.name)) }}', 'speedtest')">Скорость</button>
+                onclick="openActionModal({device_ids: [{{ device.id }}]}, {{ action_target_label | tojson | forceescape }}, 'speedtest')">Скорость</button>
         <a class="btn" href="/devices/{{ device.id }}/report">Отчёт</a>
         {# Веб-интерфейс самой точки. Кнопка появляется только если www или
            www-ssl там включён, и ведёт на тот порт, который записан
@@ -116,7 +117,7 @@
             <div class="small" style="color:var(--warn);margin-top:6px">
                 доступна {{ device.latest_version }}
                 <button class="btn sm danger" style="margin-left:6px"
-                        onclick="openActionModal({device_ids: [{{ device.id }}]}, '{{ _("устройство «%(p0)s»", p0=(device.name)) }}', 'upgrade_ros')">
+                        onclick="openActionModal({device_ids: [{{ device.id }}]}, {{ action_target_label | tojson | forceescape }}, 'upgrade_ros')">
                     Обновить
                 </button>
             </div>

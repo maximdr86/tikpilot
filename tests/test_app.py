@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import contextlib
 import datetime as _dt
+import json
 import os
 import re
 import sys
 import tempfile
 import time
+from html.parser import HTMLParser
 
 import pytest
 
@@ -2285,6 +2287,42 @@ def test_device_error_is_translated_on_the_page(client, router):
     assert "Connection timeout" in page
     assert "Таймаут подключения" not in page
     client.get("/lang/ru", follow_redirects=False)
+
+
+def test_device_action_buttons_preserve_apostrophes_in_device_name(client, router):
+    """Все действия карточки получают имя с апострофом как одну JS-строку."""
+    name = "D'ambrosio Maurizio"
+    device_id = _add_device(client, router, name)
+    from app.database import execute
+
+    execute(
+        "UPDATE devices SET ros_version = ?, latest_version = ? WHERE id = ?",
+        ("7.19.1", "7.20.1", device_id),
+    )
+    page = client.get(f"/devices/{device_id}").text
+
+    class ActionButtonParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.onclick_values = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "button":
+                onclick = dict(attrs).get("onclick", "")
+                if "openActionModal" in onclick:
+                    self.onclick_values.append(onclick)
+
+    parser = ActionButtonParser()
+    parser.feed(page)
+
+    assert len(parser.onclick_values) == 5
+    for onclick in parser.onclick_values:
+        match = re.search(
+            r"openActionModal\(\{device_ids: \[\d+\]\},\s*(\"(?:\\.|[^\"\\])*\")",
+            onclick,
+        )
+        assert match is not None, onclick
+        assert name in json.loads(match.group(1))
 
 
 def test_unknown_language_falls_back(client):
